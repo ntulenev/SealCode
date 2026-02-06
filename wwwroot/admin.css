@@ -1,0 +1,59 @@
+﻿.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+#rooms {
+  display: grid;
+  gap: 12px;
+}
+
+.room-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #2f343d;
+  border-radius: 10px;
+  background: #151922;
+}
+
+.room-row small { color: #6b7280; }
+
+button.ghost {
+  background: transparent;
+  color: #93c5fd;
+  border: 1px solid #93c5fd;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #0b2545;
+  color: #93c5fd;
+  font-size: 12px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.room-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.room-actions button {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.error { color: #fca5a5; }

@@ -1,0 +1,45 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - SealCode</title>
+  <link rel="stylesheet" href="/site.css" />
+  <link rel="stylesheet" href="/admin.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="admin-header">
+      <h1>Admin</h1>
+      <form method="post" action="/admin/logout">
+        <button type="submit" class="ghost">Logout</button>
+      </form>
+    </header>
+
+    <section class="card">
+      <h2>Create Room</h2>
+      <div class="grid">
+        <label>
+          Room name
+          <input id="roomName" type="text" placeholder="Team Notes" />
+        </label>
+        <label>
+          Default language
+          <select id="roomLanguage">
+            <option value="csharp">csharp</option>
+            <option value="sql">sql</option>
+          </select>
+        </label>
+        <button id="createRoom">Create</button>
+      </div>
+      <p id="createResult" class="muted"></p>
+    </section>
+
+    <section class="card">
+      <h2>Rooms</h2>
+      <div id="rooms"></div>
+    </section>
+  </main>
+  <script src="/admin.js"></script>
+</body>
+</html>

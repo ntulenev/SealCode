@@ -1,0 +1,27 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Login - SealCode</title>
+  <link rel="stylesheet" href="/site.css" />
+  <link rel="stylesheet" href="/admin.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Admin Login</h1>
+    <form class="card" method="post" action="/admin/login">
+      <label for="password">Admin password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit">Login</button>
+      <p id="error" class="error hidden">Invalid password. Try again.</p>
+    </form>
+  </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error')) {
+      document.getElementById('error').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

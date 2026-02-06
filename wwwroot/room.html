@@ -1,0 +1,60 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Room - SealCode</title>
+  <link rel="stylesheet" href="/site.css" />
+  <link rel="stylesheet" href="/room.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/atom-one-dark.min.css">
+</head>
+<body>
+  <main class="room-container">
+    <header class="room-header">
+      <div>
+        <h1 id="roomName">Room</h1>
+        <p class="muted">Connection: <span id="connectionStatus">disconnected</span></p>
+      </div>
+      <div class="room-meta">
+        <label>
+          Language
+          <select id="languageSelect">
+            <option value="csharp">csharp</option>
+            <option value="sql">sql</option>
+          </select>
+        </label>
+        <div class="version">Version <span id="versionNumber">0</span></div>
+      </div>
+    </header>
+
+  <section class="room-main">
+      <aside class="participants">
+        <h3>Participants</h3>
+        <ul id="participantsList"></ul>
+      </aside>
+      <section class="editor">
+        <div class="editor-wrap">
+          <pre class="code-preview" aria-hidden="true"><code id="codePreview" class="language-csharp hljs"></code></pre>
+          <textarea id="editor" placeholder="Start typing..." spellcheck="false"></textarea>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="joinOverlay" class="overlay">
+    <div class="overlay-card">
+      <h2>Join room</h2>
+      <p class="muted">Enter a display name to join this room.</p>
+      <input id="displayNameInput" type="text" placeholder="Ada Lovelace" />
+      <button id="joinBtn">Join</button>
+      <p id="joinError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/csharp.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/sql.min.js"></script>
+  <script src="/room.js"></script>
+</body>
+</html>

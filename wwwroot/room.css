@@ -1,0 +1,139 @@
+﻿.room-container {
+  max-width: 1100px;
+  margin: 4vh auto;
+  padding: 24px;
+}
+
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+.room-meta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.room-main {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+}
+
+.participants {
+  background: #151922;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #2f343d;
+}
+
+.participants ul {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 8px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.editor-wrap {
+  position: relative;
+  min-height: 60vh;
+}
+
+.editor textarea,
+.code-preview {
+  width: 100%;
+  min-height: 60vh;
+  border-radius: 12px;
+  border: 1px solid #2f343d;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.code-preview {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  background: #0f131a;
+  overflow: auto;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  z-index: 0;
+  line-height: 1.5;
+  padding: 16px;
+}
+
+.editor textarea {
+  position: relative;
+  background: transparent;
+  color: transparent;
+  caret-color: #e5e7eb;
+  border-color: transparent;
+  padding: 16px;
+  resize: none;
+  overflow: auto;
+  z-index: 1;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.code-preview code {
+  display: block;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  tab-size: 2;
+  margin: 0;
+  padding: 0;
+}
+
+.code-preview code.hljs {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.code-preview .hljs {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.version {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.overlay-card {
+  background: #151922;
+  padding: 24px;
+  border-radius: 14px;
+  width: min(360px, 90vw);
+  display: grid;
+  gap: 12px;
+  border: 1px solid #2f343d;
+}
+
+.hidden { display: none; }
+
+.error { color: #b91c1c; }
+
+@media (max-width: 900px) {
+  .room-main { grid-template-columns: 1fr; }
+}
