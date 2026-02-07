@@ -12,11 +12,11 @@ public sealed class ApplicationConfiguration
     /// </summary>
     [Required]
     [MinLength(4)]
-    public string AdminPassword { get; set; } = "change-me";
+    public required string AdminPassword { get; init; }
 
     /// <summary>
     /// Gets or sets the maximum number of users per room.
     /// </summary>
     [Range(1, 5)]
-    public int MaxUsersPerRoom { get; set; } = 5;
+    public int MaxUsersPerRoom { get; init; }
 }

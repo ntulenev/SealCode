@@ -1,6 +1,6 @@
-﻿.room-container {
+.room-container {
   max-width: 1100px;
-  margin: 4vh auto;
+  margin: 1.5vh auto;
   padding: 24px;
 }
 
@@ -11,6 +11,31 @@
   gap: 24px;
 }
 
+.room-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.room-logo {
+  width: 90px;
+  height: auto;
+  display: block;
+}
+
+.room-brand .site-title {
+  font-size: 24px;
+  margin: 0 0 6px;
+}
+
+.room-brand h1 {
+  margin: 0;
+}
+
+.room-brand .muted {
+  margin: 4px 0 0;
+}
+
 .room-meta {
   display: flex;
   align-items: center;
@@ -18,7 +43,7 @@
 }
 
 .room-main {
-  margin-top: 24px;
+  margin-top: 10px;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 16px;
@@ -117,3 +142,4 @@
 @media (max-width: 900px) {
   .room-main { grid-template-rows: auto 1fr; }
 }
+

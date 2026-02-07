@@ -1,9 +1,11 @@
-﻿.admin-header {
+.admin-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
+  margin-bottom: 12px;
 }
+
 
 .grid {
   display: grid;
@@ -15,6 +17,10 @@
 #rooms {
   display: grid;
   gap: 12px;
+}
+
+.card + .card {
+  margin-top: 16px;
 }
 
 .room-row {
@@ -57,3 +63,4 @@ button.ghost {
 }
 
 .error { color: #fca5a5; }
+

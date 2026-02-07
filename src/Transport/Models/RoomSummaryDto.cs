@@ -13,18 +13,8 @@ public sealed class RoomSummaryDto
     /// <param name="language">The room language.</param>
     /// <param name="usersCount">The number of connected users.</param>
     /// <param name="lastUpdatedUtc">The last updated timestamp.</param>
-    /// <exception cref="ArgumentNullException">Thrown when required values are null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when counts are negative.</exception>
     public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc)
     {
-        ArgumentNullException.ThrowIfNull(roomId);
-        ArgumentNullException.ThrowIfNull(name);
-        ArgumentNullException.ThrowIfNull(language);
-
-        if (usersCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(usersCount), "UsersCount cannot be negative.");
-        }
 
         RoomId = roomId;
         Name = name;

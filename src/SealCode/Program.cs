@@ -16,7 +16,7 @@ using Transport.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOptions<ApplicationConfiguration>()
-    .Bind(builder.Configuration.GetSection(string.Empty))
+    .Bind(builder.Configuration)
     .ValidateDataAnnotations()
     .ValidateOnStart();
 

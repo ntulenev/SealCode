@@ -18,9 +18,43 @@ body {
   color: var(--text);
 }
 
+.site-logo {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 0 0 10px;
+  gap: 0;
+}
+
+.site-logo img {
+  display: block;
+  transform: scale(0.68);
+  transform-origin: top center;
+  margin-bottom: -18px;
+}
+
+.site-title {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: 0.3px;
+  font-weight: 700;
+  font-family: "IBM Plex Mono", monospace;
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+  line-height: 0.9;
+}
+
+.site-title .brand-seal {
+  color: #e5e7eb;
+}
+
+.site-title .brand-code {
+  color: #2f8cff;
+}
+
 .container {
   max-width: 780px;
-  margin: 6vh auto;
+  margin: 3vh auto;
   padding: 24px;
 }
 

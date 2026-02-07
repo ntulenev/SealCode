@@ -271,7 +271,7 @@ async function joinRoom() {
     const text = result.Text ?? result.text;
     const version = result.Version ?? result.version;
     const users = result.Users ?? result.users;
-    roomNameEl.textContent = `SealCode 🦭 — ${name}`;
+    roomNameEl.textContent = name;
     languageSelect.value = language;
     setLanguage(language);
     setText(text || '');

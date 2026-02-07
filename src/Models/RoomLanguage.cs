@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Frozen;
+
 namespace Models;
 
 /// <summary>
@@ -5,20 +8,6 @@ namespace Models;
 /// </summary>
 public readonly record struct RoomLanguage
 {
-    /// <summary>
-    /// The C# language option.
-    /// </summary>
-#pragma warning disable IDE1006 // Naming Styles
-    public static readonly RoomLanguage CSharp = new("csharp");
-#pragma warning restore IDE1006 // Naming Styles
-
-    /// <summary>
-    /// The SQL language option.
-    /// </summary>
-#pragma warning disable IDE1006 // Naming Styles
-    public static readonly RoomLanguage Sql = new("sql");
-#pragma warning restore IDE1006 // Naming Styles
-
     /// <summary>
     /// Initializes a new instance of the <see cref="RoomLanguage"/> struct.
     /// </summary>
@@ -30,12 +19,13 @@ public readonly record struct RoomLanguage
         ArgumentNullException.ThrowIfNull(value);
 
         var normalized = value.Trim().ToLowerInvariant();
-        Value = normalized switch
+
+        if (!_validLanguages.Contains(normalized))
         {
-            "csharp" => CSharp.Value,
-            "sql" => Sql.Value,
-            _ => throw new ArgumentException("Invalid language", nameof(value))
-        };
+            throw new ArgumentException("Invalid language", nameof(value));
+        }
+
+        Value = normalized;
     }
 
     /// <summary>
@@ -45,4 +35,5 @@ public readonly record struct RoomLanguage
 
     /// <inheritdoc />
     public override string ToString() => Value;
+    private static readonly FrozenSet<string> _validLanguages = (new[] { "csharp", "sql" }).ToFrozenSet();
 }

@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Abstractions;
 using Models;
-using System.Threading;
 
 namespace Transport;
 
