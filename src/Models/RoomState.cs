@@ -17,6 +17,7 @@ public sealed class RoomState
     /// <param name="version">The room version.</param>
     /// <param name="lastUpdatedUtc">The last updated timestamp in UTC.</param>
     /// <param name="createdBy">The admin that created the room.</param>
+    /// <param name="yjsState">The serialized Yjs document state (full update).</param>
     public RoomState(
         RoomId roomId,
         RoomName name,
@@ -24,7 +25,8 @@ public sealed class RoomState
         RoomText text,
         RoomVersion version,
         DateTimeOffset lastUpdatedUtc,
-        CreatedBy createdBy)
+        CreatedBy createdBy,
+        byte[]? yjsState = null)
     {
         RoomId = roomId;
         Name = name;
@@ -33,6 +35,7 @@ public sealed class RoomState
         Version = version;
         LastUpdatedUtc = lastUpdatedUtc;
         CreatedBy = createdBy;
+        YjsState = yjsState ?? [];
     }
 
     /// <summary>
@@ -62,6 +65,11 @@ public sealed class RoomState
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the version is less than 1.</exception>
     public RoomVersion Version { get; private set; }
+
+    /// <summary>
+    /// Gets the serialized Yjs document state (full update).
+    /// </summary>
+    public byte[] YjsState { get; private set; }
 
     /// <summary>
     /// Gets the last updated timestamp in UTC.
@@ -173,6 +181,26 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             Language = language;
+            Version = Version.Next();
+            LastUpdatedUtc = updatedUtc;
+            return Version;
+        }
+    }
+
+    /// <summary>
+    /// Updates the stored Yjs state and text snapshot, bumping the version.
+    /// </summary>
+    /// <param name="state">The serialized Yjs document state.</param>
+    /// <param name="text">The plain text snapshot.</param>
+    /// <param name="updatedUtc">The update timestamp in UTC.</param>
+    /// <returns>The new room version.</returns>
+    public RoomVersion UpdateYjsState(byte[] state, RoomText text, DateTimeOffset updatedUtc)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        lock (_versionGuard)
+        {
+            YjsState = state;
+            Text = text;
             Version = Version.Next();
             LastUpdatedUtc = updatedUtc;
             return Version;

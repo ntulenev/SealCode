@@ -66,6 +66,7 @@ public sealed class RoomHub : Hub
         string language;
         string text;
         string createdBy;
+        string? yjsState;
         int version;
 
         try
@@ -83,6 +84,7 @@ public sealed class RoomHub : Hub
         text = room.Text.Value;
         createdBy = room.CreatedBy.Value;
         version = room.Version.Value;
+        yjsState = room.YjsState.Length > 0 ? Convert.ToBase64String(room.YjsState) : null;
 
         Context.Items["roomId"] = roomId;
         Context.Items["displayName"] = displayName;
@@ -95,7 +97,7 @@ public sealed class RoomHub : Hub
 
         _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, roomName, displayName);
 
-        return new JoinRoomResult(roomName, language, text, version, usersSnapshot, createdBy);
+        return new JoinRoomResult(roomName, language, text, version, usersSnapshot, createdBy, yjsState);
     }
 
     /// <summary>
@@ -136,6 +138,63 @@ public sealed class RoomHub : Hub
         var cancellationToken = Context.ConnectionAborted;
         await Clients.GroupExcept(roomId, Context.ConnectionId)
             .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies a Yjs update and stores the latest Yjs state for new joiners.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <param name="updateBase64">The incremental Yjs update (base64).</param>
+    /// <param name="stateBase64">The full Yjs document state (base64).</param>
+    /// <param name="textSnapshot">The plain text snapshot of the document.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
+    [HubMethodName("UpdateYjs")]
+    public async Task UpdateYjsAsync(string roomId, string updateBase64, string stateBase64, string textSnapshot)
+    {
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            throw new HubException("Room id required");
+        }
+
+        if (string.IsNullOrWhiteSpace(updateBase64))
+        {
+            throw new HubException("Update payload required");
+        }
+
+        if (string.IsNullOrWhiteSpace(stateBase64))
+        {
+            throw new HubException("State payload required");
+        }
+
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        {
+            throw new HubException("Room not found");
+        }
+
+        byte[] update;
+        byte[] state;
+        try
+        {
+            update = Convert.FromBase64String(updateBase64);
+            state = Convert.FromBase64String(stateBase64);
+        }
+        catch (FormatException)
+        {
+            throw new HubException("Invalid Yjs payload");
+        }
+
+        var author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
+            ? name.Value
+            : "unknown";
+
+        var text = textSnapshot ?? string.Empty;
+        var newVersion = room.UpdateYjsState(state, new RoomText(text), DateTimeOffset.UtcNow).Value;
+
+        var cancellationToken = Context.ConnectionAborted;
+        await Clients.Group(roomId)
+            .SendAsync("YjsUpdated", updateBase64, newVersion, author, cancellationToken)
             .ConfigureAwait(false);
     }
 

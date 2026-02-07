@@ -1,4 +1,8 @@
-﻿const connectionStatusEl = document.getElementById('connectionStatus');
+﻿import * as Y from 'https://esm.sh/yjs@13.6.29';
+import { MonacoBinding } from 'https://esm.sh/y-monaco@0.1.6';
+import { Awareness } from 'https://esm.sh/y-protocols@1.0.7/awareness';
+
+const connectionStatusEl = document.getElementById('connectionStatus');
 const roomNameEl = document.getElementById('roomName');
 const createdByEl = document.getElementById('createdBy');
 const participantsList = document.getElementById('participantsList');
@@ -14,8 +18,6 @@ const roomId = window.location.pathname.split('/').pop();
 let displayName = '';
 let currentVersion = 0;
 let isApplyingRemoteUpdate = false;
-let pendingText = null;
-let pendingTimer = null;
 let cursorTimer = null;
 let currentUsers = [];
 const cursorPositions = {};
@@ -31,14 +33,50 @@ let editor = null;
 let model = null;
 let editorReadyResolve;
 const editorReady = new Promise((resolve) => { editorReadyResolve = resolve; });
+let ydoc = null;
+let ytext = null;
+let awareness = null;
+let monacoBinding = null;
+let pendingYjsStateTimer = null;
+let pendingYjsUpdates = [];
+let isBootstrapping = false;
+let syncTimer = null;
 
 const connection = new signalR.HubConnectionBuilder()
   .withUrl('/roomHub')
   .withAutomaticReconnect()
   .build();
 
+window.__debugYjsSend = () => {
+  if (!ydoc) return false;
+  scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
+  return true;
+};
+
 function setStatus(status) {
   connectionStatusEl.textContent = status;
+}
+
+function base64FromUint8(data) {
+  if (!data || data.length === 0) return '';
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function uint8FromBase64(base64) {
+  if (!base64) return new Uint8Array();
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function truncateName(name) {
@@ -214,13 +252,98 @@ function setText(text) {
   renderRemoteCarets();
 }
 
+function scheduleYjsUpdateSend(update) {
+  if (!update) return;
+  pendingYjsUpdates.push(update);
+  if (pendingYjsStateTimer) return;
+  pendingYjsStateTimer = setTimeout(async () => {
+    if (connection.state !== signalR.HubConnectionState.Connected) {
+      pendingYjsStateTimer = null;
+      return;
+    }
+    const updates = pendingYjsUpdates;
+    pendingYjsUpdates = [];
+    pendingYjsStateTimer = null;
+    if (!ydoc || !ytext) return;
+    try {
+      const merged = updates.length === 1
+        ? updates[0]
+        : (Y.mergeUpdates ? Y.mergeUpdates(updates) : Y.encodeStateAsUpdate(ydoc));
+      const updateBase64 = base64FromUint8(merged);
+      const stateBase64 = base64FromUint8(Y.encodeStateAsUpdate(ydoc));
+      const snapshot = ytext.toString();
+      await connection.invoke('UpdateYjs', roomId, updateBase64, stateBase64, snapshot);
+    } catch (err) {
+      console.error('Failed to send Yjs update.', err);
+      joinError.textContent = 'Failed to sync changes. Try refreshing.';
+      joinError.classList.remove('hidden');
+    }
+  }, 60);
+}
+
+
+function startYjsSync() {
+  if (!ydoc) return;
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(() => {
+    if (!ydoc) return;
+    if (connection.state !== signalR.HubConnectionState.Connected) return;
+    scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
+  }, 1500);
+}
+
+function initializeYjs(text, stateBase64) {
+  if (!model) return;
+  if (monacoBinding) {
+    monacoBinding.destroy();
+    monacoBinding = null;
+  }
+  if (ydoc) {
+    ydoc.destroy();
+  }
+  ydoc = new Y.Doc();
+  ytext = ydoc.getText('monaco');
+  awareness = new Awareness(ydoc);
+  if (displayName) {
+    awareness.setLocalStateField('user', { name: displayName });
+  }
+  monacoBinding = new MonacoBinding(ytext, model, new Set([editor]), awareness);
+
+  ydoc.on('update', (update, origin) => {
+    if (isBootstrapping) return;
+    if (origin === 'remote') return;
+    scheduleYjsUpdateSend(update);
+  });
+
+  isBootstrapping = true;
+  if (stateBase64) {
+    const update = uint8FromBase64(stateBase64);
+    if (update.length > 0) {
+      isApplyingRemoteUpdate = true;
+      Y.applyUpdate(ydoc, update, 'remote');
+      isApplyingRemoteUpdate = false;
+    }
+  } else if (text) {
+    ydoc.transact(() => {
+      ytext.insert(0, text);
+    }, 'init');
+  }
+  setText(ytext.toString());
+  isBootstrapping = false;
+}
+
 function applyRemoteCursorAdjustment(changes) {
-  if (!changes || !changes.length) return;
-  const sorted = [...changes].sort((a, b) => a.rangeOffset - b.rangeOffset);
+  if (!changes || !changes.length || !model) return;
+  const sorted = [...changes].sort((a, b) => (a.rangeOffset ?? 0) - (b.rangeOffset ?? 0));
   for (const change of sorted) {
-    const start = change.rangeOffset;
-    const end = change.rangeOffset + change.rangeLength;
-    const delta = (change.text || '').length - change.rangeLength;
+    const start = typeof change.rangeOffset === 'number'
+      ? change.rangeOffset
+      : model.getOffsetAt({ lineNumber: change.range.startLineNumber, column: change.range.startColumn });
+    const length = typeof change.rangeLength === 'number'
+      ? change.rangeLength
+      : model.getOffsetAt({ lineNumber: change.range.endLineNumber, column: change.range.endColumn }) - start;
+    const end = start + length;
+    const delta = (change.text || '').length - length;
 
     for (const [name, offset] of Object.entries(cursorPositions)) {
       if (name === displayName || typeof offset !== 'number') continue;
@@ -235,8 +358,9 @@ function applyRemoteCursorAdjustment(changes) {
 }
 
 function initMonaco() {
-  require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
-  require(['vs/editor/editor.main'], () => {
+  const amdRequire = window.require;
+  amdRequire.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
+  amdRequire(['vs/editor/editor.main'], () => {
     model = monaco.editor.createModel('', 'csharp');
     editor = monaco.editor.create(editorHost, {
       model,
@@ -247,25 +371,11 @@ function initMonaco() {
       fontSize: 14
     });
 
-    editor.onDidChangeModelContent(() => {
+    editor.onDidChangeModelContent((event) => {
       if (isApplyingRemoteUpdate) return;
-      pendingText = model.getValue();
       hideRemoteCaretsTemporarily();
-      applyRemoteCursorAdjustment(editor.getModel().getAllDecorations ? [] : []);
+      applyRemoteCursorAdjustment(event.changes);
       scheduleCursorSend();
-      if (pendingTimer) return;
-      pendingTimer = setTimeout(async () => {
-        try {
-          await connection.invoke('UpdateText', roomId, pendingText, currentVersion);
-          currentVersion += 1;
-          versionNumberEl.textContent = currentVersion;
-        } catch {
-          // ignore errors; reconnect handler will resync
-        } finally {
-          pendingTimer = null;
-          pendingText = null;
-        }
-      }, 200);
     });
 
     editor.onDidChangeCursorSelection(() => {
@@ -290,18 +400,20 @@ async function joinRoom() {
     const version = result.Version ?? result.version;
     const users = result.Users ?? result.users;
     const createdBy = result.CreatedBy ?? result.createdBy;
+    const yjsState = result.YjsState ?? result.yjsState;
     roomNameEl.textContent = name;
     if (createdByEl) {
       createdByEl.textContent = createdBy || 'unknown';
     }
     languageSelect.value = language;
     setLanguage(language);
-    setText(text || '');
+    initializeYjs(text || '', yjsState);
     currentVersion = version;
     versionNumberEl.textContent = currentVersion;
     renderUsers(users);
     joinOverlay.classList.add('hidden');
     sendCursor();
+    startYjsSync();
   } catch (err) {
     joinError.textContent = err?.message || 'Failed to join room.';
     joinError.classList.remove('hidden');
@@ -314,6 +426,10 @@ connection.onreconnected(async () => {
   if (displayName) {
     await joinRoom();
   }
+  if (ydoc) {
+    scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
+  }
+  startYjsSync();
 });
 connection.onclose(() => setStatus('disconnected'));
 
@@ -329,12 +445,18 @@ connection.on('UserLeft', (name, users) => {
   renderRemoteCarets();
 });
 
-connection.on('TextUpdated', (newText, version, author) => {
-  setText(newText || '');
+connection.on('YjsUpdated', (updateBase64, version, author) => {
   currentVersion = version;
   versionNumberEl.textContent = currentVersion;
   renderUsers(currentUsers);
+  if (!ydoc) return;
+  if (author === displayName) return;
   markActiveEditor(author);
+  const update = uint8FromBase64(updateBase64);
+  if (update.length === 0) return;
+  isApplyingRemoteUpdate = true;
+  Y.applyUpdate(ydoc, update, 'remote');
+  isApplyingRemoteUpdate = false;
 });
 
 connection.on('LanguageUpdated', (language, version) => {
