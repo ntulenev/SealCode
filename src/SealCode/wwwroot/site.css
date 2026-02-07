@@ -136,8 +136,8 @@ a:hover { text-decoration: underline; }
   max-width: 780px;
   padding: 0 24px;
   text-align: center;
-  font-size: 12px;
-  letter-spacing: 0.2px;
-  color: var(--muted);
-  opacity: 0.85;
+  font-size: 14px;
+  letter-spacing: normal;
+  color: var(--text);
+  opacity: 1;
 }
