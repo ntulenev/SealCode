@@ -102,8 +102,8 @@
 }
 
 .monaco-host {
-  min-height: 60vh;
-  height: 60vh;
+  min-height: 120vh;
+  height: 120vh;
   border-radius: 12px;
   border: 1px solid #2f343d;
   background: #0f131a;
