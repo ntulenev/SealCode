@@ -217,19 +217,6 @@ public sealed class RoomState
         }
     }
 
-    /// <summary>
-    /// Updates the stored Yjs state and text snapshot, bumping the version.
-    /// </summary>
-    /// <param name="state">The serialized Yjs document state.</param>
-    /// <param name="text">The plain text snapshot.</param>
-    /// <param name="updatedUtc">The update timestamp in UTC.</param>
-    /// <returns>The new room version.</returns>
-    public RoomVersion UpdateYjsState(byte[] state, RoomText text, DateTimeOffset updatedUtc)
-    {
-        _ = TryUpdateYjsState(state, text, updatedUtc, out var version);
-        return version;
-    }
-
     private readonly Lock _addGuard = new();
     private readonly Lock _versionGuard = new();
     private ImmutableDictionary<ConnectionId, DisplayName> _connectedUsers = [];
