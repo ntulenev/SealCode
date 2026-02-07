@@ -1,19 +1,30 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="Abstractions\**\*.cs" />
-    <Compile Remove="Models\**\*.cs" />
-    <Compile Remove="Logic\**\*.cs" />
-    <Compile Remove="Transport\**\*.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
-    <ProjectReference Include="..\Logic\Logic.csproj" />
-    <ProjectReference Include="..\Models\Models.csproj" />
-    <ProjectReference Include="..\Transport\Transport.csproj" />
-  </ItemGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+	<PropertyGroup>
+		<NuGetAuditMode>all</NuGetAuditMode>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+		<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Remove="Abstractions\**\*.cs" />
+		<Compile Remove="Models\**\*.cs" />
+		<Compile Remove="Logic\**\*.cs" />
+		<Compile Remove="Transport\**\*.cs" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\Logic\Logic.csproj" />
+		<ProjectReference Include="..\Models\Models.csproj" />
+		<ProjectReference Include="..\Transport\Transport.csproj" />
+	</ItemGroup>
 </Project>

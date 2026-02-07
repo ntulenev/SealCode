@@ -20,10 +20,7 @@ builder.Services.AddOptions<ApplicationConfiguration>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-builder.Services.AddSignalR(options =>
-    {
-        options.MaximumReceiveMessageSize = 1024 * 1024;
-    })
+builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 1024 * 1024)
     .AddJsonProtocol(options =>
     {
         options.PayloadSerializerOptions.PropertyNamingPolicy = null;

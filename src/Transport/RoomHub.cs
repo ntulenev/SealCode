@@ -226,7 +226,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        language = (language ?? "").Trim().ToLowerInvariant();
+        language = language.Trim().ToLowerInvariant();
         if (language is not "csharp" and not "sql")
         {
             throw new HubException("Invalid language");

@@ -36,6 +36,7 @@ public interface IRoomRegistry
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="reason">The deletion reason.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>True when removed; otherwise false.</returns>
     Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken);
 }

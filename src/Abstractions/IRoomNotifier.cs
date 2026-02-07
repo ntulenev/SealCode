@@ -12,5 +12,6 @@ public interface IRoomNotifier
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="reason">The deletion reason.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     Task RoomKilledAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken);
 }

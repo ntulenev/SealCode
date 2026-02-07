@@ -1,5 +1,3 @@
-using System;
-
 namespace Models;
 
 /// <summary>
@@ -13,6 +11,22 @@ public sealed class AddRoomUserException : Exception
     /// <param name="message">The error message.</param>
     public AddRoomUserException(string message)
         : base(message)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AddRoomUserException"/> class.
+    /// </summary>
+    public AddRoomUserException()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AddRoomUserException"/> class.
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    /// <param name="innerException">The inner Exception.</param>
+    public AddRoomUserException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }
