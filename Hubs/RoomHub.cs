@@ -32,7 +32,7 @@ public sealed class RoomHub : Hub
         }
 
         var connectionId = Context.ConnectionId;
-        var maxUsers = Math.Max(1, _settings.Value.MaxUsersPerRoom);
+        var maxUsers = Math.Clamp(_settings.Value.MaxUsersPerRoom, 1, 5);
 
         string[] usersSnapshot;
         string roomName;
@@ -45,7 +45,7 @@ public sealed class RoomHub : Hub
             var alreadyInRoom = room.ConnectedUsers.ContainsKey(connectionId);
             if (!alreadyInRoom && room.ConnectedUsers.Count >= maxUsers)
             {
-                throw new HubException("Room is full");
+                throw new HubException($"Room is full (max {maxUsers})");
             }
 
             room.ConnectedUsers[connectionId] = displayName;
@@ -115,6 +115,31 @@ public sealed class RoomHub : Hub
         }
 
         await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion);
+    }
+
+    public async Task UpdateCursor(string roomId, int position)
+    {
+        if (!_registry.TryGetRoom(roomId, out var room))
+        {
+            throw new HubException("Room not found");
+        }
+
+        string? author = null;
+        lock (room)
+        {
+            if (room.ConnectedUsers.TryGetValue(Context.ConnectionId, out var name))
+            {
+                author = name;
+            }
+        }
+
+        if (author is null)
+        {
+            return;
+        }
+
+        await Clients.GroupExcept(roomId, Context.ConnectionId)
+            .SendAsync("CursorUpdated", author, position);
     }
 
     public async Task LeaveRoom(string roomId)

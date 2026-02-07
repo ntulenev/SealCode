@@ -12,7 +12,7 @@
   <main class="room-container">
     <header class="room-header">
       <div>
-        <h1 id="roomName">Room</h1>
+        <h1 id="roomName">SealCode 🦭</h1>
         <p class="muted">Connection: <span id="connectionStatus">disconnected</span></p>
       </div>
       <div class="room-meta">
@@ -27,13 +27,15 @@
       </div>
     </header>
 
-  <section class="room-main">
-      <aside class="participants">
+    <section class="room-main">
+      <section class="participants-bar">
         <h3>Participants</h3>
         <ul id="participantsList"></ul>
-      </aside>
+      </section>
       <section class="editor">
         <div class="editor-wrap">
+          <div id="lineNumbers" class="line-numbers" aria-hidden="true"></div>
+          <div id="remoteCarets" class="remote-carets" aria-hidden="true"></div>
           <pre class="code-preview" aria-hidden="true"><code id="codePreview" class="language-csharp hljs"></code></pre>
           <textarea id="editor" placeholder="Start typing..." spellcheck="false"></textarea>
         </div>

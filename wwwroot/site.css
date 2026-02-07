@@ -67,3 +67,32 @@ a {
 }
 
 a:hover { text-decoration: underline; }
+
+.page-subtitle {
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.center {
+  text-align: center;
+}
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #121826;
+  color: #e5e7eb;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+}
+
+.btn-link:hover {
+  text-decoration: none;
+  background: #0f172a;
+}

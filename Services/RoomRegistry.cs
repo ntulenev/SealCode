@@ -24,10 +24,16 @@ public sealed class RoomRegistry
     public RoomState CreateRoom(string name, string language)
     {
         var roomId = Guid.NewGuid().ToString("N");
+        var trimmedName = (name ?? string.Empty).Trim();
+        if (trimmedName.Length > 20)
+        {
+            trimmedName = $"{trimmedName[..20]}...";
+        }
+
         var room = new RoomState
         {
             RoomId = roomId,
-            Name = name.Trim(),
+            Name = trimmedName,
             Language = language,
             Text = "",
             Version = 1,
