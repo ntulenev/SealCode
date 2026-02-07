@@ -142,6 +142,30 @@ public sealed class RoomHub : Hub
             .SendAsync("CursorUpdated", author, position);
     }
 
+    public async Task UpdateSelection(string roomId, bool isMultiLine)
+    {
+        if (!_registry.TryGetRoom(roomId, out var room))
+        {
+            throw new HubException("Room not found");
+        }
+
+        string? author = null;
+        lock (room)
+        {
+            if (room.ConnectedUsers.TryGetValue(Context.ConnectionId, out var name))
+            {
+                author = name;
+            }
+        }
+
+        if (author is null)
+        {
+            return;
+        }
+
+        await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine);
+    }
+
     public async Task LeaveRoom(string roomId)
     {
         await RemoveFromRoomAsync(roomId, Context.ConnectionId, notify: true);

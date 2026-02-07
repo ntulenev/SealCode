@@ -23,6 +23,7 @@ const caretPalette = ['#fbbf24', '#22d3ee', '#34d399', '#f472b6', '#a78bfa', '#f
 let hideRemoteCarets = false;
 let hideRemoteTimer = null;
 const activeEditors = new Map();
+const selectingUsers = new Map();
 
 let editor = null;
 let model = null;
@@ -58,6 +59,9 @@ function renderUsers(users) {
     li.title = user;
     if (activeEditors.get(user) && user !== displayName) {
       li.classList.add('active');
+    }
+    if (selectingUsers.get(user)) {
+      li.classList.add('copied');
     }
     if (typeof pos === 'number' && model) {
       const lc = getLineColFromOffset(pos);
@@ -146,6 +150,16 @@ function markActiveEditor(name) {
       renderUsers(currentUsers);
     }
   }, 1300);
+}
+
+function markSelecting(name, isSelecting) {
+  if (!name) return;
+  if (isSelecting) {
+    selectingUsers.set(name, Date.now());
+  } else {
+    selectingUsers.delete(name);
+  }
+  renderUsers(currentUsers);
 }
 
 function sendCursor() {
@@ -238,6 +252,10 @@ function initMonaco() {
 
     editor.onDidChangeCursorSelection(() => {
       scheduleCursorSend();
+      const sel = editor.getSelection();
+      if (!sel) return;
+      const isMultiLine = sel.startLineNumber !== sel.endLineNumber;
+      connection.invoke('UpdateSelection', roomId, isMultiLine).catch(() => {});
     });
 
     editorReadyResolve();
@@ -309,6 +327,10 @@ connection.on('CursorUpdated', (name, position) => {
   cursorPositions[name] = position;
   renderUsers(currentUsers);
   renderRemoteCarets();
+});
+
+connection.on('UserSelection', (name, isMultiLine) => {
+  markSelecting(name, isMultiLine);
 });
 
 connection.on('RoomKilled', (reason) => {
