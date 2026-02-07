@@ -13,10 +13,6 @@ namespace Logic;
 /// </summary>
 public sealed class RoomRegistry : IRoomRegistry
 {
-    private readonly ConcurrentDictionary<RoomId, RoomState> _rooms = new();
-    private readonly ILogger<RoomRegistry> _logger;
-    private readonly IRoomNotifier _notifier;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="RoomRegistry"/> class.
     /// </summary>
@@ -63,8 +59,8 @@ public sealed class RoomRegistry : IRoomRegistry
             RoomId = RoomId.New(),
             Name = name,
             Language = language,
-            Text = RoomText.From(string.Empty),
-            Version = RoomVersion.From(1),
+            Text = new RoomText(string.Empty),
+            Version = new RoomVersion(1),
             LastUpdatedUtc = DateTime.UtcNow
         };
 
@@ -101,4 +97,8 @@ public sealed class RoomRegistry : IRoomRegistry
         await _notifier.RoomKilledAsync(roomId, reason);
         return true;
     }
+
+    private readonly ConcurrentDictionary<RoomId, RoomState> _rooms = new();
+    private readonly ILogger<RoomRegistry> _logger;
+    private readonly IRoomNotifier _notifier;
 }

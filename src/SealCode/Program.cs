@@ -132,7 +132,7 @@ app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry) 
         return Results.BadRequest(new { error = "Name is required" });
     }
 
-    var language = RoomLanguage.From(payload.Language ?? "csharp");
+    var language = new RoomLanguage(payload.Language ?? "csharp");
     var name = RoomName.Create(payload.Name);
     var room = registry.CreateRoom(name, language);
     return Results.Json(new
@@ -150,7 +150,7 @@ app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId
         return Results.Unauthorized();
     }
 
-    var deleted = await registry.DeleteRoom(RoomId.From(roomId), RoomDeletionReason.From("Room deleted by admin"));
+    var deleted = await registry.DeleteRoom(new RoomId(roomId), new RoomDeletionReason("Room deleted by admin"));
     return deleted ? Results.Ok() : Results.NotFound();
 });
 
@@ -175,29 +175,3 @@ app.MapGet("/health", () => Results.Ok("ok"));
 app.MapHub<RoomHub>("/roomHub");
 
 app.Run();
-
-public sealed class ApplicationConfigurationValidator : IValidateOptions<ApplicationConfiguration>
-{
-    public ValidateOptionsResult Validate(string? name, ApplicationConfiguration options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        var errors = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(options.AdminPassword))
-        {
-            errors.Add("AdminPassword is required.");
-        }
-        else if (string.Equals(options.AdminPassword, "change-me", StringComparison.OrdinalIgnoreCase))
-        {
-            errors.Add("AdminPassword must be changed from the default value.");
-        }
-
-        if (options.MaxUsersPerRoom is < 1 or > 5)
-        {
-            errors.Add("MaxUsersPerRoom must be between 1 and 5.");
-        }
-
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
-    }
-}

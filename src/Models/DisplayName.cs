@@ -1,26 +1,27 @@
-namespace Transport.Models;
+namespace Models;
 
 /// <summary>
-/// Represents a display name for transport payloads.
+/// Represents a display name.
 /// </summary>
-public readonly record struct DisplayNameDto
+public readonly record struct DisplayName
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="DisplayNameDto"/> struct.
+    /// Initializes a new instance of the <see cref="DisplayName"/> struct.
     /// </summary>
-    /// <param name="value">The display name.</param>
+    /// <param name="value">The display name value.</param>
     /// <exception cref="ArgumentException">Thrown when the value is empty or whitespace.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
-    public DisplayNameDto(string value)
+    public DisplayName(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        if (string.IsNullOrWhiteSpace(value))
+        var trimmed = value.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
         {
             throw new ArgumentException("Display name is required", nameof(value));
         }
 
-        Value = value;
+        Value = trimmed;
     }
 
     /// <summary>

@@ -9,8 +9,6 @@ namespace Transport;
 /// </summary>
 public sealed class SignalRRoomNotifier : IRoomNotifier
 {
-    private readonly IHubContext<RoomHub> _hub;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="SignalRRoomNotifier"/> class.
     /// </summary>
@@ -36,4 +34,6 @@ public sealed class SignalRRoomNotifier : IRoomNotifier
 
         return _hub.Clients.Group(roomId.Value).SendAsync("RoomKilled", reason.Value);
     }
+
+    private readonly IHubContext<RoomHub> _hub;
 }

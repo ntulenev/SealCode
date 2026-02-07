@@ -11,10 +11,6 @@ namespace Transport;
 
 public sealed class RoomHub : Hub
 {
-    private readonly IRoomRegistry _registry;
-    private readonly IOptions<ApplicationConfiguration> _settings;
-    private readonly ILogger<RoomHub> _logger;
-
     public RoomHub(IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, ILogger<RoomHub> logger)
     {
         _registry = registry;
@@ -232,5 +228,7 @@ public sealed class RoomHub : Hub
         }
     }
 
-    public sealed record JoinRoomResult(string Name, string Language, string Text, int Version, string[] Users);
+    private readonly IRoomRegistry _registry;
+    private readonly IOptions<ApplicationConfiguration> _settings;
+    private readonly ILogger<RoomHub> _logger;
 }

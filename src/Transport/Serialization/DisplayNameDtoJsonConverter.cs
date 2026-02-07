@@ -14,7 +14,7 @@ public sealed class DisplayNameDtoJsonConverter : JsonConverter<DisplayNameDto>
             throw new JsonException("DisplayName must be a string.");
         }
 
-        return DisplayNameDto.From(reader.GetString()!);
+        return new DisplayNameDto(reader.GetString()!);
     }
 
     public override void Write(Utf8JsonWriter writer, DisplayNameDto value, JsonSerializerOptions options)
