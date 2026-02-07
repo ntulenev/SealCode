@@ -62,6 +62,13 @@
   color: #e5e7eb;
 }
 
+.participants-bar li.active {
+  background: #0b2d1c;
+  border-color: #22c55e;
+  color: #d1fae5;
+  font-weight: 700;
+}
+
 .monaco-host {
   min-height: 60vh;
   height: 60vh;

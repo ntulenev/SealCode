@@ -20,6 +20,9 @@ let currentUsers = [];
 const cursorPositions = {};
 const caretColors = {};
 const caretPalette = ['#fbbf24', '#22d3ee', '#34d399', '#f472b6', '#a78bfa', '#fb7185'];
+let hideRemoteCarets = false;
+let hideRemoteTimer = null;
+const activeEditors = new Map();
 
 let editor = null;
 let model = null;
@@ -53,6 +56,9 @@ function renderUsers(users) {
     const pos = cursorPositions[user];
     const display = truncateName(user);
     li.title = user;
+    if (activeEditors.get(user) && user !== displayName) {
+      li.classList.add('active');
+    }
     if (typeof pos === 'number' && model) {
       const lc = getLineColFromOffset(pos);
       li.textContent = `${display} (${lc.line}:${lc.col})`;
@@ -89,6 +95,10 @@ function ensureCaretStyles() {
 
 function renderRemoteCarets() {
   if (!editor || !model) return;
+  if (hideRemoteCarets) {
+    editor.remoteCaretDecorations = editor.deltaDecorations(editor.remoteCaretDecorations || [], []);
+    return;
+  }
   const decorations = [];
   const styleEl = ensureCaretStyles();
   let css = '';
@@ -113,6 +123,29 @@ function renderRemoteCarets() {
 
   styleEl.textContent = css;
   editor.remoteCaretDecorations = editor.deltaDecorations(editor.remoteCaretDecorations || [], decorations);
+}
+
+function hideRemoteCaretsTemporarily() {
+  hideRemoteCarets = true;
+  renderRemoteCarets();
+  if (hideRemoteTimer) clearTimeout(hideRemoteTimer);
+  hideRemoteTimer = setTimeout(() => {
+    hideRemoteCarets = false;
+    renderRemoteCarets();
+  }, 800);
+}
+
+function markActiveEditor(name) {
+  if (!name || name === displayName) return;
+  activeEditors.set(name, Date.now());
+  renderUsers(currentUsers);
+  setTimeout(() => {
+    const last = activeEditors.get(name);
+    if (last && Date.now() - last > 1200) {
+      activeEditors.delete(name);
+      renderUsers(currentUsers);
+    }
+  }, 1300);
 }
 
 function sendCursor() {
@@ -149,6 +182,26 @@ function setText(text) {
   renderRemoteCarets();
 }
 
+function applyRemoteCursorAdjustment(changes) {
+  if (!changes || !changes.length) return;
+  const sorted = [...changes].sort((a, b) => a.rangeOffset - b.rangeOffset);
+  for (const change of sorted) {
+    const start = change.rangeOffset;
+    const end = change.rangeOffset + change.rangeLength;
+    const delta = (change.text || '').length - change.rangeLength;
+
+    for (const [name, offset] of Object.entries(cursorPositions)) {
+      if (name === displayName || typeof offset !== 'number') continue;
+      if (offset <= start) continue;
+      if (offset >= end) {
+        cursorPositions[name] = offset + delta;
+      } else {
+        cursorPositions[name] = start + Math.max(0, (change.text || '').length);
+      }
+    }
+  }
+}
+
 function initMonaco() {
   require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
   require(['vs/editor/editor.main'], () => {
@@ -165,6 +218,8 @@ function initMonaco() {
     editor.onDidChangeModelContent(() => {
       if (isApplyingRemoteUpdate) return;
       pendingText = model.getValue();
+      hideRemoteCaretsTemporarily();
+      applyRemoteCursorAdjustment(editor.getModel().getAllDecorations ? [] : []);
       scheduleCursorSend();
       if (pendingTimer) return;
       pendingTimer = setTimeout(async () => {
@@ -239,6 +294,7 @@ connection.on('TextUpdated', (newText, version, author) => {
   currentVersion = version;
   versionNumberEl.textContent = currentVersion;
   renderUsers(currentUsers);
+  markActiveEditor(author);
 });
 
 connection.on('LanguageUpdated', (language, version) => {
