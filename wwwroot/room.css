@@ -62,122 +62,13 @@
   color: #e5e7eb;
 }
 
-.editor-wrap {
-  position: relative;
+.monaco-host {
   min-height: 60vh;
+  height: 60vh;
   border-radius: 12px;
   border: 1px solid #2f343d;
   background: #0f131a;
   overflow: hidden;
-}
-
-.editor textarea,
-.code-preview {
-  width: 100%;
-  min-height: 60vh;
-  border-radius: 0;
-  border: none;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 14px;
-  line-height: 1.5;
-  tab-size: 2;
-}
-
-.code-preview {
-  position: absolute;
-  inset: 0 0 0 56px;
-  margin: 0;
-  background: transparent;
-  overflow: auto;
-  pointer-events: none;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  z-index: 0;
-  line-height: 1.5;
-  padding: 16px;
-}
-
-.editor textarea {
-  position: relative;
-  background: transparent;
-  color: transparent;
-  caret-color: #e5e7eb;
-  border-color: transparent;
-  padding: 16px;
-  resize: none;
-  overflow: auto;
-  z-index: 1;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  padding-left: 72px;
-}
-
-.code-preview code {
-  display: block;
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  tab-size: 2;
-  margin: 0;
-  padding: 0;
-}
-
-.code-preview code.hljs {
-  padding: 0 !important;
-  background: transparent !important;
-}
-
-.code-preview .hljs {
-  padding: 0 !important;
-  background: transparent !important;
-}
-
-.remote-carets {
-  position: absolute;
-  inset: 0 0 0 56px;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.remote-caret {
-  position: absolute;
-  width: 2px;
-  border-radius: 2px;
-  background: #fbbf24;
-  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.15);
-}
-
-.remote-caret-label {
-  position: absolute;
-  top: -18px;
-  left: 4px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: "IBM Plex Mono", monospace;
-  background: #111827;
-  color: #e5e7eb;
-  white-space: nowrap;
-}
-
-.line-numbers {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 56px;
-  padding: 16px 8px;
-  border: none;
-  border-radius: 0;
-  background: #0b0f15;
-  color: #6b7280;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 14px;
-  line-height: 1.5;
-  text-align: right;
-  overflow: hidden;
-  pointer-events: none;
-  white-space: pre;
 }
 
 .version {

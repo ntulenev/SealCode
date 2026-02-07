@@ -6,7 +6,7 @@
   <title>Room - SealCode</title>
   <link rel="stylesheet" href="/site.css" />
   <link rel="stylesheet" href="/room.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/atom-one-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
 </head>
 <body>
   <main class="room-container">
@@ -33,12 +33,7 @@
         <ul id="participantsList"></ul>
       </section>
       <section class="editor">
-        <div class="editor-wrap">
-          <div id="lineNumbers" class="line-numbers" aria-hidden="true"></div>
-          <div id="remoteCarets" class="remote-carets" aria-hidden="true"></div>
-          <pre class="code-preview" aria-hidden="true"><code id="codePreview" class="language-csharp hljs"></code></pre>
-          <textarea id="editor" placeholder="Start typing..." spellcheck="false"></textarea>
-        </div>
+        <div id="monacoEditor" class="monaco-host"></div>
       </section>
     </section>
   </main>
@@ -54,9 +49,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/csharp.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs/loader.min.js"></script>
   <script src="/room.js"></script>
 </body>
 </html>
