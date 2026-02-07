@@ -14,14 +14,15 @@
       </div>
       <img src="/Logo.png" alt="SealCode logo" />
     </header>
-    <p>Tiny self-hosted collaborative editor with rooms. Paste a room link to join.</p>
+    <p>Collaborative code-editor with rooms.</p>
     <div class="card">
       <label for="roomLink">Room link</label>
-      <input id="roomLink" type="text" placeholder="https://localhost:5001/room/abc123" />
+      <input id="roomLink" type="text" placeholder="Paste a room link to join" />
       <button id="goBtn">Go</button>
     </div>
     <p class="muted center"><a class="btn-link" href="/admin/login">Rooms Management</a></p>
   </main>
+  <footer class="tiny-footer">Personal pet project for private use · Not intended for public use</footer>
   <script>
     const roomLink = document.getElementById('roomLink');
     const goBtn = document.getElementById('goBtn');

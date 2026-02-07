@@ -32,7 +32,6 @@ public sealed class RoomHub : Hub
         _logger = logger;
     }
 
-#pragma warning disable IDE1006 // Naming Styles
     /// <summary>
     /// Joins the specified room with a display name.
     /// </summary>
@@ -40,8 +39,8 @@ public sealed class RoomHub : Hub
     /// <param name="displayName">The user display name.</param>
     /// <returns>The join result including the initial room state.</returns>
     /// <exception cref="HubException">Thrown when the room or inputs are invalid.</exception>
-    public async Task<JoinRoomResult> JoinRoom(string roomId, string displayName)
-#pragma warning restore IDE1006 // Naming Styles
+    [HubMethodName("JoinRoom")]
+    public async Task<JoinRoomResult> JoinRoomAsync(string roomId, string displayName)
     {
         if (string.IsNullOrWhiteSpace(roomId))
         {
@@ -86,9 +85,10 @@ public sealed class RoomHub : Hub
         Context.Items["roomId"] = roomId;
         Context.Items["displayName"] = displayName;
 
-        await Groups.AddToGroupAsync(connectionId.Value, roomId).ConfigureAwait(false);
+        var cancellationToken = Context.ConnectionAborted;
+        await Groups.AddToGroupAsync(connectionId.Value, roomId, cancellationToken).ConfigureAwait(false);
         await Clients.GroupExcept(roomId, connectionId.Value)
-            .SendAsync("UserJoined", displayName, usersSnapshot)
+            .SendAsync("UserJoined", displayName, usersSnapshot, cancellationToken)
             .ConfigureAwait(false);
 
         _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, roomName, displayName);
@@ -96,8 +96,6 @@ public sealed class RoomHub : Hub
         return new JoinRoomResult(roomName, language, text, version, usersSnapshot);
     }
 
-#pragma warning disable IDE1006 // Naming Styles
-#pragma warning disable IDE0060 // Remove unused parameter
     /// <summary>
     /// Updates the room text.
     /// </summary>
@@ -106,9 +104,8 @@ public sealed class RoomHub : Hub
     /// <param name="clientVersion">The client version.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
-    public async Task UpdateText(string roomId, string newText, int clientVersion)
-#pragma warning restore IDE0060 // Remove unused parameter
-#pragma warning restore IDE1006 // Naming Styles
+    [HubMethodName("UpdateText")]
+    public async Task UpdateTextAsync(string roomId, string newText, int clientVersion)
     {
         if (string.IsNullOrWhiteSpace(roomId))
         {
@@ -134,12 +131,12 @@ public sealed class RoomHub : Hub
 
             : "unknown";
 
+        var cancellationToken = Context.ConnectionAborted;
         await Clients.GroupExcept(roomId, Context.ConnectionId)
-            .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author)
+            .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author, cancellationToken)
             .ConfigureAwait(false);
     }
 
-#pragma warning disable IDE1006 // Naming Styles
     /// <summary>
     /// Sets the room language.
     /// </summary>
@@ -147,8 +144,8 @@ public sealed class RoomHub : Hub
     /// <param name="language">The language to set.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
-    public async Task SetLanguage(string roomId, string language)
-#pragma warning restore IDE1006 // Naming Styles
+    [HubMethodName("SetLanguage")]
+    public async Task SetLanguageAsync(string roomId, string language)
     {
         if (string.IsNullOrWhiteSpace(roomId))
         {
@@ -175,10 +172,10 @@ public sealed class RoomHub : Hub
         int newVersion;
         newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow).Value;
 
-        await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion).ConfigureAwait(false);
+        var cancellationToken = Context.ConnectionAborted;
+        await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion, cancellationToken).ConfigureAwait(false);
     }
 
-#pragma warning disable IDE1006 // Naming Styles
     /// <summary>
     /// Updates the cursor position for the current user.
     /// </summary>
@@ -186,8 +183,8 @@ public sealed class RoomHub : Hub
     /// <param name="position">The cursor position.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
-    public async Task UpdateCursor(string roomId, int position)
-#pragma warning restore IDE1006 // Naming Styles
+    [HubMethodName("UpdateCursor")]
+    public async Task UpdateCursorAsync(string roomId, int position)
     {
         if (string.IsNullOrWhiteSpace(roomId))
         {
@@ -215,12 +212,12 @@ public sealed class RoomHub : Hub
             return;
         }
 
+        var cancellationToken = Context.ConnectionAborted;
         await Clients.GroupExcept(roomId, Context.ConnectionId)
-            .SendAsync("CursorUpdated", author, position)
+            .SendAsync("CursorUpdated", author, position, cancellationToken)
             .ConfigureAwait(false);
     }
 
-#pragma warning disable IDE1006 // Naming Styles
     /// <summary>
     /// Updates the selection state for the current user.
     /// </summary>
@@ -228,8 +225,8 @@ public sealed class RoomHub : Hub
     /// <param name="isMultiLine">True if selection spans multiple lines; otherwise false.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
-    public async Task UpdateSelection(string roomId, bool isMultiLine)
-#pragma warning restore IDE1006 // Naming Styles
+    [HubMethodName("UpdateSelection")]
+    public async Task UpdateSelectionAsync(string roomId, bool isMultiLine)
     {
         if (string.IsNullOrWhiteSpace(roomId))
         {
@@ -252,24 +249,25 @@ public sealed class RoomHub : Hub
             return;
         }
 
-        await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine).ConfigureAwait(false);
+        var cancellationToken = Context.ConnectionAborted;
+        await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine, cancellationToken).ConfigureAwait(false);
     }
 
-#pragma warning disable IDE1006 // Naming Styles
     /// <summary>
     /// Leaves the specified room.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid.</exception>
-    public async Task LeaveRoom(string roomId)
+    [HubMethodName("LeaveRoom")]
+    public async Task LeaveRoomAsync(string roomId)
     {
         if (string.IsNullOrWhiteSpace(roomId))
         {
             throw new HubException("Room id required");
         }
 
-        await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
+        await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true, Context.ConnectionAborted).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -281,13 +279,13 @@ public sealed class RoomHub : Hub
     {
         if (Context.Items.TryGetValue("roomId", out var roomIdObj) && roomIdObj is string roomId)
         {
-            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
+            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true, Context.ConnectionAborted).ConfigureAwait(false);
         }
 
         await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
     }
 
-    private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify)
+    private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify, CancellationToken cancellationToken)
     {
         if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
@@ -303,11 +301,11 @@ public sealed class RoomHub : Hub
             usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
         }
 
-        await Groups.RemoveFromGroupAsync(connectionId.Value, roomId).ConfigureAwait(false);
+        await Groups.RemoveFromGroupAsync(connectionId.Value, roomId, cancellationToken).ConfigureAwait(false);
 
         if (notify && displayName is not null)
         {
-            await Clients.Group(roomId).SendAsync("UserLeft", displayName, usersSnapshot).ConfigureAwait(false);
+            await Clients.Group(roomId).SendAsync("UserLeft", displayName, usersSnapshot, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {DisplayName}", roomId, displayName);
         }
     }

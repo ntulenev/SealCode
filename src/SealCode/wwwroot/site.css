@@ -130,3 +130,14 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
   background: #0f172a;
 }
+
+.tiny-footer {
+  margin: 18px auto 28px;
+  max-width: 780px;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+  opacity: 0.85;
+}
