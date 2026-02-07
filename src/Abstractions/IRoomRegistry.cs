@@ -1,5 +1,6 @@
 using Models;
 
+
 namespace Abstractions;
 
 /// <summary>
@@ -7,11 +8,6 @@ namespace Abstractions;
 /// </summary>
 public interface IRoomRegistry
 {
-    /// <summary>
-    /// Gets all rooms indexed by room identifier.
-    /// </summary>
-    IReadOnlyDictionary<RoomId, RoomState> Rooms { get; }
-
     /// <summary>
     /// Creates a new room with the specified name and language.
     /// </summary>
@@ -29,10 +25,16 @@ public interface IRoomRegistry
     bool TryGetRoom(RoomId roomId, out RoomState room);
 
     /// <summary>
+    /// Gets a snapshot of all rooms.
+    /// </summary>
+    /// <returns>The room snapshots.</returns>
+    IEnumerable<RoomState> GetRoomsSnapshot();
+
+    /// <summary>
     /// Deletes a room by identifier with a reason.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="reason">The deletion reason.</param>
     /// <returns>True when removed; otherwise false.</returns>
-    Task<bool> DeleteRoom(RoomId roomId, RoomDeletionReason reason);
+    Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken);
 }

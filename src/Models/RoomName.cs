@@ -3,16 +3,15 @@ namespace Models;
 /// <summary>
 /// Represents a room name.
 /// </summary>
-public readonly record struct RoomName(string Value)
+public readonly record struct RoomName
 {
     /// <summary>
-    /// Creates a room name.
+    /// Initializes a new instance of the <see cref="RoomName"/> struct.
     /// </summary>
     /// <param name="value">The name value.</param>
-    /// <returns>The room name.</returns>
     /// <exception cref="ArgumentException">Thrown when the value is empty or whitespace.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
-    public static RoomName Create(string value)
+    public RoomName(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
 
@@ -27,8 +26,13 @@ public readonly record struct RoomName(string Value)
             trimmed = $"{trimmed[..20]}...";
         }
 
-        return new RoomName(trimmed);
+        Value = trimmed;
     }
+
+    /// <summary>
+    /// Gets the name value.
+    /// </summary>
+    public string Value { get; }
 
     /// <inheritdoc />
     public override string ToString() => Value;

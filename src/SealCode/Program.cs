@@ -16,11 +16,9 @@ using Transport.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOptions<ApplicationConfiguration>()
-    .Bind(builder.Configuration)
+    .Bind(builder.Configuration.GetSection(string.Empty))
     .ValidateDataAnnotations()
     .ValidateOnStart();
-
-builder.Services.AddSingleton<IValidateOptions<ApplicationConfiguration>, ApplicationConfigurationValidator>();
 
 builder.Services.AddSignalR()
     .AddJsonProtocol(options =>
@@ -55,9 +53,9 @@ app.MapGet("/admin/login", (IWebHostEnvironment env) =>
     return Results.File(path, "text/html");
 });
 
-app.MapPost("/admin/login", async (HttpContext context, IOptions<ApplicationConfiguration> settings) =>
+app.MapPost("/admin/login", async (HttpContext context, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
 {
-    var form = await context.Request.ReadFormAsync();
+    var form = await context.Request.ReadFormAsync(cancellationToken);
     var password = form["password"].ToString();
 
     if (password == settings.Value.AdminPassword)
@@ -99,41 +97,34 @@ app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry) =>
         return Results.Unauthorized();
     }
 
-    var rooms = registry.Rooms.Values
-        .Select(room =>
-        {
-            lock (room)
-            {
-                return new RoomSummaryDto(
-                    room.RoomId.Value,
-                    room.Name.Value,
-                    room.Language.Value,
-                    room.ConnectedUsers.Count,
-                    room.LastUpdatedUtc
-                );
-            }
-        })
+    var rooms = registry.GetRoomsSnapshot()
+        .Select(room => new RoomSummaryDto(
+            room.RoomId.Value,
+            room.Name.Value,
+            room.Language.Value,
+            room.ConnectedUserCount,
+            room.LastUpdatedUtc))
         .OrderBy(room => room.Name, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
     return Results.Json(rooms);
 });
 
-app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry) =>
+app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, CancellationToken cancellationToken) =>
 {
     if (!AdminAuth.IsAdmin(context))
     {
         return Results.Unauthorized();
     }
 
-    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequestDto>();
+    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequestDto>(cancellationToken);
     if (payload is null || string.IsNullOrWhiteSpace(payload.Name))
     {
         return Results.BadRequest(new { error = "Name is required" });
     }
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
-    var name = RoomName.Create(payload.Name);
+    var name = new RoomName(payload.Name);
     var room = registry.CreateRoom(name, language);
     return Results.Json(new
     {
@@ -143,14 +134,14 @@ app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry) 
     });
 });
 
-app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId, IRoomRegistry registry) =>
+app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId, IRoomRegistry registry, CancellationToken cancellationToken) =>
 {
     if (!AdminAuth.IsAdmin(context))
     {
         return Results.Unauthorized();
     }
 
-    var deleted = await registry.DeleteRoom(new RoomId(roomId), new RoomDeletionReason("Room deleted by admin"));
+    var deleted = await registry.DeleteRoomAsync(new RoomId(roomId), new RoomDeletionReason("Room deleted by admin"), cancellationToken);
     return deleted ? Results.Ok() : Results.NotFound();
 });
 

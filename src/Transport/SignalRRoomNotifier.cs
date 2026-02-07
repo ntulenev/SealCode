@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Abstractions;
 using Models;
+using System.Threading;
 
 namespace Transport;
 
@@ -20,7 +21,7 @@ public sealed class SignalRRoomNotifier : IRoomNotifier
     }
 
     /// <inheritdoc />
-    public Task RoomKilledAsync(RoomId roomId, RoomDeletionReason reason)
+    public Task RoomKilledAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(roomId.Value))
         {
@@ -32,7 +33,7 @@ public sealed class SignalRRoomNotifier : IRoomNotifier
             throw new ArgumentException("Reason is required", nameof(reason));
         }
 
-        return _hub.Clients.Group(roomId.Value).SendAsync("RoomKilled", reason.Value);
+        return _hub.Clients.Group(roomId.Value).SendAsync("RoomKilled", reason.Value, cancellationToken);
     }
 
     private readonly IHubContext<RoomHub> _hub;

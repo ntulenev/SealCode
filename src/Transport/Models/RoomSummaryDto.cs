@@ -15,7 +15,7 @@ public sealed class RoomSummaryDto
     /// <param name="lastUpdatedUtc">The last updated timestamp.</param>
     /// <exception cref="ArgumentNullException">Thrown when required values are null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when counts are negative.</exception>
-    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTime lastUpdatedUtc)
+    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc)
     {
         ArgumentNullException.ThrowIfNull(roomId);
         ArgumentNullException.ThrowIfNull(name);
@@ -56,5 +56,5 @@ public sealed class RoomSummaryDto
     /// <summary>
     /// Gets the last updated timestamp in UTC.
     /// </summary>
-    public DateTime LastUpdatedUtc { get; }
+    public DateTimeOffset LastUpdatedUtc { get; }
 }
