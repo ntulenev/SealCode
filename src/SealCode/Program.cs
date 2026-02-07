@@ -53,7 +53,10 @@ app.MapGet("/admin/login", (IWebHostEnvironment env) =>
     return Results.File(path, "text/html");
 });
 
-app.MapPost("/admin/login", async (HttpContext context, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
+app.MapPost("/admin/login",
+            async (HttpContext context,
+                   IOptions<ApplicationConfiguration> settings,
+                   CancellationToken cancellationToken) =>
 {
     var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
     var name = form["name"].ToString().Trim();
@@ -116,7 +119,11 @@ app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry, IOption
     return Results.Json(rooms);
 });
 
-app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
+app.MapPost("/admin/rooms",
+            async (HttpContext context,
+                   IRoomRegistry registry,
+                   IOptions<ApplicationConfiguration> settings,
+                   CancellationToken cancellationToken) =>
 {
     if (!AdminAuth.TryGetAdminName(context, settings.Value, out var adminName))
     {
@@ -141,14 +148,22 @@ app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, 
     });
 });
 
-app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
+app.MapDelete("/admin/rooms/{roomId}",
+            async (HttpContext context,
+                   string roomId,
+                   IRoomRegistry registry,
+                   IOptions<ApplicationConfiguration> settings,
+                   CancellationToken cancellationToken) =>
 {
     if (!AdminAuth.IsAdmin(context, settings.Value))
     {
         return Results.Unauthorized();
     }
 
-    var deleted = await registry.DeleteRoomAsync(new RoomId(roomId), new RoomDeletionReason("Room deleted by admin"), cancellationToken).ConfigureAwait(false);
+    var deleted = await registry.DeleteRoomAsync(
+        new RoomId(roomId),
+        new RoomDeletionReason("Room deleted by admin"),
+        cancellationToken).ConfigureAwait(false);
     return deleted ? Results.Ok() : Results.NotFound();
 });
 
