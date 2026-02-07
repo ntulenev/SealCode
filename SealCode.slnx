@@ -1,8 +1,0 @@
-﻿<Solution>
-  <Folder Name="/Solution Items/">
-    <File Path=".gitignore" />
-    <File Path="LICENSE" />
-    <File Path="README.md" />
-  </Folder>
-  <Project Path="SealCode.csproj" Id="a16cfe34-dde8-44b6-b558-0c162f5daf22" />
-</Solution>

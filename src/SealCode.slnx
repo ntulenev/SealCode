@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="Abstractions/Abstractions.csproj" Id="01b58ff4-e2cc-4b57-b736-3350b2026c37" />
+  <Project Path="Logic/Logic.csproj" Id="8a65a3ed-3be6-4322-a815-2f565c82a7fc" />
+  <Project Path="Models/Models.csproj" Id="d187f863-d42c-4f97-9c05-f282538bd421" />
+  <Project Path="SealCode/SealCode.csproj" />
+  <Project Path="Transport/Transport.csproj" Id="d2218ba7-eacf-4b05-8d43-441752c7b327" />
+</Solution>

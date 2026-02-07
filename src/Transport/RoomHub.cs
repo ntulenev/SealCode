@@ -1,26 +1,32 @@
-﻿using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
-using SealCode.Domain;
-using SealCode.Services;
+using Abstractions;
 
-namespace SealCode.Hubs;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+using Models;
+using Models.Configuration;
+
+namespace Transport;
 
 public sealed class RoomHub : Hub
 {
-    private readonly RoomRegistry _registry;
-    private readonly IOptions<AppSettings> _settings;
+    private readonly IRoomRegistry _registry;
+    private readonly IOptions<ApplicationConfiguration> _settings;
     private readonly ILogger<RoomHub> _logger;
 
-    public RoomHub(RoomRegistry registry, IOptions<AppSettings> settings, ILogger<RoomHub> logger)
+    public RoomHub(IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, ILogger<RoomHub> logger)
     {
         _registry = registry;
         _settings = settings;
         _logger = logger;
     }
 
+#pragma warning disable IDE1006 // Naming Styles
     public async Task<JoinRoomResult> JoinRoom(string roomId, string displayName)
+#pragma warning restore IDE1006 // Naming Styles
     {
-        if (!_registry.TryGetRoom(roomId, out var room))
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -48,12 +54,12 @@ public sealed class RoomHub : Hub
                 throw new HubException($"Room is full (max {maxUsers})");
             }
 
-            room.ConnectedUsers[connectionId] = displayName;
-            usersSnapshot = room.ConnectedUsers.Values.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
-            roomName = room.Name;
-            language = room.Language;
-            text = room.Text;
-            version = room.Version;
+            room.ConnectedUsers[connectionId] = new DisplayName(displayName);
+            usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
+            roomName = room.Name.Value;
+            language = room.Language.Value;
+            text = room.Text.Value;
+            version = room.Version.Value;
         }
 
         Context.Items["roomId"] = roomId;
@@ -63,14 +69,20 @@ public sealed class RoomHub : Hub
         await Clients.GroupExcept(roomId, connectionId)
             .SendAsync("UserJoined", displayName, usersSnapshot);
 
+#pragma warning disable CA1873 // Avoid potentially expensive logging
         _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, roomName, displayName);
+#pragma warning restore CA1873 // Avoid potentially expensive logging
 
         return new JoinRoomResult(roomName, language, text, version, usersSnapshot);
     }
 
+#pragma warning disable IDE1006 // Naming Styles
+#pragma warning disable IDE0060 // Remove unused parameter
     public async Task UpdateText(string roomId, string newText, int clientVersion)
+#pragma warning restore IDE0060 // Remove unused parameter
+#pragma warning restore IDE1006 // Naming Styles
     {
-        if (!_registry.TryGetRoom(roomId, out var room))
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -79,12 +91,14 @@ public sealed class RoomHub : Hub
         int newVersion;
         lock (room)
         {
-            room.Text = newText ?? string.Empty;
-            room.Version++;
+            var text = newText ?? string.Empty;
+            room.Text = new(text);
+            room.Version = room.Version.Next();
             room.LastUpdatedUtc = DateTime.UtcNow;
-            newVersion = room.Version;
+            newVersion = room.Version.Value;
             author = room.ConnectedUsers.TryGetValue(Context.ConnectionId, out var name)
-                ? name
+                ? name.Value
+
                 : "unknown";
         }
 
@@ -92,34 +106,40 @@ public sealed class RoomHub : Hub
             .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author);
     }
 
+#pragma warning disable IDE1006 // Naming Styles
     public async Task SetLanguage(string roomId, string language)
+#pragma warning restore IDE1006 // Naming Styles
     {
-        if (!_registry.TryGetRoom(roomId, out var room))
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
 
         language = (language ?? "").Trim().ToLowerInvariant();
+#pragma warning disable IDE0078 // Use pattern matching
         if (language != "csharp" && language != "sql")
         {
             throw new HubException("Invalid language");
         }
+#pragma warning restore IDE0078 // Use pattern matching
 
         int newVersion;
         lock (room)
         {
-            room.Language = language;
-            room.Version++;
+            room.Language = new RoomLanguage(language);
+            room.Version = room.Version.Next();
             room.LastUpdatedUtc = DateTime.UtcNow;
-            newVersion = room.Version;
+            newVersion = room.Version.Value;
         }
 
         await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion);
     }
 
+#pragma warning disable IDE1006 // Naming Styles
     public async Task UpdateCursor(string roomId, int position)
+#pragma warning restore IDE1006 // Naming Styles
     {
-        if (!_registry.TryGetRoom(roomId, out var room))
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -129,7 +149,7 @@ public sealed class RoomHub : Hub
         {
             if (room.ConnectedUsers.TryGetValue(Context.ConnectionId, out var name))
             {
-                author = name;
+                author = name.Value;
             }
         }
 
@@ -142,9 +162,11 @@ public sealed class RoomHub : Hub
             .SendAsync("CursorUpdated", author, position);
     }
 
+#pragma warning disable IDE1006 // Naming Styles
     public async Task UpdateSelection(string roomId, bool isMultiLine)
+#pragma warning restore IDE1006 // Naming Styles
     {
-        if (!_registry.TryGetRoom(roomId, out var room))
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -154,7 +176,7 @@ public sealed class RoomHub : Hub
         {
             if (room.ConnectedUsers.TryGetValue(Context.ConnectionId, out var name))
             {
-                author = name;
+                author = name.Value;
             }
         }
 
@@ -166,12 +188,10 @@ public sealed class RoomHub : Hub
         await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine);
     }
 
-    public async Task LeaveRoom(string roomId)
-    {
-        await RemoveFromRoomAsync(roomId, Context.ConnectionId, notify: true);
-    }
+#pragma warning disable IDE1006 // Naming Styles
+    public async Task LeaveRoom(string roomId) => await RemoveFromRoomAsync(roomId, Context.ConnectionId, notify: true);
 
-    public override async Task OnDisconnectedAsync(Exception? exception)
+    public async override Task OnDisconnectedAsync(Exception? exception)
     {
         if (Context.Items.TryGetValue("roomId", out var roomIdObj) && roomIdObj is string roomId)
         {
@@ -183,21 +203,21 @@ public sealed class RoomHub : Hub
 
     private async Task RemoveFromRoomAsync(string roomId, string connectionId, bool notify)
     {
-        if (!_registry.TryGetRoom(roomId, out var room))
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
         {
             return;
         }
 
         string? displayName = null;
-        string[] usersSnapshot = Array.Empty<string>();
+        string[] usersSnapshot = [];
 
         lock (room)
         {
             if (room.ConnectedUsers.TryGetValue(connectionId, out var name))
             {
-                displayName = name;
-                room.ConnectedUsers.Remove(connectionId);
-                usersSnapshot = room.ConnectedUsers.Values.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
+                displayName = name.Value;
+                _ = room.ConnectedUsers.Remove(connectionId);
+                usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
             }
         }
 
@@ -206,7 +226,9 @@ public sealed class RoomHub : Hub
         if (notify && displayName is not null)
         {
             await Clients.Group(roomId).SendAsync("UserLeft", displayName, usersSnapshot);
+#pragma warning disable CA1873 // Avoid potentially expensive logging
             _logger.LogInformation("User left {RoomId} as {DisplayName}", roomId, displayName);
+#pragma warning restore CA1873 // Avoid potentially expensive logging
         }
     }
 
