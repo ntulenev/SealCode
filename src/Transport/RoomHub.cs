@@ -42,21 +42,20 @@ public sealed class RoomHub : Hub
         string text;
         int version;
 
-        lock (room)
+        try
         {
-            var alreadyInRoom = room.HasUser(connectionId);
-            if (!alreadyInRoom && room.ConnectedUserCount >= maxUsers)
-            {
-                throw new HubException($"Room is full (max {maxUsers})");
-            }
-
-            room.AddOrUpdateUser(connectionId, new DisplayName(displayName));
-            usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
-            roomName = room.Name.Value;
-            language = room.Language.Value;
-            text = room.Text.Value;
-            version = room.Version.Value;
+            room.AddUser(connectionId, new DisplayName(displayName), maxUsers);
         }
+        catch (AddRoomUserException ex)
+        {
+            throw new HubException(ex.Message);
+        }
+
+        usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
+        roomName = room.Name.Value;
+        language = room.Language.Value;
+        text = room.Text.Value;
+        version = room.Version.Value;
 
         Context.Items["roomId"] = roomId;
         Context.Items["displayName"] = displayName;
@@ -85,15 +84,12 @@ public sealed class RoomHub : Hub
 
         string author;
         int newVersion;
-        lock (room)
-        {
-            var text = newText ?? string.Empty;
-            newVersion = room.UpdateText(new(text), DateTimeOffset.UtcNow).Value;
-            author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
-                ? name.Value
+        var text = newText ?? string.Empty;
+        newVersion = room.UpdateText(new(text), DateTimeOffset.UtcNow).Value;
+        author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
+            ? name.Value
 
-                : "unknown";
-        }
+            : "unknown";
 
         await Clients.GroupExcept(roomId, Context.ConnectionId)
             .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author);
@@ -117,10 +113,7 @@ public sealed class RoomHub : Hub
 #pragma warning restore IDE0078 // Use pattern matching
 
         int newVersion;
-        lock (room)
-        {
-            newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow).Value;
-        }
+        newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow).Value;
 
         await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion);
     }
@@ -135,12 +128,9 @@ public sealed class RoomHub : Hub
         }
 
         string? author = null;
-        lock (room)
+        if (room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
         {
-            if (room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
-            {
-                author = name.Value;
-            }
+            author = name.Value;
         }
 
         if (author is null)
@@ -162,12 +152,9 @@ public sealed class RoomHub : Hub
         }
 
         string? author = null;
-        lock (room)
+        if (room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
         {
-            if (room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
-            {
-                author = name.Value;
-            }
+            author = name.Value;
         }
 
         if (author is null)
@@ -201,13 +188,10 @@ public sealed class RoomHub : Hub
         string? displayName = null;
         string[] usersSnapshot = [];
 
-        lock (room)
+        if (room.RemoveUser(connectionId, out var name))
         {
-            if (room.RemoveUser(connectionId, out var name))
-            {
-                displayName = name.Value;
-                usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
-            }
+            displayName = name.Value;
+            usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
         }
 
         await Groups.RemoveFromGroupAsync(connectionId.Value, roomId);

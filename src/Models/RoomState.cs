@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Models;
 
 /// <summary>
@@ -74,11 +76,47 @@ public sealed class RoomState
     public int ConnectedUserCount => _connectedUsers.Count;
 
     /// <summary>
-    /// Adds or updates a connected user.
+    /// Checks if a display name is already in use by another connection.
+    /// </summary>
+    /// <param name="connectionId">The connection identifier to exclude.</param>
+    /// <param name="displayName">The display name to check.</param>
+    /// <returns>True when the name is in use by another connection; otherwise false.</returns>
+    public bool IsDisplayNameInUse(ConnectionId connectionId, DisplayName displayName)
+        => _connectedUsers.Any(entry => entry.Key != connectionId
+            && string.Equals(entry.Value.Value, displayName.Value, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Adds or updates a connected user with room capacity and name checks.
     /// </summary>
     /// <param name="connectionId">The connection identifier.</param>
     /// <param name="displayName">The display name.</param>
-    public void AddOrUpdateUser(ConnectionId connectionId, DisplayName displayName) => _connectedUsers[connectionId] = displayName;
+    /// <param name="maxUsers">The maximum number of users allowed in the room.</param>
+    /// <exception cref="AddRoomUserException">Thrown when the room is full or the name is already in use.</exception>
+    public void AddUser(ConnectionId connectionId, DisplayName displayName, int maxUsers)
+    {
+        lock (_addGuard)
+        {
+            var alreadyInRoom = HasUser(connectionId);
+            if (!alreadyInRoom && _connectedUsers.Count >= maxUsers)
+            {
+                throw new AddRoomUserException($"Room is full (max {maxUsers})");
+            }
+
+            if (IsDisplayNameInUse(connectionId, displayName))
+            {
+                throw new AddRoomUserException("Display name already in use. Choose another name.");
+            }
+
+            AddOrUpdateUser(connectionId, displayName);
+        }
+    }
+
+    private void AddOrUpdateUser(ConnectionId connectionId, DisplayName displayName)
+        => ImmutableInterlocked.AddOrUpdate(
+            ref _connectedUsers,
+            connectionId,
+            displayName,
+            static (_, value) => value);
 
     /// <summary>
     /// Tries to get a connected user's display name.
@@ -88,12 +126,7 @@ public sealed class RoomState
     /// <returns>True when found; otherwise false.</returns>
     public bool TryGetDisplayName(ConnectionId connectionId, out DisplayName displayName) => _connectedUsers.TryGetValue(connectionId, out displayName);
 
-    /// <summary>
-    /// Checks if a user is already connected.
-    /// </summary>
-    /// <param name="connectionId">The connection identifier.</param>
-    /// <returns>True when connected; otherwise false.</returns>
-    public bool HasUser(ConnectionId connectionId) => _connectedUsers.ContainsKey(connectionId);
+    private bool HasUser(ConnectionId connectionId) => _connectedUsers.ContainsKey(connectionId);
 
     /// <summary>
     /// Removes a connected user.
@@ -101,7 +134,8 @@ public sealed class RoomState
     /// <param name="connectionId">The connection identifier.</param>
     /// <param name="displayName">The removed display name.</param>
     /// <returns>True when removed; otherwise false.</returns>
-    public bool RemoveUser(ConnectionId connectionId, out DisplayName displayName) => _connectedUsers.Remove(connectionId, out displayName);
+    public bool RemoveUser(ConnectionId connectionId, out DisplayName displayName)
+        => ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out displayName);
 
     /// <summary>
     /// Updates the room text and bumps the version.
@@ -111,10 +145,13 @@ public sealed class RoomState
     /// <returns>The new room version.</returns>
     public RoomVersion UpdateText(RoomText text, DateTimeOffset updatedUtc)
     {
-        Text = text;
-        Version = Version.Next();
-        LastUpdatedUtc = updatedUtc;
-        return Version;
+        lock (_versionGuard)
+        {
+            Text = text;
+            Version = Version.Next();
+            LastUpdatedUtc = updatedUtc;
+            return Version;
+        }
     }
 
     /// <summary>
@@ -125,11 +162,16 @@ public sealed class RoomState
     /// <returns>The new room version.</returns>
     public RoomVersion UpdateLanguage(RoomLanguage language, DateTimeOffset updatedUtc)
     {
-        Language = language;
-        Version = Version.Next();
-        LastUpdatedUtc = updatedUtc;
-        return Version;
+        lock (_versionGuard)
+        {
+            Language = language;
+            Version = Version.Next();
+            LastUpdatedUtc = updatedUtc;
+            return Version;
+        }
     }
 
-    private readonly Dictionary<ConnectionId, DisplayName> _connectedUsers = [];
+    private readonly Lock _addGuard = new();
+    private readonly Lock _versionGuard = new();
+    private ImmutableDictionary<ConnectionId, DisplayName> _connectedUsers = [];
 }
