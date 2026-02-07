@@ -193,18 +193,41 @@ public sealed class RoomState
     /// <param name="state">The serialized Yjs document state.</param>
     /// <param name="text">The plain text snapshot.</param>
     /// <param name="updatedUtc">The update timestamp in UTC.</param>
-    /// <returns>The new room version.</returns>
-    public RoomVersion UpdateYjsState(byte[] state, RoomText text, DateTimeOffset updatedUtc)
+    /// <param name="version">The resulting room version.</param>
+    /// <returns>True when the state changed and the version was bumped; otherwise false.</returns>
+    public bool TryUpdateYjsState(byte[] state, RoomText text, DateTimeOffset updatedUtc, out RoomVersion version)
     {
         ArgumentNullException.ThrowIfNull(state);
         lock (_versionGuard)
         {
+            var sameState = state.AsSpan().SequenceEqual(YjsState);
+            var sameText = string.Equals(text.Value, Text.Value, StringComparison.Ordinal);
+            if (sameState && sameText)
+            {
+                version = Version;
+                return false;
+            }
+
             YjsState = state;
             Text = text;
             Version = Version.Next();
             LastUpdatedUtc = updatedUtc;
-            return Version;
+            version = Version;
+            return true;
         }
+    }
+
+    /// <summary>
+    /// Updates the stored Yjs state and text snapshot, bumping the version.
+    /// </summary>
+    /// <param name="state">The serialized Yjs document state.</param>
+    /// <param name="text">The plain text snapshot.</param>
+    /// <param name="updatedUtc">The update timestamp in UTC.</param>
+    /// <returns>The new room version.</returns>
+    public RoomVersion UpdateYjsState(byte[] state, RoomText text, DateTimeOffset updatedUtc)
+    {
+        _ = TryUpdateYjsState(state, text, updatedUtc, out var version);
+        return version;
     }
 
     private readonly Lock _addGuard = new();

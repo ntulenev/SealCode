@@ -40,7 +40,6 @@ let monacoBinding = null;
 let pendingYjsStateTimer = null;
 let pendingYjsUpdates = [];
 let isBootstrapping = false;
-let syncTimer = null;
 
 const connection = new signalR.HubConnectionBuilder()
   .withUrl('/roomHub')
@@ -282,15 +281,6 @@ function scheduleYjsUpdateSend(update) {
 }
 
 
-function startYjsSync() {
-  if (!ydoc) return;
-  if (syncTimer) clearInterval(syncTimer);
-  syncTimer = setInterval(() => {
-    if (!ydoc) return;
-    if (connection.state !== signalR.HubConnectionState.Connected) return;
-    scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
-  }, 1500);
-}
 
 function initializeYjs(text, stateBase64) {
   if (!model) return;
@@ -413,7 +403,6 @@ async function joinRoom() {
     renderUsers(users);
     joinOverlay.classList.add('hidden');
     sendCursor();
-    startYjsSync();
   } catch (err) {
     joinError.textContent = err?.message || 'Failed to join room.';
     joinError.classList.remove('hidden');
@@ -429,7 +418,6 @@ connection.onreconnected(async () => {
   if (ydoc) {
     scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
   }
-  startYjsSync();
 });
 connection.onclose(() => setStatus('disconnected'));
 

@@ -88,7 +88,7 @@
 }
 
 .participants-bar li.active {
-  border-color: #7b828f;
+  border-color: #22c55e;
   color: #e5e7eb;
   font-weight: 700;
   animation: active-pulse 1.4s ease-in-out infinite;
@@ -99,7 +99,7 @@
     border-color: #2f343d;
   }
   50% {
-    border-color: #7b828f;
+    border-color: #22c55e;
   }
   100% {
     border-color: #2f343d;

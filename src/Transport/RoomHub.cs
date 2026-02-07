@@ -190,11 +190,14 @@ public sealed class RoomHub : Hub
             : "unknown";
 
         var text = textSnapshot ?? string.Empty;
-        var newVersion = room.UpdateYjsState(state, new RoomText(text), DateTimeOffset.UtcNow).Value;
+        if (!room.TryUpdateYjsState(state, new RoomText(text), DateTimeOffset.UtcNow, out var newVersion))
+        {
+            return;
+        }
 
         var cancellationToken = Context.ConnectionAborted;
         await Clients.Group(roomId)
-            .SendAsync("YjsUpdated", updateBase64, newVersion, author, cancellationToken)
+            .SendAsync("YjsUpdated", updateBase64, newVersion.Value, author, cancellationToken)
             .ConfigureAwait(false);
     }
 
