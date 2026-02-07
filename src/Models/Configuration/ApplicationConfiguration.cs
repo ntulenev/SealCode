@@ -8,15 +8,35 @@ namespace Models.Configuration;
 public sealed class ApplicationConfiguration
 {
     /// <summary>
-    /// Gets or sets the admin password.
+    /// Gets or sets the admin users.
     /// </summary>
     [Required]
-    [MinLength(4)]
-    public required string AdminPassword { get; init; }
+    [MinLength(1)]
+    public required AdminUserConfiguration[] AdminUsers { get; init; }
 
     /// <summary>
     /// Gets or sets the maximum number of users per room.
     /// </summary>
     [Range(1, 5)]
     public int MaxUsersPerRoom { get; init; }
+}
+
+/// <summary>
+/// Represents an admin user from configuration.
+/// </summary>
+public sealed class AdminUserConfiguration
+{
+    /// <summary>
+    /// Gets or sets the admin display name.
+    /// </summary>
+    [Required]
+    [MinLength(2)]
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Gets or sets the admin password.
+    /// </summary>
+    [Required]
+    [MinLength(4)]
+    public required string Password { get; init; }
 }

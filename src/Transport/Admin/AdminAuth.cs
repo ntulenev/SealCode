@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Http;
+using System.Linq;
+
+using Models.Configuration;
 
 namespace Transport.Admin;
 
@@ -16,10 +19,42 @@ public static class AdminAuth
     /// Determines whether the request is authenticated as admin.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
-    /// <returns>True when admin cookie is present; otherwise false.</returns>
-    public static bool IsAdmin(HttpContext context)
+    /// <param name="settings">The application configuration.</param>
+    /// <returns>True when admin cookie is present and matches a configured admin user; otherwise false.</returns>
+    public static bool IsAdmin(HttpContext context, ApplicationConfiguration settings)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return context.Request.Cookies.TryGetValue(COOKIENAME, out var value) && value == "1";
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return TryGetAdminName(context, settings, out _);
+    }
+
+    /// <summary>
+    /// Tries to get the authenticated admin name from the request.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="settings">The application configuration.</param>
+    /// <param name="adminName">The authenticated admin name when found.</param>
+    /// <returns>True when the cookie is present and matches a configured admin user; otherwise false.</returns>
+    public static bool TryGetAdminName(HttpContext context, ApplicationConfiguration settings, out string adminName)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        adminName = string.Empty;
+        if (!context.Request.Cookies.TryGetValue(COOKIENAME, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var user = settings.AdminUsers.FirstOrDefault(user =>
+            string.Equals(user.Name, value, StringComparison.OrdinalIgnoreCase));
+        if (user is null)
+        {
+            return false;
+        }
+
+        adminName = user.Name;
+        return true;
     }
 }

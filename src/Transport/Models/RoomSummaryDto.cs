@@ -13,7 +13,8 @@ public sealed class RoomSummaryDto
     /// <param name="language">The room language.</param>
     /// <param name="usersCount">The number of connected users.</param>
     /// <param name="lastUpdatedUtc">The last updated timestamp.</param>
-    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc)
+    /// <param name="createdBy">The admin that created the room.</param>
+    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc, string createdBy)
     {
 
         RoomId = roomId;
@@ -21,6 +22,7 @@ public sealed class RoomSummaryDto
         Language = language;
         UsersCount = usersCount;
         LastUpdatedUtc = lastUpdatedUtc;
+        CreatedBy = createdBy;
     }
 
     /// <summary>
@@ -47,4 +49,9 @@ public sealed class RoomSummaryDto
     /// Gets the last updated timestamp in UTC.
     /// </summary>
     public DateTimeOffset LastUpdatedUtc { get; }
+
+    /// <summary>
+    /// Gets the admin that created the room.
+    /// </summary>
+    public string CreatedBy { get; }
 }

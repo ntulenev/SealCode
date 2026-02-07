@@ -17,10 +17,12 @@
     </header>
     <h2 class="page-subtitle">Admin Login</h2>
     <form class="card" method="post" action="/admin/login">
+      <label for="name">Admin name</label>
+      <input id="name" name="name" type="text" autocomplete="username" required />
       <label for="password">Admin password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required />
       <button type="submit">Login</button>
-      <p id="error" class="error hidden">Invalid password. Try again.</p>
+      <p id="error" class="error hidden">Invalid credentials. Try again.</p>
     </form>
   </main>
   <footer class="tiny-footer">Personal pet project for private use · Not intended for public use</footer>

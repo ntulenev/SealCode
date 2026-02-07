@@ -16,13 +16,15 @@ public sealed class RoomState
     /// <param name="text">The room text.</param>
     /// <param name="version">The room version.</param>
     /// <param name="lastUpdatedUtc">The last updated timestamp in UTC.</param>
+    /// <param name="createdBy">The admin that created the room.</param>
     public RoomState(
         RoomId roomId,
         RoomName name,
         RoomLanguage language,
         RoomText text,
         RoomVersion version,
-        DateTimeOffset lastUpdatedUtc)
+        DateTimeOffset lastUpdatedUtc,
+        CreatedBy createdBy)
     {
         RoomId = roomId;
         Name = name;
@@ -30,6 +32,7 @@ public sealed class RoomState
         Text = text;
         Version = version;
         LastUpdatedUtc = lastUpdatedUtc;
+        CreatedBy = createdBy;
     }
 
     /// <summary>
@@ -64,6 +67,11 @@ public sealed class RoomState
     /// Gets the last updated timestamp in UTC.
     /// </summary>
     public DateTimeOffset LastUpdatedUtc { get; private set; }
+
+    /// <summary>
+    /// Gets the admin that created the room.
+    /// </summary>
+    public CreatedBy CreatedBy { get; }
 
     /// <summary>
     /// Gets the connected users keyed by connection id.

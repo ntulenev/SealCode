@@ -13,9 +13,10 @@ public sealed class JoinRoomResultDto
     /// <param name="text">The room text.</param>
     /// <param name="version">The room version.</param>
     /// <param name="users">The connected users.</param>
+    /// <param name="createdBy">The admin that created the room.</param>
     /// <exception cref="ArgumentNullException">Thrown when required values are null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when version is less than 1.</exception>
-    public JoinRoomResultDto(string name, string language, string text, int version, DisplayNameDto[] users)
+    public JoinRoomResultDto(string name, string language, string text, int version, DisplayNameDto[] users, string createdBy)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Language = language ?? throw new ArgumentNullException(nameof(language));
@@ -26,6 +27,7 @@ public sealed class JoinRoomResultDto
         }
 
         Users = users ?? throw new ArgumentNullException(nameof(users));
+        CreatedBy = createdBy ?? throw new ArgumentNullException(nameof(createdBy));
         Version = version;
     }
 
@@ -53,4 +55,9 @@ public sealed class JoinRoomResultDto
     /// Gets the connected users.
     /// </summary>
     public DisplayNameDto[] Users { get; }
+
+    /// <summary>
+    /// Gets the admin that created the room.
+    /// </summary>
+    public string CreatedBy { get; }
 }

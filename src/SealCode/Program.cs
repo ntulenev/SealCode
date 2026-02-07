@@ -56,11 +56,16 @@ app.MapGet("/admin/login", (IWebHostEnvironment env) =>
 app.MapPost("/admin/login", async (HttpContext context, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
 {
     var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+    var name = form["name"].ToString().Trim();
     var password = form["password"].ToString();
 
-    if (password == settings.Value.AdminPassword)
+    var user = settings.Value.AdminUsers.FirstOrDefault(user =>
+        string.Equals(user.Name, name, StringComparison.OrdinalIgnoreCase)
+        && user.Password == password);
+
+    if (user is not null)
     {
-        context.Response.Cookies.Append(AdminAuth.COOKIENAME, "1", new CookieOptions
+        context.Response.Cookies.Append(AdminAuth.COOKIENAME, user.Name, new CookieOptions
         {
             HttpOnly = true,
             IsEssential = true,
@@ -79,9 +84,9 @@ app.MapPost("/admin/logout", (HttpContext context) =>
     return Results.Redirect("/admin/login");
 });
 
-app.MapGet("/admin", (HttpContext context, IWebHostEnvironment env) =>
+app.MapGet("/admin", (HttpContext context, IWebHostEnvironment env, IOptions<ApplicationConfiguration> settings) =>
 {
-    if (!AdminAuth.IsAdmin(context))
+    if (!AdminAuth.IsAdmin(context, settings.Value))
     {
         return Results.Redirect("/admin/login");
     }
@@ -90,9 +95,9 @@ app.MapGet("/admin", (HttpContext context, IWebHostEnvironment env) =>
     return Results.File(path, "text/html");
 });
 
-app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry) =>
+app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings) =>
 {
-    if (!AdminAuth.IsAdmin(context))
+    if (!AdminAuth.IsAdmin(context, settings.Value))
     {
         return Results.Unauthorized();
     }
@@ -103,16 +108,17 @@ app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry) =>
             room.Name.Value,
             room.Language.Value,
             room.ConnectedUserCount,
-            room.LastUpdatedUtc))
+            room.LastUpdatedUtc,
+            room.CreatedBy.Value))
         .OrderBy(room => room.Name, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
     return Results.Json(rooms);
 });
 
-app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, CancellationToken cancellationToken) =>
+app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
 {
-    if (!AdminAuth.IsAdmin(context))
+    if (!AdminAuth.TryGetAdminName(context, settings.Value, out var adminName))
     {
         return Results.Unauthorized();
     }
@@ -125,18 +131,19 @@ app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, 
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
     var name = new RoomName(payload.Name);
-    var room = registry.CreateRoom(name, language);
+    var room = registry.CreateRoom(name, language, new CreatedBy(adminName));
     return Results.Json(new
     {
         RoomId = room.RoomId.Value,
         Name = room.Name.Value,
-        Language = room.Language.Value
+        Language = room.Language.Value,
+        CreatedBy = room.CreatedBy.Value
     });
 });
 
-app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId, IRoomRegistry registry, CancellationToken cancellationToken) =>
+app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
 {
-    if (!AdminAuth.IsAdmin(context))
+    if (!AdminAuth.IsAdmin(context, settings.Value))
     {
         return Results.Unauthorized();
     }

@@ -37,6 +37,9 @@ function renderRooms(rooms) {
     const updated = document.createElement('div');
     updated.textContent = new Date(room.LastUpdatedUtc).toLocaleString();
 
+    const createdBy = document.createElement('div');
+    createdBy.textContent = room.CreatedBy || 'unknown';
+
     const actions = document.createElement('div');
     actions.className = 'room-actions';
 
@@ -57,7 +60,7 @@ function renderRooms(rooms) {
     });
 
     actions.append(link, del);
-    row.append(name, lang, users, updated, actions);
+    row.append(name, lang, users, updated, createdBy, actions);
     roomsEl.append(row);
   }
 }

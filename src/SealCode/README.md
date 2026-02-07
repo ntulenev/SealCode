@@ -16,7 +16,7 @@ Open the app at `http://localhost:5000` (or the URL shown in the console).
 
 ## Admin
 1. Visit `/admin/login`.
-2. Enter the password from `appsettings.json` (`AdminPassword`).
+2. Enter the admin name + password from `appsettings.json` (`AdminUsers`).
 3. Create a room and copy its link.
 
 ## Join a room

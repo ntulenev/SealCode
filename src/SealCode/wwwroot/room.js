@@ -1,5 +1,6 @@
 ﻿const connectionStatusEl = document.getElementById('connectionStatus');
 const roomNameEl = document.getElementById('roomName');
+const createdByEl = document.getElementById('createdBy');
 const participantsList = document.getElementById('participantsList');
 const languageSelect = document.getElementById('languageSelect');
 const versionNumberEl = document.getElementById('versionNumber');
@@ -288,7 +289,11 @@ async function joinRoom() {
     const text = result.Text ?? result.text;
     const version = result.Version ?? result.version;
     const users = result.Users ?? result.users;
+    const createdBy = result.CreatedBy ?? result.createdBy;
     roomNameEl.textContent = name;
+    if (createdByEl) {
+      createdByEl.textContent = createdBy || 'unknown';
+    }
     languageSelect.value = language;
     setLanguage(language);
     setText(text || '');

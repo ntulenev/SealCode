@@ -65,6 +65,7 @@ public sealed class RoomHub : Hub
         string roomName;
         string language;
         string text;
+        string createdBy;
         int version;
 
         try
@@ -80,6 +81,7 @@ public sealed class RoomHub : Hub
         roomName = room.Name.Value;
         language = room.Language.Value;
         text = room.Text.Value;
+        createdBy = room.CreatedBy.Value;
         version = room.Version.Value;
 
         Context.Items["roomId"] = roomId;
@@ -93,7 +95,7 @@ public sealed class RoomHub : Hub
 
         _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, roomName, displayName);
 
-        return new JoinRoomResult(roomName, language, text, version, usersSnapshot);
+        return new JoinRoomResult(roomName, language, text, version, usersSnapshot, createdBy);
     }
 
     /// <summary>
