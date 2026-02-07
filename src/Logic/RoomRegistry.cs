@@ -67,7 +67,7 @@ public sealed class RoomRegistry : IRoomRegistry
         _logger.LogInformation("Room deleted {RoomId} ({Name})", room.RoomId.Value, room.Name.Value);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
-        await _notifier.RoomKilledAsync(roomId, reason, cancellationToken);
+        await _notifier.RoomKilledAsync(roomId, reason, cancellationToken).ConfigureAwait(false);
 
         return true;
     }

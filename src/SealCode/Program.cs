@@ -55,7 +55,7 @@ app.MapGet("/admin/login", (IWebHostEnvironment env) =>
 
 app.MapPost("/admin/login", async (HttpContext context, IOptions<ApplicationConfiguration> settings, CancellationToken cancellationToken) =>
 {
-    var form = await context.Request.ReadFormAsync(cancellationToken);
+    var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
     var password = form["password"].ToString();
 
     if (password == settings.Value.AdminPassword)
@@ -117,7 +117,7 @@ app.MapPost("/admin/rooms", async (HttpContext context, IRoomRegistry registry, 
         return Results.Unauthorized();
     }
 
-    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequestDto>(cancellationToken);
+    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequestDto>(cancellationToken).ConfigureAwait(false);
     if (payload is null || string.IsNullOrWhiteSpace(payload.Name))
     {
         return Results.BadRequest(new { error = "Name is required" });
@@ -141,7 +141,7 @@ app.MapDelete("/admin/rooms/{roomId}", async (HttpContext context, string roomId
         return Results.Unauthorized();
     }
 
-    var deleted = await registry.DeleteRoomAsync(new RoomId(roomId), new RoomDeletionReason("Room deleted by admin"), cancellationToken);
+    var deleted = await registry.DeleteRoomAsync(new RoomId(roomId), new RoomDeletionReason("Room deleted by admin"), cancellationToken).ConfigureAwait(false);
     return deleted ? Results.Ok() : Results.NotFound();
 });
 

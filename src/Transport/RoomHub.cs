@@ -86,9 +86,10 @@ public sealed class RoomHub : Hub
         Context.Items["roomId"] = roomId;
         Context.Items["displayName"] = displayName;
 
-        await Groups.AddToGroupAsync(connectionId.Value, roomId);
+        await Groups.AddToGroupAsync(connectionId.Value, roomId).ConfigureAwait(false);
         await Clients.GroupExcept(roomId, connectionId.Value)
-            .SendAsync("UserJoined", displayName, usersSnapshot);
+            .SendAsync("UserJoined", displayName, usersSnapshot)
+            .ConfigureAwait(false);
 
         _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, roomName, displayName);
 
@@ -134,7 +135,8 @@ public sealed class RoomHub : Hub
             : "unknown";
 
         await Clients.GroupExcept(roomId, Context.ConnectionId)
-            .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author);
+            .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author)
+            .ConfigureAwait(false);
     }
 
 #pragma warning disable IDE1006 // Naming Styles
@@ -173,7 +175,7 @@ public sealed class RoomHub : Hub
         int newVersion;
         newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow).Value;
 
-        await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion);
+        await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion).ConfigureAwait(false);
     }
 
 #pragma warning disable IDE1006 // Naming Styles
@@ -214,7 +216,8 @@ public sealed class RoomHub : Hub
         }
 
         await Clients.GroupExcept(roomId, Context.ConnectionId)
-            .SendAsync("CursorUpdated", author, position);
+            .SendAsync("CursorUpdated", author, position)
+            .ConfigureAwait(false);
     }
 
 #pragma warning disable IDE1006 // Naming Styles
@@ -249,7 +252,7 @@ public sealed class RoomHub : Hub
             return;
         }
 
-        await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine);
+        await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine).ConfigureAwait(false);
     }
 
 #pragma warning disable IDE1006 // Naming Styles
@@ -266,7 +269,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Room id required");
         }
 
-        await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true);
+        await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -278,10 +281,10 @@ public sealed class RoomHub : Hub
     {
         if (Context.Items.TryGetValue("roomId", out var roomIdObj) && roomIdObj is string roomId)
         {
-            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true);
+            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
         }
 
-        await base.OnDisconnectedAsync(exception);
+        await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
     }
 
     private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify)
@@ -300,11 +303,11 @@ public sealed class RoomHub : Hub
             usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
         }
 
-        await Groups.RemoveFromGroupAsync(connectionId.Value, roomId);
+        await Groups.RemoveFromGroupAsync(connectionId.Value, roomId).ConfigureAwait(false);
 
         if (notify && displayName is not null)
         {
-            await Clients.Group(roomId).SendAsync("UserLeft", displayName, usersSnapshot);
+            await Clients.Group(roomId).SendAsync("UserLeft", displayName, usersSnapshot).ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {DisplayName}", roomId, displayName);
         }
     }
