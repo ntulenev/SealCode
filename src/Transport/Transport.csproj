@@ -12,4 +12,7 @@
     <ProjectReference Include="..\Models\Models.csproj" />
     <ProjectReference Include="..\Logic\Logic.csproj" />
   </ItemGroup>
+	<PropertyGroup>
+		<NoWarn>CA1873</NoWarn>
+	</PropertyGroup>
 </Project>
