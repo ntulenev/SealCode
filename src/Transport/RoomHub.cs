@@ -253,6 +253,36 @@ public sealed class RoomHub : Hub
         await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine, cancellationToken).ConfigureAwait(false);
     }
 
+#pragma warning disable IDE1006 // Naming Styles
+    /// <summary>
+    /// Marks a copy-to-clipboard action for the current user.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
+    [HubMethodName("UpdateCopy")]
+    public async Task UpdateCopyAsync(string roomId)
+#pragma warning restore IDE1006 // Naming Styles
+    {
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            throw new HubException("Room id required");
+        }
+
+        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        {
+            throw new HubException("Room not found");
+        }
+
+        if (!room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
+        {
+            return;
+        }
+
+        var cancellationToken = Context.ConnectionAborted;
+        await Clients.Group(roomId).SendAsync("UserCopy", name.Value, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Leaves the specified room.
     /// </summary>

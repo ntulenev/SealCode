@@ -24,6 +24,7 @@ let hideRemoteCarets = false;
 let hideRemoteTimer = null;
 const activeEditors = new Map();
 const selectingUsers = new Map();
+const copyingUsers = new Map();
 
 let editor = null;
 let model = null;
@@ -62,6 +63,9 @@ function renderUsers(users) {
     }
     if (selectingUsers.get(user)) {
       li.classList.add('copied');
+    }
+    if (copyingUsers.get(user)) {
+      li.classList.add('copying');
     }
     if (typeof pos === 'number' && model) {
       const lc = getLineColFromOffset(pos);
@@ -160,6 +164,19 @@ function markSelecting(name, isSelecting) {
     selectingUsers.delete(name);
   }
   renderUsers(currentUsers);
+}
+
+function markCopying(name) {
+  if (!name) return;
+  copyingUsers.set(name, Date.now());
+  renderUsers(currentUsers);
+  setTimeout(() => {
+    const last = copyingUsers.get(name);
+    if (last && Date.now() - last > 1200) {
+      copyingUsers.delete(name);
+      renderUsers(currentUsers);
+    }
+  }, 1300);
 }
 
 function sendCursor() {
@@ -333,6 +350,10 @@ connection.on('UserSelection', (name, isMultiLine) => {
   markSelecting(name, isMultiLine);
 });
 
+connection.on('UserCopy', (name) => {
+  markCopying(name);
+});
+
 connection.on('RoomKilled', (reason) => {
   if (editor) editor.updateOptions({ readOnly: true });
   joinError.textContent = reason || 'Room closed.';
@@ -344,6 +365,13 @@ languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
   setLanguage(languageSelect.value);
   await connection.invoke('SetLanguage', roomId, languageSelect.value);
+});
+
+document.addEventListener('copy', () => {
+  if (!displayName) return;
+  if (connection.state !== signalR.HubConnectionState.Connected) return;
+  markCopying(displayName);
+  connection.invoke('UpdateCopy', roomId).catch(() => {});
 });
 
 joinBtn.addEventListener('click', async () => {

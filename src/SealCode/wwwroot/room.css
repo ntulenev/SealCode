@@ -101,6 +101,13 @@
   font-weight: 700;
 }
 
+.participants-bar li.copying {
+  background: #3a0b0b;
+  border-color: #ef4444;
+  color: #fecaca;
+  font-weight: 700;
+}
+
 .monaco-host {
   min-height: 120vh;
   height: 120vh;
