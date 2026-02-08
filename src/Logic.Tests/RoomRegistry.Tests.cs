@@ -130,7 +130,7 @@ public sealed class RoomRegistryTests
 
     private static RoomRegistry CreateRegistry(IRoomNotifier? notifier = null)
     {
-        var logger = new Mock<ILogger<RoomRegistry>>(MockBehavior.Strict).Object;
+        var logger = new Mock<ILogger<RoomRegistry>>().Object;
         var roomNotifier = notifier ?? new Mock<IRoomNotifier>(MockBehavior.Strict).Object;
 
         return new RoomRegistry(logger, roomNotifier);
