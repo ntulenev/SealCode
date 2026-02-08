@@ -2,11 +2,14 @@ using FluentAssertions;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+
+using Transport;
 
 namespace SealCode.Tests;
 
@@ -99,7 +102,204 @@ public sealed class SealCodeApiTests
         payload.Should().Be("Room not found");
     }
 
+    [Fact(DisplayName = "SignalR /roomHub allows joining a room")]
+    [Trait("Category", "Integration")]
+    public async Task JoinRoomOverSignalRReturnsRoomState()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie);
+
+        var cookieContainer = new CookieContainer();
+        cookieContainer.Add(client.BaseAddress!, cookie);
+
+        var hubUrl = new Uri(client.BaseAddress!, "/roomHub");
+        var connection = new HubConnectionBuilder()
+            .WithUrl(hubUrl, options =>
+            {
+                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
+                options.Cookies = cookieContainer;
+            })
+            .Build();
+
+        await connection.StartAsync();
+
+        var result = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+
+        result.Name.Should().Be("Room");
+        result.Language.Should().Be("sql");
+        result.Text.Should().Be(string.Empty);
+        result.Version.Should().BeGreaterThanOrEqualTo(1);
+        result.Users.Should().ContainSingle().Which.Should().Be("Alice");
+        result.CreatedBy.Should().Be("Admin");
+        result.YjsState.Should().BeNull();
+
+        await connection.DisposeAsync();
+    }
+
+    [Fact(DisplayName = "SignalR /roomHub broadcasts room events")]
+    [Trait("Category", "Integration")]
+    public async Task SignalRRoomHubBroadcastsRoomEvents()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie);
+
+        await using var alice = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        await using var bob = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+
+        var bobJoined = new TaskCompletionSource<(string name, string[] users)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var bobJoinedSubscription = bob.On<string, string[]>("UserJoined", (name, users) =>
+            bobJoined.TrySetResult((name, users)));
+
+        var bobJoin = await bob.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Bob");
+        bobJoin.Users.Should().ContainSingle().Which.Should().Be("Bob");
+
+        var aliceJoin = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+        aliceJoin.Users.Should().Contain(["Alice", "Bob"]);
+
+        var joinedPayload = await AwaitWithTimeout(bobJoined.Task);
+        joinedPayload.name.Should().Be("Alice");
+        joinedPayload.users.Should().Contain(["Alice", "Bob"]);
+
+        var textUpdated = new TaskCompletionSource<(string text, int version, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, int, string>("TextUpdated", (text, version, author) =>
+            textUpdated.TrySetResult((text, version, author))))
+        {
+            await alice.InvokeAsync("UpdateText", roomId, "new text", 1);
+            var payload = await AwaitWithTimeout(textUpdated.Task);
+            payload.author.Should().Be("Alice");
+            payload.text.Should().Be("new text");
+        }
+
+        var yjsUpdated = new TaskCompletionSource<(string update, int version, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, int, string>("YjsUpdated", (update, version, author) =>
+            yjsUpdated.TrySetResult((update, version, author))))
+        {
+            var update = Convert.ToBase64String(new byte[] { 1, 2, 3 });
+            var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
+            await alice.InvokeAsync("UpdateYjs", roomId, update, state, "snapshot");
+
+            var payload = await AwaitWithTimeout(yjsUpdated.Task);
+            payload.update.Should().Be(update);
+            payload.author.Should().Be("Alice");
+            payload.version.Should().BeGreaterThanOrEqualTo(2);
+        }
+
+        var languageUpdated = new TaskCompletionSource<(string language, int version)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, int>("LanguageUpdated", (language, version) =>
+            languageUpdated.TrySetResult((language, version))))
+        {
+            await alice.InvokeAsync("SetLanguage", roomId, "sql");
+            var payload = await AwaitWithTimeout(languageUpdated.Task);
+            payload.language.Should().Be("sql");
+            payload.version.Should().BeGreaterThanOrEqualTo(2);
+        }
+
+        var cursorUpdated = new TaskCompletionSource<(string author, int position)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, int>("CursorUpdated", (author, position) =>
+            cursorUpdated.TrySetResult((author, position))))
+        {
+            await alice.InvokeAsync("UpdateCursor", roomId, 42);
+            var payload = await AwaitWithTimeout(cursorUpdated.Task);
+            payload.author.Should().Be("Alice");
+            payload.position.Should().Be(42);
+        }
+
+        var selectionUpdated = new TaskCompletionSource<(string author, bool isMultiLine)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, bool>("UserSelection", (author, isMultiLine) =>
+            selectionUpdated.TrySetResult((author, isMultiLine))))
+        {
+            await alice.InvokeAsync("UpdateSelection", roomId, true);
+            var payload = await AwaitWithTimeout(selectionUpdated.Task);
+            payload.author.Should().Be("Alice");
+            payload.isMultiLine.Should().BeTrue();
+        }
+
+        var copyUpdated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string>("UserCopy", author => copyUpdated.TrySetResult(author)))
+        {
+            await alice.InvokeAsync("UpdateCopy", roomId);
+            var author = await AwaitWithTimeout(copyUpdated.Task);
+            author.Should().Be("Alice");
+        }
+
+        var leftUpdated = new TaskCompletionSource<(string author, string[] users)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, string[]>("UserLeft", (author, users) =>
+            leftUpdated.TrySetResult((author, users))))
+        {
+            await alice.InvokeAsync("LeaveRoom", roomId);
+            var payload = await AwaitWithTimeout(leftUpdated.Task);
+            payload.author.Should().Be("Alice");
+        }
+    }
+
     private static SealCodeAppFactory CreateFactory() => new();
+
+    private static async Task<Cookie> LoginAsAdminAsync(HttpClient client)
+    {
+        using var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["name"] = "Admin",
+            ["password"] = "pass1"
+        });
+
+        var loginResponse = await client.PostAsync("/admin/login", loginContent);
+
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        loginResponse.Headers.TryGetValues("Set-Cookie", out var setCookies).Should().BeTrue();
+
+        var rawCookie = setCookies!.First().Split(';', 2)[0];
+        var parts = rawCookie.Split('=', 2);
+        return new Cookie(parts[0], parts.Length > 1 ? parts[1] : string.Empty);
+    }
+
+    private static async Task<string> CreateRoomAsync(HttpClient client, Cookie cookie)
+    {
+        client.DefaultRequestHeaders.Remove("Cookie");
+        client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={cookie.Value}");
+
+        var response = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Room", Language = "sql" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return payload.GetProperty("RoomId").GetString()!;
+    }
+
+    private static async Task<HubConnection> CreateConnectionAsync(WebApplicationFactory<Program> factory, Uri baseAddress, Cookie cookie)
+    {
+        var cookieContainer = new CookieContainer();
+        cookieContainer.Add(baseAddress, cookie);
+
+        var hubUrl = new Uri(baseAddress, "/roomHub");
+        var connection = new HubConnectionBuilder()
+            .WithUrl(hubUrl, options =>
+            {
+                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
+                options.Cookies = cookieContainer;
+            })
+            .Build();
+
+        await connection.StartAsync();
+        return connection;
+    }
+
+    private static async Task<T> AwaitWithTimeout<T>(Task<T> task)
+    {
+        var completed = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5)));
+        completed.Should().BeSameAs(task);
+        return await task;
+    }
 
     private sealed class SealCodeAppFactory : WebApplicationFactory<Program>
     {
