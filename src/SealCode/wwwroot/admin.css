@@ -14,6 +14,15 @@
   align-items: end;
 }
 
+#createRoom {
+  width: 100%;
+}
+
+#createResult {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 #rooms {
   display: grid;
   gap: 12px;
@@ -63,4 +72,40 @@ button.ghost {
 }
 
 .error { color: #fca5a5; }
+
+@media (max-width: 720px) {
+  .admin-header {
+    justify-content: center;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .grid button {
+    width: 100%;
+  }
+
+  .room-row {
+    grid-template-columns: 1fr;
+  }
+
+  .room-row > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .room-row > div:nth-child(1)::before { content: "Room"; font-size: 12px; color: #6b7280; }
+  .room-row > div:nth-child(2)::before { content: "Language"; font-size: 12px; color: #6b7280; }
+  .room-row > div:nth-child(3)::before { content: "Users"; font-size: 12px; color: #6b7280; }
+  .room-row > div:nth-child(4)::before { content: "Updated"; font-size: 12px; color: #6b7280; }
+  .room-row > div:nth-child(5)::before { content: "Created By"; font-size: 12px; color: #6b7280; }
+  .room-row > div:nth-child(6)::before { content: "Actions"; font-size: 12px; color: #6b7280; }
+
+  .room-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 
