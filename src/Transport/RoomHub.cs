@@ -19,16 +19,23 @@ public sealed class RoomHub : Hub
     /// </summary>
     /// <param name="registry">The room registry.</param>
     /// <param name="settings">The application settings.</param>
+    /// <param name="languageValidator">The language validator.</param>
     /// <param name="logger">The logger.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
-    public RoomHub(IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, ILogger<RoomHub> logger)
+    public RoomHub(
+        IRoomRegistry registry,
+        IOptions<ApplicationConfiguration> settings,
+        ILanguageValidator languageValidator,
+        ILogger<RoomHub> logger)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(languageValidator);
         ArgumentNullException.ThrowIfNull(logger);
 
         _registry = registry;
         _settings = settings;
+        _languageValidator = languageValidator;
         _logger = logger;
     }
 
@@ -226,18 +233,22 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        language = language.Trim().ToLowerInvariant();
-        if (language is not "csharp" and not "sql")
+        int newVersion;
+        RoomLanguage normalized;
+        try
+        {
+            normalized = new RoomLanguage(language);
+            newVersion = room.UpdateLanguage(normalized, DateTimeOffset.UtcNow, _languageValidator).Value;
+        }
+        catch (ArgumentException)
         {
             throw new HubException("Invalid language");
         }
 
-
-        int newVersion;
-        newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow).Value;
-
         var cancellationToken = Context.ConnectionAborted;
-        await Clients.Group(roomId).SendAsync("LanguageUpdated", language, newVersion, cancellationToken).ConfigureAwait(false);
+        await Clients.Group(roomId)
+            .SendAsync("LanguageUpdated", normalized.Value, newVersion, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -406,5 +417,6 @@ public sealed class RoomHub : Hub
 
     private readonly IRoomRegistry _registry;
     private readonly IOptions<ApplicationConfiguration> _settings;
+    private readonly ILanguageValidator _languageValidator;
     private readonly ILogger<RoomHub> _logger;
 }

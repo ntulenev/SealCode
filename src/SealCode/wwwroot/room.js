@@ -84,6 +84,63 @@ function truncateName(name) {
   return `${name.slice(0, 9)}...`;
 }
 
+function setLanguageOptions(selectEl, languages, selected) {
+  const cleaned = Array.isArray(languages)
+    ? languages.map((language) => (typeof language === 'string' ? language.trim() : ''))
+      .filter((language) => language)
+    : [];
+  const unique = [...new Set(cleaned)];
+
+  selectEl.innerHTML = '';
+  if (unique.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Languages unavailable';
+    option.disabled = true;
+    option.selected = true;
+    selectEl.appendChild(option);
+    selectEl.disabled = true;
+    return;
+  }
+
+  for (const language of unique) {
+    const option = document.createElement('option');
+    option.value = language;
+    option.textContent = language;
+    selectEl.appendChild(option);
+  }
+
+  selectEl.disabled = false;
+  if (selected && unique.includes(selected)) {
+    selectEl.value = selected;
+  } else {
+    selectEl.selectedIndex = 0;
+  }
+}
+
+function ensureLanguageOption(language) {
+  if (!language) return;
+  if ([...languageSelect.options].some((option) => option.value === language)) return;
+  const option = document.createElement('option');
+  option.value = language;
+  option.textContent = language;
+  languageSelect.appendChild(option);
+  languageSelect.disabled = false;
+}
+
+async function loadLanguages(selected) {
+  try {
+    const res = await fetch('/languages');
+    if (!res.ok) {
+      throw new Error('Failed to load languages');
+    }
+    const languages = await res.json();
+    setLanguageOptions(languageSelect, languages, selected);
+  } catch {
+    setLanguageOptions(languageSelect, [], selected);
+  }
+}
+
 function renderUsers(users) {
   if (!Array.isArray(users)) {
     participantsList.innerHTML = '';
@@ -351,7 +408,7 @@ function initMonaco() {
   const amdRequire = window.require;
   amdRequire.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
   amdRequire(['vs/editor/editor.main'], () => {
-    model = monaco.editor.createModel('', 'csharp');
+    model = monaco.editor.createModel('', languageSelect?.value || 'plaintext');
     editor = monaco.editor.create(editorHost, {
       model,
       theme: 'vs-dark',
@@ -395,6 +452,7 @@ async function joinRoom() {
     if (createdByEl) {
       createdByEl.textContent = createdBy || 'unknown';
     }
+    ensureLanguageOption(language);
     languageSelect.value = language;
     setLanguage(language);
     initializeYjs(text || '', yjsState);
@@ -478,6 +536,7 @@ connection.on('RoomKilled', (reason) => {
 
 languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
+  if (!languageSelect.value) return;
   setLanguage(languageSelect.value);
   await connection.invoke('SetLanguage', roomId, languageSelect.value);
 });
@@ -505,4 +564,5 @@ joinBtn.addEventListener('click', async () => {
 });
 
 setStatus('disconnected');
+loadLanguages();
 initMonaco();

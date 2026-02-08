@@ -29,6 +29,21 @@ public sealed class SealCodeApiTests
         payload.Should().Be("ok");
     }
 
+    [Fact(DisplayName = "GET /languages returns configured languages")]
+    [Trait("Category", "Integration")]
+    public async Task GetLanguagesReturnsConfiguredLanguages()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/languages");
+        var payload = await response.Content.ReadFromJsonAsync<string[]>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        payload.Should().NotBeNull();
+        payload!.Should().Contain(["csharp", "sql"]);
+    }
+
     [Fact(DisplayName = "GET /admin/rooms returns unauthorized without cookie")]
     [Trait("Category", "Integration")]
     public async Task GetAdminRoomsWithoutCookieReturnsUnauthorized()
@@ -311,6 +326,8 @@ public sealed class SealCodeApiTests
                 {
                     ["AdminUsers:0:Name"] = "Admin",
                     ["AdminUsers:0:Password"] = "pass1",
+                    ["Languages:0"] = "csharp",
+                    ["Languages:1"] = "sql",
                     ["MaxUsersPerRoom"] = "3"
                 };
 

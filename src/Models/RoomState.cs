@@ -51,7 +51,6 @@ public sealed class RoomState
     /// <summary>
     /// Gets the room language.
     /// </summary>
-    /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
     public RoomLanguage Language { get; private set; }
 
     /// <summary>
@@ -175,9 +174,19 @@ public sealed class RoomState
     /// </summary>
     /// <param name="language">The new language.</param>
     /// <param name="updatedUtc">The update timestamp in UTC.</param>
+    /// <param name="languageValidator">The language validator.</param>
     /// <returns>The new room version.</returns>
-    public RoomVersion UpdateLanguage(RoomLanguage language, DateTimeOffset updatedUtc)
+    /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the validator is null.</exception>
+    public RoomVersion UpdateLanguage(RoomLanguage language, DateTimeOffset updatedUtc, ILanguageValidator languageValidator)
     {
+        ArgumentNullException.ThrowIfNull(languageValidator);
+
+        if (!languageValidator.IsValid(language))
+        {
+            throw new ArgumentException("Invalid language", nameof(language));
+        }
+
         lock (_versionGuard)
         {
             Language = language;

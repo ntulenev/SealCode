@@ -15,6 +15,13 @@ public sealed class ApplicationConfiguration
     public required AdminUserConfiguration[] AdminUsers { get; init; }
 
     /// <summary>
+    /// Gets or sets the allowed room languages.
+    /// </summary>
+    [Required]
+    [MinLength(1)]
+    public required string[] Languages { get; init; }
+
+    /// <summary>
     /// Gets or sets the maximum number of users per room.
     /// </summary>
     [Range(1, 5)]

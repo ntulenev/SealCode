@@ -11,10 +11,6 @@ SealCode is a self-hosted collaborative code editor with real-time rooms. The ba
 - In-memory state only; everything resets when the server restarts.
 - Configurable room capacity (1-5 users).
 
-**Syntax Highlighting**
-- C# (`csharp`)
-- SQL (`sql`)
-
 **Collaboration (Yjs)**
 SealCode uses Yjs (CRDT) to merge concurrent edits. Each client produces incremental updates that the server broadcasts to the room.
 
@@ -38,6 +34,7 @@ Open the room link in a browser and enter a display name.
 **Configuration**
 - `src/SealCode/appsettings.json`
 - `AdminUsers`: list of admin name/password pairs.
+- `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 
 **Endpoints**

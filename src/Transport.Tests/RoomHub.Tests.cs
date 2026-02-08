@@ -17,10 +17,11 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenRegistryIsNull()
     {
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], MaxUsersPerRoom = 3 });
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(null!, settings, logger);
+        var action = () => new RoomHub(null!, settings, validator, logger);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -30,9 +31,23 @@ public sealed class RoomHubTests
     public void CtorShouldThrowWhenSettingsIsNull()
     {
         var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
+        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(registry, null!, logger);
+        var action = () => new RoomHub(registry, null!, validator, logger);
+
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "CtorShouldThrowWhenLanguageValidatorIsNull")]
+    [Trait("Category", "Unit")]
+    public void CtorShouldThrowWhenLanguageValidatorIsNull()
+    {
+        var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
+
+        var action = () => new RoomHub(registry, settings, null!, logger);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -42,9 +57,10 @@ public sealed class RoomHubTests
     public void CtorShouldThrowWhenLoggerIsNull()
     {
         var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], MaxUsersPerRoom = 3 });
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(registry, settings, null!);
+        var action = () => new RoomHub(registry, settings, validator, null!);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -91,10 +107,11 @@ public sealed class RoomHubTests
 
     private static RoomHub CreateHub(Abstractions.IRoomRegistry registry)
     {
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], MaxUsersPerRoom = 3 });
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
 
-        return new RoomHub(registry, settings, logger);
+        return new RoomHub(registry, settings, validator, logger);
     }
 
     private static RoomState CreateRoomState() => new(

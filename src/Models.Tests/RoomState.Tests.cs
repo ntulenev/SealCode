@@ -1,3 +1,4 @@
+
 using FluentAssertions;
 
 namespace Models.Tests;
@@ -161,13 +162,26 @@ public sealed class RoomStateTests
     {
         var state = CreateState();
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
+        var validator = new AllowAllLanguageValidator();
 
-        var version = state.UpdateLanguage(new RoomLanguage("sql"), updatedUtc);
+        var version = state.UpdateLanguage(new RoomLanguage("sql"), updatedUtc, validator);
 
         version.Value.Should().Be(2);
         state.Language.Value.Should().Be("sql");
         state.Version.Value.Should().Be(2);
         state.LastUpdatedUtc.Should().Be(updatedUtc);
+    }
+
+    [Fact(DisplayName = "UpdateLanguageShouldThrowWhenLanguageIsInvalid")]
+    [Trait("Category", "Unit")]
+    public void UpdateLanguageShouldThrowWhenLanguageIsInvalid()
+    {
+        var state = CreateState();
+        var validator = new DenyAllLanguageValidator();
+
+        var action = () => state.UpdateLanguage(new RoomLanguage("python"), DateTimeOffset.UtcNow, validator);
+
+        action.Should().Throw<ArgumentException>();
     }
 
     [Fact(DisplayName = "TryUpdateYjsStateShouldReturnFalseWhenUnchanged")]
@@ -241,4 +255,18 @@ public sealed class RoomStateTests
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             new CreatedBy("admin"),
             yjsState);
+
+    private sealed class AllowAllLanguageValidator : ILanguageValidator
+    {
+        public IReadOnlyList<string> Languages => throw new NotImplementedException();
+
+        public bool IsValid(RoomLanguage language) => true;
+    }
+
+    private sealed class DenyAllLanguageValidator : ILanguageValidator
+    {
+        public IReadOnlyList<string> Languages => throw new NotImplementedException();
+
+        public bool IsValid(RoomLanguage language) => false;
+    }
 }

@@ -108,6 +108,7 @@ public sealed class AdminAuthTests
             new AdminUserConfiguration { Name = "Admin", Password = "pass1" },
             new AdminUserConfiguration { Name = "Root", Password = "pass2" }
         ],
+        Languages = ["csharp", "sql"],
         MaxUsersPerRoom = 3
     };
 

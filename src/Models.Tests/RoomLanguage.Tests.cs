@@ -23,12 +23,4 @@ public sealed class RoomLanguageTests
         action.Should().Throw<ArgumentNullException>();
     }
 
-    [Fact(DisplayName = "CtorShouldThrowWhenValueIsInvalid")]
-    [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenValueIsInvalid()
-    {
-        var action = () => new RoomLanguage("python");
-
-        action.Should().Throw<ArgumentException>();
-    }
 }

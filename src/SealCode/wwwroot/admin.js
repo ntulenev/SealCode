@@ -4,6 +4,54 @@ const nameInput = document.getElementById('roomName');
 const langInput = document.getElementById('roomLanguage');
 const resultEl = document.getElementById('createResult');
 
+function setLanguageOptions(selectEl, languages, selected) {
+  const cleaned = Array.isArray(languages)
+    ? languages.map((language) => (typeof language === 'string' ? language.trim() : ''))
+      .filter((language) => language)
+    : [];
+  const unique = [...new Set(cleaned)];
+
+  selectEl.innerHTML = '';
+  if (unique.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No languages configured';
+    option.disabled = true;
+    option.selected = true;
+    selectEl.appendChild(option);
+    selectEl.disabled = true;
+    return;
+  }
+
+  for (const language of unique) {
+    const option = document.createElement('option');
+    option.value = language;
+    option.textContent = language;
+    selectEl.appendChild(option);
+  }
+
+  selectEl.disabled = false;
+  if (selected && unique.includes(selected)) {
+    selectEl.value = selected;
+  } else {
+    selectEl.selectedIndex = 0;
+  }
+}
+
+async function loadLanguages() {
+  try {
+    const res = await fetch('/languages');
+    if (!res.ok) {
+      throw new Error('Failed to load languages');
+    }
+    const languages = await res.json();
+    setLanguageOptions(langInput, languages);
+  } catch {
+    setLanguageOptions(langInput, []);
+    resultEl.textContent = 'Failed to load languages.';
+  }
+}
+
 async function fetchRooms() {
   const res = await fetch('/admin/rooms');
   if (!res.ok) {
@@ -72,6 +120,10 @@ createBtn.addEventListener('click', async () => {
     resultEl.textContent = 'Room name is required.';
     return;
   }
+  if (!language) {
+    resultEl.textContent = 'Language is required.';
+    return;
+  }
 
   const res = await fetch('/admin/rooms', {
     method: 'POST',
@@ -101,3 +153,4 @@ function escapeHtml(text) {
 }
 
 fetchRooms();
+loadLanguages();

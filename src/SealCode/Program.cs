@@ -7,6 +7,8 @@ using Abstractions;
 using Logic;
 using Models;
 
+using SealCode;
+
 using Transport;
 using Transport.Admin;
 
@@ -19,6 +21,8 @@ builder.Services.AddOptions<ApplicationConfiguration>()
     .Bind(builder.Configuration)
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+builder.Services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
 
 builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 1024 * 1024)
     .AddJsonProtocol(options =>
@@ -118,6 +122,9 @@ app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry, IOption
 
     return Results.Json(rooms);
 });
+
+app.MapGet("/languages", (ILanguageValidator validator)
+    => Results.Json(validator.Languages));
 
 app.MapPost("/admin/rooms",
             async (HttpContext context,

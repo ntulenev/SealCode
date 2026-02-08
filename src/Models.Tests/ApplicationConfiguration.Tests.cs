@@ -13,6 +13,7 @@ public sealed class ApplicationConfigurationTests
         var config = new ApplicationConfiguration
         {
             AdminUsers = [new AdminUserConfiguration { Name = "Admin", Password = "pass1" }],
+            Languages = ["csharp", "sql"],
             MaxUsersPerRoom = 3
         };
 
@@ -28,6 +29,7 @@ public sealed class ApplicationConfigurationTests
         var config = new ApplicationConfiguration
         {
             AdminUsers = null!,
+            Languages = ["csharp"],
             MaxUsersPerRoom = 3
         };
 
@@ -43,6 +45,7 @@ public sealed class ApplicationConfigurationTests
         var config = new ApplicationConfiguration
         {
             AdminUsers = [],
+            Languages = ["csharp"],
             MaxUsersPerRoom = 3
         };
 
@@ -60,7 +63,40 @@ public sealed class ApplicationConfigurationTests
         var config = new ApplicationConfiguration
         {
             AdminUsers = [new AdminUserConfiguration { Name = "Admin", Password = "pass1" }],
+            Languages = ["csharp"],
             MaxUsersPerRoom = value
+        };
+
+        var isValid = Validator.TryValidateObject(config, new ValidationContext(config), [], true);
+
+        isValid.Should().BeFalse();
+    }
+
+    [Fact(DisplayName = "ValidationShouldFailWhenLanguagesIsNull")]
+    [Trait("Category", "Unit")]
+    public void ValidationShouldFailWhenLanguagesIsNull()
+    {
+        var config = new ApplicationConfiguration
+        {
+            AdminUsers = [new AdminUserConfiguration { Name = "Admin", Password = "pass1" }],
+            Languages = null!,
+            MaxUsersPerRoom = 3
+        };
+
+        var isValid = Validator.TryValidateObject(config, new ValidationContext(config), [], true);
+
+        isValid.Should().BeFalse();
+    }
+
+    [Fact(DisplayName = "ValidationShouldFailWhenLanguagesIsEmpty")]
+    [Trait("Category", "Unit")]
+    public void ValidationShouldFailWhenLanguagesIsEmpty()
+    {
+        var config = new ApplicationConfiguration
+        {
+            AdminUsers = [new AdminUserConfiguration { Name = "Admin", Password = "pass1" }],
+            Languages = [],
+            MaxUsersPerRoom = 3
         };
 
         var isValid = Validator.TryValidateObject(config, new ValidationContext(config), [], true);
