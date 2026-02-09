@@ -566,7 +566,7 @@ connection.on('UserLeft', (name, users) => {
   renderRemoteCarets();
 });
 
-connection.on('YjsUpdated', (updateBase64, version, author) => {
+connection.on('YjsUpdated', (updateBase64, version, author, stateBase64) => {
   currentVersion = version;
   versionNumberEl.textContent = currentVersion;
   renderUsers(currentUsers);
@@ -575,9 +575,19 @@ connection.on('YjsUpdated', (updateBase64, version, author) => {
   markActiveEditor(author);
   const update = uint8FromBase64(updateBase64);
   if (update.length === 0) return;
+  const beforeText = ytext ? ytext.toString() : '';
   isApplyingRemoteUpdate = true;
   Y.applyUpdate(ydoc, update, 'remote');
   isApplyingRemoteUpdate = false;
+  const afterText = ytext ? ytext.toString() : '';
+  if (stateBase64 && beforeText === afterText) {
+    const fullState = uint8FromBase64(stateBase64);
+    if (fullState.length > 0) {
+      isApplyingRemoteUpdate = true;
+      Y.applyUpdate(ydoc, fullState, 'remote');
+      isApplyingRemoteUpdate = false;
+    }
+  }
   syncModelFromYjs();
 });
 

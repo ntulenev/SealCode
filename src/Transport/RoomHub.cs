@@ -204,7 +204,7 @@ public sealed class RoomHub : Hub
 
         var cancellationToken = Context.ConnectionAborted;
         await Clients.Group(roomId)
-            .SendAsync("YjsUpdated", updateBase64, newVersion.Value, author, cancellationToken)
+            .SendAsync("YjsUpdated", updateBase64, newVersion.Value, author, stateBase64, cancellationToken)
             .ConfigureAwait(false);
     }
 

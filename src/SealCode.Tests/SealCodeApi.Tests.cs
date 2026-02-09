@@ -197,9 +197,9 @@ public sealed class SealCodeApiTests
             payload.text.Should().Be("new text");
         }
 
-        var yjsUpdated = new TaskCompletionSource<(string update, int version, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, int, string>("YjsUpdated", (update, version, author) =>
-            yjsUpdated.TrySetResult((update, version, author))))
+        var yjsUpdated = new TaskCompletionSource<(string update, int version, string author, string state)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, int, string, string>("YjsUpdated", (update, version, author, state) =>
+            yjsUpdated.TrySetResult((update, version, author, state))))
         {
             var update = Convert.ToBase64String(new byte[] { 1, 2, 3 });
             var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
@@ -207,6 +207,7 @@ public sealed class SealCodeApiTests
 
             var payload = await AwaitWithTimeout(yjsUpdated.Task);
             payload.update.Should().Be(update);
+            payload.state.Should().Be(state);
             payload.author.Should().Be("Alice");
             payload.version.Should().BeGreaterThanOrEqualTo(2);
         }
