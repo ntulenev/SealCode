@@ -14,7 +14,8 @@ const joinBtn = document.getElementById('joinBtn');
 const displayNameInput = document.getElementById('displayNameInput');
 const joinError = document.getElementById('joinError');
 
-const roomId = window.location.pathname.split('/').pop();
+const pathSegments = new URL(window.location.href).pathname.split('/').filter(Boolean);
+const roomId = pathSegments[pathSegments.length - 1] ?? '';
 let displayName = '';
 let currentVersion = 0;
 let isApplyingRemoteUpdate = false;
@@ -28,6 +29,8 @@ let hideRemoteTimer = null;
 const activeEditors = new Map();
 const selectingUsers = new Map();
 const copyingUsers = new Map();
+const caretClassMap = new Map();
+let caretClassCounter = 0;
 
 let editor = null;
 let model = null;
@@ -40,6 +43,7 @@ let monacoBinding = null;
 let pendingYjsStateTimer = null;
 let pendingYjsUpdates = [];
 let isBootstrapping = false;
+let roomClosed = false;
 
 const connection = new signalR.HubConnectionBuilder()
   .withUrl('/roomHub')
@@ -129,15 +133,20 @@ function ensureLanguageOption(language) {
 }
 
 async function loadLanguages(selected) {
+  const preferred = selected ?? languageSelect?.value ?? '';
   try {
     const res = await fetch('/languages');
     if (!res.ok) {
       throw new Error('Failed to load languages');
     }
     const languages = await res.json();
-    setLanguageOptions(languageSelect, languages, selected);
+    setLanguageOptions(languageSelect, languages, preferred);
   } catch {
-    setLanguageOptions(languageSelect, [], selected);
+    setLanguageOptions(languageSelect, [], preferred);
+  }
+
+  if (!languageSelect.disabled && languageSelect.value) {
+    setLanguage(languageSelect.value);
   }
 }
 
@@ -213,7 +222,11 @@ function renderRemoteCarets() {
     const line = pos.lineNumber;
     const col = Math.min(pos.column, model.getLineMaxColumn(line));
     const color = assignColor(name);
-    const className = `remote-caret-${name.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+    if (!caretClassMap.has(name)) {
+      caretClassCounter += 1;
+      caretClassMap.set(name, `remote-caret-${caretClassCounter}`);
+    }
+    const className = caretClassMap.get(name);
     css += `.${className} { border-left: 2px solid ${color}; margin-left: -1px; }\n`;
     decorations.push({
       range: new monaco.Range(line, col, line, col),
@@ -306,6 +319,37 @@ function setText(text) {
   model.setValue(text || '');
   isApplyingRemoteUpdate = false;
   renderRemoteCarets();
+}
+
+function setEditorReadOnly(isReadOnly) {
+  if (!editor) return;
+  editor.updateOptions({ readOnly: isReadOnly });
+}
+
+function setLanguageReadOnly(isReadOnly) {
+  if (!languageSelect) return;
+  languageSelect.disabled = isReadOnly;
+}
+
+function syncModelFromYjs() {
+  if (!model || !ytext) return;
+  const docText = ytext.toString();
+  if (model.getValue() === docText) return;
+
+  const hadBinding = monacoBinding;
+  if (hadBinding) {
+    monacoBinding.destroy();
+    monacoBinding = null;
+  }
+
+  setText(docText);
+
+  if (hadBinding && editor) {
+    monacoBinding = new MonacoBinding(ytext, model, new Set([editor]), awareness);
+    if (displayName && awareness) {
+      awareness.setLocalStateField('user', { name: displayName });
+    }
+  }
 }
 
 function scheduleYjsUpdateSend(update) {
@@ -415,7 +459,8 @@ function initMonaco() {
       minimap: { enabled: false },
       automaticLayout: true,
       fontFamily: 'IBM Plex Mono, monospace',
-      fontSize: 14
+      fontSize: 14,
+      readOnly: true
     });
 
     editor.onDidChangeModelContent((event) => {
@@ -426,11 +471,16 @@ function initMonaco() {
     });
 
     editor.onDidChangeCursorSelection(() => {
+      if (!displayName || connection.state !== signalR.HubConnectionState.Connected) {
+        return;
+      }
       scheduleCursorSend();
       const sel = editor.getSelection();
       if (!sel) return;
       const isMultiLine = sel.startLineNumber !== sel.endLineNumber;
-      connection.invoke('UpdateSelection', roomId, isMultiLine).catch(() => {});
+      connection.invoke('UpdateSelection', roomId, isMultiLine).catch((err) => {
+        console.warn('Failed to send selection update.', err);
+      });
     });
 
     editorReadyResolve();
@@ -461,23 +511,43 @@ async function joinRoom() {
     renderUsers(users);
     joinOverlay.classList.add('hidden');
     sendCursor();
+    return true;
   } catch (err) {
     joinError.textContent = err?.message || 'Failed to join room.';
     joinError.classList.remove('hidden');
+    return false;
   }
 }
 
-connection.onreconnecting(() => setStatus('reconnecting'));
 connection.onreconnected(async () => {
   setStatus('connected');
-  if (displayName) {
-    await joinRoom();
+  if (displayName && !roomClosed) {
+    setEditorReadOnly(true);
+    setLanguageReadOnly(true);
+    const joined = await joinRoom();
+    if (joined) {
+      setEditorReadOnly(false);
+      setLanguageReadOnly(false);
+    } else {
+      setEditorReadOnly(true);
+      setLanguageReadOnly(true);
+      joinOverlay.classList.remove('hidden');
+    }
   }
   if (ydoc) {
     scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
   }
 });
-connection.onclose(() => setStatus('disconnected'));
+connection.onreconnecting(() => {
+  setStatus('reconnecting');
+  setEditorReadOnly(true);
+  setLanguageReadOnly(true);
+});
+connection.onclose(() => {
+  setStatus('disconnected');
+  setEditorReadOnly(true);
+  setLanguageReadOnly(true);
+});
 
 connection.on('UserJoined', (name, users) => {
   cursorPositions[name] ??= 0;
@@ -487,6 +557,11 @@ connection.on('UserJoined', (name, users) => {
 
 connection.on('UserLeft', (name, users) => {
   delete cursorPositions[name];
+  caretClassMap.delete(name);
+  delete caretColors[name];
+  activeEditors.delete(name);
+  selectingUsers.delete(name);
+  copyingUsers.delete(name);
   renderUsers(users);
   renderRemoteCarets();
 });
@@ -503,6 +578,7 @@ connection.on('YjsUpdated', (updateBase64, version, author) => {
   isApplyingRemoteUpdate = true;
   Y.applyUpdate(ydoc, update, 'remote');
   isApplyingRemoteUpdate = false;
+  syncModelFromYjs();
 });
 
 connection.on('LanguageUpdated', (language, version) => {
@@ -528,7 +604,8 @@ connection.on('UserCopy', (name) => {
 });
 
 connection.on('RoomKilled', (reason) => {
-  if (editor) editor.updateOptions({ readOnly: true });
+  roomClosed = true;
+  setEditorReadOnly(true);
   joinError.textContent = reason || 'Room closed.';
   joinError.classList.remove('hidden');
   joinOverlay.classList.remove('hidden');
@@ -538,7 +615,12 @@ languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
   if (!languageSelect.value) return;
   setLanguage(languageSelect.value);
-  await connection.invoke('SetLanguage', roomId, languageSelect.value);
+  if (connection.state !== signalR.HubConnectionState.Connected) return;
+  try {
+    await connection.invoke('SetLanguage', roomId, languageSelect.value);
+  } catch (err) {
+    console.warn('Failed to update language.', err);
+  }
 });
 
 document.addEventListener('copy', () => {
@@ -560,9 +642,19 @@ joinBtn.addEventListener('click', async () => {
     await connection.start();
     setStatus('connected');
   }
-  await joinRoom();
+  setLanguageReadOnly(true);
+  const joined = await joinRoom();
+  if (joined) {
+    setEditorReadOnly(false);
+    setLanguageReadOnly(false);
+  } else {
+    setEditorReadOnly(true);
+    setLanguageReadOnly(true);
+  }
 });
 
 setStatus('disconnected');
-loadLanguages();
+loadLanguages().finally(() => {
+  setLanguageReadOnly(true);
+});
 initMonaco();
