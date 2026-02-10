@@ -31,7 +31,7 @@ public sealed class RoomRegistry : IRoomRegistry
     public bool TryGetRoom(RoomId roomId, out RoomState room) => _rooms.TryGetValue(roomId, out room!);
 
     /// <inheritdoc />
-    public RoomState CreateRoom(RoomName name, RoomLanguage language, CreatedBy createdBy)
+    public RoomState CreateRoom(RoomName name, RoomLanguage language, AdminUser createdBy)
     {
         var room = new RoomState(
             RoomId.New(),
@@ -45,7 +45,7 @@ public sealed class RoomRegistry : IRoomRegistry
         _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
 
 #pragma warning disable CA1873 // Avoid potentially expensive logging
-        _logger.LogInformation("Room created {RoomId} ({Name}) by {CreatedBy}", room.RoomId.Value, room.Name.Value, room.CreatedBy.Value);
+        _logger.LogInformation("Room created {RoomId} ({Name}) by {CreatedBy}", room.RoomId.Value, room.Name.Value, room.CreatedBy.Name);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
         return room;

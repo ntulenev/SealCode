@@ -1,7 +1,5 @@
 using System.Collections.Immutable;
 
-using Models.Configuration;
-
 namespace Models;
 
 /// <summary>
@@ -27,7 +25,7 @@ public sealed class RoomState
         RoomText text,
         RoomVersion version,
         DateTimeOffset lastUpdatedUtc,
-        CreatedBy createdBy,
+        AdminUser createdBy,
         byte[]? yjsState = null)
     {
         RoomId = roomId;
@@ -80,19 +78,23 @@ public sealed class RoomState
     /// <summary>
     /// Gets the admin that created the room.
     /// </summary>
-    public CreatedBy CreatedBy { get; }
+    public AdminUser CreatedBy { get; }
 
     /// <summary>
     /// Determines whether the provided admin user created this room.
     /// </summary>
     /// <param name="adminUser">The admin user to check.</param>
     /// <returns>True when the admin user created this room; otherwise false.</returns>
-    public bool IsCreatedBy(AdminUserConfiguration adminUser)
-    {
-        ArgumentNullException.ThrowIfNull(adminUser);
+    public bool IsCreatedBy(AdminUser adminUser)
+        => CreatedBy.Matches(adminUser);
 
-        return string.Equals(CreatedBy.Value, adminUser.Name, StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary>
+    /// Determines whether the provided admin user can delete this room.
+    /// </summary>
+    /// <param name="adminUser">The current admin user.</param>
+    /// <returns>True when the admin user can delete this room; otherwise false.</returns>
+    public bool CanDelete(AdminUser adminUser)
+        => adminUser.IsSuperAdmin || IsCreatedBy(adminUser);
 
     /// <summary>
     /// Gets the connected users keyed by connection id.

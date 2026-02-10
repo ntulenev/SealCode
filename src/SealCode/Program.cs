@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Http.Json;
-using Microsoft.Extensions.Options;
-
 using Models.Configuration;
 
 using Abstractions;
@@ -10,7 +8,7 @@ using Models;
 using SealCode;
 
 using Transport;
-using Transport.Admin;
+using SealCode.Security;
 
 using Transport.Models;
 using Transport.Serialization;
@@ -39,6 +37,13 @@ builder.Services.Configure<JsonOptions>(options =>
 
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();
 builder.Services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped(sp =>
+{
+    var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+    return accessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
+});
+builder.Services.AddScoped<IAdminUserManager, AdminUserManager>();
 
 var app = builder.Build();
 
@@ -58,42 +63,23 @@ app.MapGet("/admin/login", (IWebHostEnvironment env) =>
 });
 
 app.MapPost("/admin/login",
-            async (HttpContext context,
-                   IOptions<ApplicationConfiguration> settings,
+            async (IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
-    var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
-    var name = form["name"].ToString().Trim();
-    var password = form["password"].ToString();
-
-    var user = settings.Value.AdminUsers.FirstOrDefault(user =>
-        string.Equals(user.Name, name, StringComparison.OrdinalIgnoreCase)
-        && user.Password == password);
-
-    if (user is not null)
-    {
-        context.Response.Cookies.Append(AdminAuth.COOKIENAME, user.Name, new CookieOptions
-        {
-            HttpOnly = true,
-            IsEssential = true,
-            SameSite = SameSiteMode.Lax
-        });
-
-        return Results.Redirect("/admin");
-    }
-
-    return Results.Redirect("/admin/login?error=1");
+    return await adminUserManager.TrySetCurrentUserAsync(cancellationToken).ConfigureAwait(false)
+        ? Results.Redirect("/admin")
+        : Results.Redirect("/admin/login?error=1");
 });
 
-app.MapPost("/admin/logout", (HttpContext context) =>
+app.MapPost("/admin/logout", (IAdminUserManager adminUserManager) =>
 {
-    context.Response.Cookies.Delete(AdminAuth.COOKIENAME);
+    adminUserManager.ClearCurrentAdminUser();
     return Results.Redirect("/admin/login");
 });
 
-app.MapGet("/admin", (HttpContext context, IWebHostEnvironment env, IOptions<ApplicationConfiguration> settings) =>
+app.MapGet("/admin", (IWebHostEnvironment env, IAdminUserManager adminUserManager) =>
 {
-    if (!AdminAuth.IsAdmin(context, settings.Value))
+    if (!adminUserManager.IsAdmin())
     {
         return Results.Redirect("/admin/login");
     }
@@ -102,26 +88,22 @@ app.MapGet("/admin", (HttpContext context, IWebHostEnvironment env, IOptions<App
     return Results.File(path, "text/html");
 });
 
-app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings) =>
+app.MapGet("/admin/rooms", (IRoomRegistry registry, IAdminUserManager adminUserManager) =>
 {
-    if (!AdminAuth.TryGetAdminUser(context, settings.Value, out var adminUser))
+    if (!adminUserManager.TryGetAdminUser(out var adminUser))
     {
         return Results.Unauthorized();
     }
 
     var rooms = registry.GetRoomsSnapshot()
-        .Select(room =>
-        {
-            var canDelete = adminUser.IsSuperAdmin || room.IsCreatedBy(adminUser);
-            return new RoomSummaryDto(
-                room.RoomId.Value,
-                room.Name.Value,
-                room.Language.Value,
-                room.ConnectedUserCount,
-                room.LastUpdatedUtc,
-                room.CreatedBy.Value,
-                canDelete);
-        })
+        .Select(room => new RoomSummaryDto(
+            room.RoomId.Value,
+            room.Name.Value,
+            room.Language.Value,
+            room.ConnectedUserCount,
+            room.LastUpdatedUtc,
+            room.CreatedBy.Name,
+            room.CanDelete(adminUser)))
         .OrderBy(room => room.Name, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
@@ -134,10 +116,10 @@ app.MapGet("/languages", (ILanguageValidator validator)
 app.MapPost("/admin/rooms",
             async (HttpContext context,
                    IRoomRegistry registry,
-                   IOptions<ApplicationConfiguration> settings,
+                   IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
-    if (!AdminAuth.TryGetAdminUser(context, settings.Value, out var adminUser))
+    if (!adminUserManager.TryGetAdminUser(out var adminUser))
     {
         return Results.Unauthorized();
     }
@@ -150,24 +132,23 @@ app.MapPost("/admin/rooms",
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
     var name = new RoomName(payload.Name);
-    var room = registry.CreateRoom(name, language, new CreatedBy(adminUser.Name));
+    var room = registry.CreateRoom(name, language, adminUser);
     return Results.Json(new
     {
         RoomId = room.RoomId.Value,
         Name = room.Name.Value,
         Language = room.Language.Value,
-        CreatedBy = room.CreatedBy.Value
+        CreatedBy = room.CreatedBy.Name
     });
 });
 
 app.MapDelete("/admin/rooms/{roomId}",
-            async (HttpContext context,
-                   string roomId,
+            async (string roomId,
                    IRoomRegistry registry,
-                   IOptions<ApplicationConfiguration> settings,
+                   IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
-    if (!AdminAuth.TryGetAdminUser(context, settings.Value, out var adminUser))
+    if (!adminUserManager.TryGetAdminUser(out var adminUser))
     {
         return Results.Unauthorized();
     }
@@ -178,7 +159,7 @@ app.MapDelete("/admin/rooms/{roomId}",
         return Results.NotFound();
     }
 
-    if (!adminUser.IsSuperAdmin && !room.IsCreatedBy(adminUser))
+    if (!room.CanDelete(adminUser))
     {
         return Results.StatusCode(StatusCodes.Status403Forbidden);
     }

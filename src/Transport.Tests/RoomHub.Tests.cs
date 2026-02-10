@@ -121,5 +121,5 @@ public sealed class RoomHubTests
         new RoomText("text"),
         new RoomVersion(1),
         new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        new CreatedBy("admin"));
+        new AdminUser("admin"));
 }

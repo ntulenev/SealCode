@@ -89,7 +89,7 @@ public sealed class RoomHub : Hub
         roomName = room.Name.Value;
         language = room.Language.Value;
         text = room.Text.Value;
-        createdBy = room.CreatedBy.Value;
+        createdBy = room.CreatedBy.Name;
         version = room.Version.Value;
         yjsState = room.YjsState.Length > 0 ? Convert.ToBase64String(room.YjsState) : null;
 

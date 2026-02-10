@@ -40,14 +40,14 @@ public sealed class RoomRegistryTests
     {
         var registry = CreateRegistry();
 
-        var room = registry.CreateRoom(new RoomName("Room"), new RoomLanguage("csharp"), new CreatedBy("admin"));
+        var room = registry.CreateRoom(new RoomName("Room"), new RoomLanguage("csharp"), new AdminUser("admin"));
 
         room.RoomId.Value.Should().NotBeNullOrWhiteSpace();
         room.Name.Value.Should().Be("Room");
         room.Language.Value.Should().Be("csharp");
         room.Text.Value.Should().Be(string.Empty);
         room.Version.Value.Should().Be(1);
-        room.CreatedBy.Value.Should().Be("admin");
+        room.CreatedBy.Name.Should().Be("admin");
 
         registry.TryGetRoom(room.RoomId, out var stored).Should().BeTrue();
         stored.RoomId.Should().Be(room.RoomId);
@@ -59,8 +59,8 @@ public sealed class RoomRegistryTests
     {
         var registry = CreateRegistry();
 
-        var first = registry.CreateRoom(new RoomName("Room A"), new RoomLanguage("csharp"), new CreatedBy("admin"));
-        var second = registry.CreateRoom(new RoomName("Room B"), new RoomLanguage("sql"), new CreatedBy("admin"));
+        var first = registry.CreateRoom(new RoomName("Room A"), new RoomLanguage("csharp"), new AdminUser("admin"));
+        var second = registry.CreateRoom(new RoomName("Room B"), new RoomLanguage("sql"), new AdminUser("admin"));
 
         var rooms = registry.GetRoomsSnapshot().ToList();
 
@@ -96,7 +96,7 @@ public sealed class RoomRegistryTests
     {
         var notifier = new Mock<IRoomNotifier>(MockBehavior.Strict);
         var registry = CreateRegistry(notifier.Object);
-        var room = registry.CreateRoom(new RoomName("Room"), new RoomLanguage("csharp"), new CreatedBy("admin"));
+        var room = registry.CreateRoom(new RoomName("Room"), new RoomLanguage("csharp"), new AdminUser("admin"));
         var reason = new RoomDeletionReason("cleanup");
         using var cts = new CancellationTokenSource();
         var notifierCalls = 0;

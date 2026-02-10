@@ -1,7 +1,4 @@
-
 using FluentAssertions;
-
-using Models.Configuration;
 
 namespace Models.Tests;
 
@@ -17,7 +14,7 @@ public sealed class RoomStateTests
         var text = new RoomText("text");
         var version = new RoomVersion(1);
         var updatedUtc = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var createdBy = new CreatedBy("admin");
+        var createdBy = new AdminUser("admin");
         var yjsState = new byte[] { 1, 2, 3 };
 
         var state = new RoomState(roomId, name, language, text, version, updatedUtc, createdBy, yjsState);
@@ -199,7 +196,7 @@ public sealed class RoomStateTests
             new RoomText("hello"),
             new RoomVersion(1),
             initialUpdatedUtc,
-            new CreatedBy("admin"),
+            new AdminUser("admin"),
             [1, 2]);
 
         var result = state.TryUpdateYjsState([1, 2], new RoomText("hello"), updatedUtc, out var version);
@@ -223,7 +220,7 @@ public sealed class RoomStateTests
             new RoomText("hello"),
             new RoomVersion(1),
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            new CreatedBy("admin"),
+            new AdminUser("admin"),
             [1, 2]);
 
         var result = state.TryUpdateYjsState("\t"u8.ToArray(), new RoomText("updated"), updatedUtc, out var version);
@@ -247,17 +244,6 @@ public sealed class RoomStateTests
         action.Should().Throw<ArgumentNullException>();
     }
 
-    [Fact(DisplayName = "IsCreatedByShouldThrowWhenAdminUserIsNull")]
-    [Trait("Category", "Unit")]
-    public void IsCreatedByShouldThrowWhenAdminUserIsNull()
-    {
-        var state = CreateState();
-
-        var action = () => state.IsCreatedBy(null!);
-
-        action.Should().Throw<ArgumentNullException>();
-    }
-
     [Fact(DisplayName = "IsCreatedByShouldReturnTrueWhenAdminMatches")]
     [Trait("Category", "Unit")]
     public void IsCreatedByShouldReturnTrueWhenAdminMatches()
@@ -269,13 +255,9 @@ public sealed class RoomStateTests
             new RoomText("text"),
             new RoomVersion(1),
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            new CreatedBy("Admin"));
+            new AdminUser("Admin"));
 
-        var admin = new AdminUserConfiguration
-        {
-            Name = "admin",
-            Password = "pass1"
-        };
+        var admin = new AdminUser("admin");
 
         var result = state.IsCreatedBy(admin);
 
@@ -287,13 +269,45 @@ public sealed class RoomStateTests
     public void IsCreatedByShouldReturnFalseWhenAdminDoesNotMatch()
     {
         var state = CreateState();
-        var admin = new AdminUserConfiguration
-        {
-            Name = "other",
-            Password = "pass1"
-        };
+        var admin = new AdminUser("other");
 
         var result = state.IsCreatedBy(admin);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact(DisplayName = "CanDeleteShouldReturnTrueForSuperAdmin")]
+    [Trait("Category", "Unit")]
+    public void CanDeleteShouldReturnTrueForSuperAdmin()
+    {
+        var state = CreateState();
+        var admin = new AdminUser("root", true);
+
+        var result = state.CanDelete(admin);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "CanDeleteShouldReturnTrueForOwner")]
+    [Trait("Category", "Unit")]
+    public void CanDeleteShouldReturnTrueForOwner()
+    {
+        var state = CreateState();
+        var admin = new AdminUser("admin");
+
+        var result = state.CanDelete(admin);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "CanDeleteShouldReturnFalseForOtherAdmin")]
+    [Trait("Category", "Unit")]
+    public void CanDeleteShouldReturnFalseForOtherAdmin()
+    {
+        var state = CreateState();
+        var admin = new AdminUser("other");
+
+        var result = state.CanDelete(admin);
 
         result.Should().BeFalse();
     }
@@ -306,7 +320,7 @@ public sealed class RoomStateTests
             new RoomText("text"),
             new RoomVersion(1),
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            new CreatedBy("admin"),
+            new AdminUser("admin"),
             yjsState);
 
     private sealed class AllowAllLanguageValidator : ILanguageValidator
