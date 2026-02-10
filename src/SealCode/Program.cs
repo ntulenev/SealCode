@@ -37,6 +37,7 @@ builder.Services.Configure<JsonOptions>(options =>
 
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();
 builder.Services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
+builder.Services.AddSingleton<IRoomManager, RoomManager>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(sp =>
 {
@@ -88,23 +89,22 @@ app.MapGet("/admin", (IWebHostEnvironment env, IAdminUserManager adminUserManage
     return Results.File(path, "text/html");
 });
 
-app.MapGet("/admin/rooms", (IRoomRegistry registry, IAdminUserManager adminUserManager) =>
+app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUserManager) =>
 {
     if (!adminUserManager.TryGetAdminUser(out var adminUser))
     {
         return Results.Unauthorized();
     }
 
-    var rooms = registry.GetRoomsSnapshot()
+    var rooms = roomManager.GetRoomsSnapshot(adminUser)
         .Select(room => new RoomSummaryDto(
             room.RoomId.Value,
             room.Name.Value,
             room.Language.Value,
-            room.ConnectedUserCount,
+            room.UsersCount,
             room.LastUpdatedUtc,
             room.CreatedBy.Name,
-            room.CanDelete(adminUser)))
-        .OrderBy(room => room.Name, StringComparer.OrdinalIgnoreCase)
+            room.CanDelete))
         .ToArray();
 
     return Results.Json(rooms);
@@ -115,7 +115,7 @@ app.MapGet("/languages", (ILanguageValidator validator)
 
 app.MapPost("/admin/rooms",
             async (HttpContext context,
-                   IRoomRegistry registry,
+                   IRoomManager roomManager,
                    IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
@@ -132,7 +132,7 @@ app.MapPost("/admin/rooms",
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
     var name = new RoomName(payload.Name);
-    var room = registry.CreateRoom(name, language, adminUser);
+    var room = roomManager.CreateRoom(name, language, adminUser);
     return Results.Json(new
     {
         RoomId = room.RoomId.Value,
@@ -144,7 +144,7 @@ app.MapPost("/admin/rooms",
 
 app.MapDelete("/admin/rooms/{roomId}",
             async (string roomId,
-                   IRoomRegistry registry,
+                   IRoomManager roomManager,
                    IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
@@ -153,22 +153,14 @@ app.MapDelete("/admin/rooms/{roomId}",
         return Results.Unauthorized();
     }
 
-    var roomKey = new RoomId(roomId);
-    if (!registry.TryGetRoom(roomKey, out var room))
+    var result = await roomManager.DeleteRoomAsync(new RoomId(roomId), adminUser, cancellationToken).ConfigureAwait(false);
+    return result switch
     {
-        return Results.NotFound();
-    }
-
-    if (!room.CanDelete(adminUser))
-    {
-        return Results.StatusCode(StatusCodes.Status403Forbidden);
-    }
-
-    var deleted = await registry.DeleteRoomAsync(
-        roomKey,
-        new RoomDeletionReason("Room deleted by admin"),
-        cancellationToken).ConfigureAwait(false);
-    return deleted ? Results.Ok() : Results.NotFound();
+        RoomDeletionResult.Deleted => Results.Ok(),
+        RoomDeletionResult.Forbidden => Results.StatusCode(StatusCodes.Status403Forbidden),
+        RoomDeletionResult.NotFound => Results.NotFound(),
+        _ => throw new NotImplementedException()
+    };
 });
 
 app.MapGet("/room/{roomId}", (string roomId, IRoomRegistry registry, IWebHostEnvironment env) =>
