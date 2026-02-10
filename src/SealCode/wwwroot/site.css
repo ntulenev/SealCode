@@ -131,6 +131,45 @@ a:hover { text-decoration: underline; }
   background: #0f172a;
 }
 
+.about-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.about-logo {
+  width: 120px;
+  height: auto;
+  display: block;
+}
+
+.about-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-link {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 18px;
+  color: #93c5fd;
+}
+
+@media (max-width: 640px) {
+  .about-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .about-logo {
+    width: 100px;
+  }
+}
+
 .tiny-footer {
   margin: 18px auto 28px;
   max-width: 780px;
