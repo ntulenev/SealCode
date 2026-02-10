@@ -260,14 +260,57 @@ public sealed class SealCodeApiTests
         }
     }
 
+    [Fact(DisplayName = "DELETE /admin/rooms forbids non-super admins deleting others rooms")]
+    [Trait("Category", "Integration")]
+    public async Task DeleteRoomForOtherAdminReturnsForbidden()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+
+        var rootCookie = await LoginAsync(client, "Root", "pass2");
+        var roomId = await CreateRoomAsync(client, rootCookie);
+
+        client.DefaultRequestHeaders.Remove("Cookie");
+        client.DefaultRequestHeaders.Add("Cookie", $"{rootCookie.Name}={rootCookie.Value}");
+
+        var roomsResponse = await client.GetAsync("/admin/rooms");
+        roomsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var roomsPayload = await roomsResponse.Content.ReadFromJsonAsync<JsonElement[]>();
+        roomsPayload.Should().NotBeNull();
+        var createdRoom = roomsPayload!.First(room => room.GetProperty("RoomId").GetString() == roomId);
+        createdRoom.GetProperty("CreatedBy").GetString().Should().Be("Root");
+
+        var adminCookie = await LoginAsync(client, "Admin", "pass1");
+        client.DefaultRequestHeaders.Remove("Cookie");
+        client.DefaultRequestHeaders.Add("Cookie", $"{adminCookie.Name}={adminCookie.Value}");
+
+        var forbiddenResponse = await client.DeleteAsync($"/admin/rooms/{roomId}");
+
+        forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        client.DefaultRequestHeaders.Remove("Cookie");
+        client.DefaultRequestHeaders.Add("Cookie", $"{rootCookie.Name}={rootCookie.Value}");
+
+        var deleteResponse = await client.DeleteAsync($"/admin/rooms/{roomId}");
+
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static SealCodeAppFactory CreateFactory() => new();
 
-    private static async Task<Cookie> LoginAsAdminAsync(HttpClient client)
+    private static Task<Cookie> LoginAsAdminAsync(HttpClient client)
+        => LoginAsync(client, "Admin", "pass1");
+
+    private static async Task<Cookie> LoginAsync(HttpClient client, string name, string password)
     {
         using var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["name"] = "Admin",
-            ["password"] = "pass1"
+            ["name"] = name,
+            ["password"] = password
         });
 
         var loginResponse = await client.PostAsync("/admin/login", loginContent);
@@ -327,6 +370,10 @@ public sealed class SealCodeApiTests
                 {
                     ["AdminUsers:0:Name"] = "Admin",
                     ["AdminUsers:0:Password"] = "pass1",
+                    ["AdminUsers:0:IsSuperAdmin"] = "false",
+                    ["AdminUsers:1:Name"] = "Root",
+                    ["AdminUsers:1:Password"] = "pass2",
+                    ["AdminUsers:1:IsSuperAdmin"] = "true",
                     ["Languages:0"] = "csharp",
                     ["Languages:1"] = "sql",
                     ["MaxUsersPerRoom"] = "3"

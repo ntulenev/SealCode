@@ -99,15 +99,30 @@ function renderRooms(rooms) {
       resultEl.textContent = `Copied ${url}`;
     });
 
+    actions.append(link);
+
     const del = document.createElement('button');
     del.textContent = 'Delete';
-    del.addEventListener('click', async () => {
-      if (!confirm('Delete this room?')) return;
-      await fetch(`/admin/rooms/${room.RoomId}`, { method: 'DELETE' });
-      fetchRooms();
-    });
-
-    actions.append(link, del);
+    if (!room.CanDelete) {
+      del.disabled = true;
+      del.title = 'Only super admins can delete rooms created by other users.';
+    } else {
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete this room?')) return;
+        const res = await fetch(`/admin/rooms/${room.RoomId}`, { method: 'DELETE' });
+        if (res.status === 403) {
+          resultEl.textContent = 'Only super admins can delete rooms created by other users.';
+          return;
+        }
+        if (!res.ok) {
+          resultEl.textContent = 'Failed to delete room.';
+          return;
+        }
+        resultEl.textContent = 'Room deleted.';
+        fetchRooms();
+      });
+    }
+    actions.append(del);
     row.append(name, lang, users, updated, createdBy, actions);
     roomsEl.append(row);
   }

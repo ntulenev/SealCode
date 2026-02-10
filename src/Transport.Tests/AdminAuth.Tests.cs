@@ -101,6 +101,85 @@ public sealed class AdminAuthTests
         name.Should().Be("Admin");
     }
 
+    [Fact(DisplayName = "TryGetAdminUserShouldThrowWhenContextIsNull")]
+    [Trait("Category", "Unit")]
+    public void TryGetAdminUserShouldThrowWhenContextIsNull()
+    {
+        var settings = CreateSettings();
+
+        var action = () => AdminAuth.TryGetAdminUser(null!, settings, out _);
+
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "TryGetAdminUserShouldThrowWhenSettingsIsNull")]
+    [Trait("Category", "Unit")]
+    public void TryGetAdminUserShouldThrowWhenSettingsIsNull()
+    {
+        var context = new DefaultHttpContext();
+
+        var action = () => AdminAuth.TryGetAdminUser(context, null!, out _);
+
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "TryGetAdminUserShouldReturnFalseWhenCookieMissing")]
+    [Trait("Category", "Unit")]
+    public void TryGetAdminUserShouldReturnFalseWhenCookieMissing()
+    {
+        var context = new DefaultHttpContext();
+        var settings = CreateSettings();
+
+        var result = AdminAuth.TryGetAdminUser(context, settings, out var user);
+
+        result.Should().BeFalse();
+        user.Should().BeNull();
+    }
+
+    [Fact(DisplayName = "TryGetAdminUserShouldReturnFalseWhenCookieIsWhiteSpace")]
+    [Trait("Category", "Unit")]
+    public void TryGetAdminUserShouldReturnFalseWhenCookieIsWhiteSpace()
+    {
+        var context = new DefaultHttpContext();
+        var settings = CreateSettings();
+        SetCookie(context, $"{AdminAuth.COOKIENAME}= ");
+
+        var result = AdminAuth.TryGetAdminUser(context, settings, out var user);
+
+        result.Should().BeFalse();
+        user.Should().BeNull();
+    }
+
+    [Fact(DisplayName = "TryGetAdminUserShouldReturnFalseWhenAdminNotFound")]
+    [Trait("Category", "Unit")]
+    public void TryGetAdminUserShouldReturnFalseWhenAdminNotFound()
+    {
+        var context = new DefaultHttpContext();
+        var settings = CreateSettings();
+        SetCookie(context, $"{AdminAuth.COOKIENAME}=unknown");
+
+        var result = AdminAuth.TryGetAdminUser(context, settings, out var user);
+
+        result.Should().BeFalse();
+        user.Should().BeNull();
+    }
+
+    [Fact(DisplayName = "TryGetAdminUserShouldReturnTrueWhenAdminFound")]
+    [Trait("Category", "Unit")]
+    public void TryGetAdminUserShouldReturnTrueWhenAdminFound()
+    {
+        var context = new DefaultHttpContext();
+        var settings = CreateSettings();
+        SetCookie(context, $"{AdminAuth.COOKIENAME}=ADMIN");
+
+        var result = AdminAuth.TryGetAdminUser(context, settings, out var user);
+
+        result.Should().BeTrue();
+        user.Should().NotBeNull();
+        user.Name.Should().Be("Admin");
+        user.Password.Should().Be("pass1");
+    }
+
     private static ApplicationConfiguration CreateSettings() => new()
     {
         AdminUsers =

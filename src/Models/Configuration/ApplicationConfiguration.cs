@@ -46,4 +46,9 @@ public sealed class AdminUserConfiguration
     [Required]
     [MinLength(4)]
     public required string Password { get; init; }
+
+    /// <summary>
+    /// Gets or sets whether the admin can manage rooms created by other admins.
+    /// </summary>
+    public bool IsSuperAdmin { get; init; }
 }

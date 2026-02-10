@@ -25,7 +25,7 @@ public static class AdminAuth
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(settings);
 
-        return TryGetAdminName(context, settings, out _);
+        return TryGetAdminUser(context, settings, out _);
     }
 
     /// <summary>
@@ -41,6 +41,28 @@ public static class AdminAuth
         ArgumentNullException.ThrowIfNull(settings);
 
         adminName = string.Empty;
+        if (!TryGetAdminUser(context, settings, out var user))
+        {
+            return false;
+        }
+
+        adminName = user.Name;
+        return true;
+    }
+
+    /// <summary>
+    /// Tries to get the authenticated admin user from the request.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="settings">The application configuration.</param>
+    /// <param name="adminUser">The authenticated admin user when found.</param>
+    /// <returns>True when the cookie is present and matches a configured admin user; otherwise false.</returns>
+    public static bool TryGetAdminUser(HttpContext context, ApplicationConfiguration settings, out AdminUserConfiguration adminUser)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        adminUser = null!;
         if (!context.Request.Cookies.TryGetValue(COOKIENAME, out var value) || string.IsNullOrWhiteSpace(value))
         {
             return false;
@@ -53,7 +75,7 @@ public static class AdminAuth
             return false;
         }
 
-        adminName = user.Name;
+        adminUser = user;
         return true;
     }
 }

@@ -1,6 +1,8 @@
 
 using FluentAssertions;
 
+using Models.Configuration;
+
 namespace Models.Tests;
 
 public sealed class RoomStateTests
@@ -243,6 +245,57 @@ public sealed class RoomStateTests
         var action = () => state.TryUpdateYjsState(null!, new RoomText("text"), DateTimeOffset.UtcNow, out _);
 
         action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "IsCreatedByShouldThrowWhenAdminUserIsNull")]
+    [Trait("Category", "Unit")]
+    public void IsCreatedByShouldThrowWhenAdminUserIsNull()
+    {
+        var state = CreateState();
+
+        var action = () => state.IsCreatedBy(null!);
+
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "IsCreatedByShouldReturnTrueWhenAdminMatches")]
+    [Trait("Category", "Unit")]
+    public void IsCreatedByShouldReturnTrueWhenAdminMatches()
+    {
+        var state = new RoomState(
+            new RoomId("room-1"),
+            new RoomName("Room"),
+            new RoomLanguage("csharp"),
+            new RoomText("text"),
+            new RoomVersion(1),
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            new CreatedBy("Admin"));
+
+        var admin = new AdminUserConfiguration
+        {
+            Name = "admin",
+            Password = "pass1"
+        };
+
+        var result = state.IsCreatedBy(admin);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "IsCreatedByShouldReturnFalseWhenAdminDoesNotMatch")]
+    [Trait("Category", "Unit")]
+    public void IsCreatedByShouldReturnFalseWhenAdminDoesNotMatch()
+    {
+        var state = CreateState();
+        var admin = new AdminUserConfiguration
+        {
+            Name = "other",
+            Password = "pass1"
+        };
+
+        var result = state.IsCreatedBy(admin);
+
+        result.Should().BeFalse();
     }
 
     private static RoomState CreateState(byte[]? yjsState = null)

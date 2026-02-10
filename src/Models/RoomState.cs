@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 
+using Models.Configuration;
+
 namespace Models;
 
 /// <summary>
@@ -79,6 +81,18 @@ public sealed class RoomState
     /// Gets the admin that created the room.
     /// </summary>
     public CreatedBy CreatedBy { get; }
+
+    /// <summary>
+    /// Determines whether the provided admin user created this room.
+    /// </summary>
+    /// <param name="adminUser">The admin user to check.</param>
+    /// <returns>True when the admin user created this room; otherwise false.</returns>
+    public bool IsCreatedBy(AdminUserConfiguration adminUser)
+    {
+        ArgumentNullException.ThrowIfNull(adminUser);
+
+        return string.Equals(CreatedBy.Value, adminUser.Name, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Gets the connected users keyed by connection id.

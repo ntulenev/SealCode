@@ -12,7 +12,7 @@ public sealed class RoomSummaryDtoTests
     {
         var timestamp = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-        var dto = new RoomSummaryDto("room-1", "Room", "sql", 2, timestamp, "admin");
+        var dto = new RoomSummaryDto("room-1", "Room", "sql", 2, timestamp, "admin", true);
 
         dto.RoomId.Should().Be("room-1");
         dto.Name.Should().Be("Room");
@@ -20,5 +20,6 @@ public sealed class RoomSummaryDtoTests
         dto.UsersCount.Should().Be(2);
         dto.LastUpdatedUtc.Should().Be(timestamp);
         dto.CreatedBy.Should().Be("admin");
+        dto.CanDelete.Should().BeTrue();
     }
 }

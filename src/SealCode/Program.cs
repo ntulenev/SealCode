@@ -104,19 +104,24 @@ app.MapGet("/admin", (HttpContext context, IWebHostEnvironment env, IOptions<App
 
 app.MapGet("/admin/rooms", (HttpContext context, IRoomRegistry registry, IOptions<ApplicationConfiguration> settings) =>
 {
-    if (!AdminAuth.IsAdmin(context, settings.Value))
+    if (!AdminAuth.TryGetAdminUser(context, settings.Value, out var adminUser))
     {
         return Results.Unauthorized();
     }
 
     var rooms = registry.GetRoomsSnapshot()
-        .Select(room => new RoomSummaryDto(
-            room.RoomId.Value,
-            room.Name.Value,
-            room.Language.Value,
-            room.ConnectedUserCount,
-            room.LastUpdatedUtc,
-            room.CreatedBy.Value))
+        .Select(room =>
+        {
+            var canDelete = adminUser.IsSuperAdmin || room.IsCreatedBy(adminUser);
+            return new RoomSummaryDto(
+                room.RoomId.Value,
+                room.Name.Value,
+                room.Language.Value,
+                room.ConnectedUserCount,
+                room.LastUpdatedUtc,
+                room.CreatedBy.Value,
+                canDelete);
+        })
         .OrderBy(room => room.Name, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
@@ -132,7 +137,7 @@ app.MapPost("/admin/rooms",
                    IOptions<ApplicationConfiguration> settings,
                    CancellationToken cancellationToken) =>
 {
-    if (!AdminAuth.TryGetAdminName(context, settings.Value, out var adminName))
+    if (!AdminAuth.TryGetAdminUser(context, settings.Value, out var adminUser))
     {
         return Results.Unauthorized();
     }
@@ -145,7 +150,7 @@ app.MapPost("/admin/rooms",
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
     var name = new RoomName(payload.Name);
-    var room = registry.CreateRoom(name, language, new CreatedBy(adminName));
+    var room = registry.CreateRoom(name, language, new CreatedBy(adminUser.Name));
     return Results.Json(new
     {
         RoomId = room.RoomId.Value,
@@ -162,13 +167,24 @@ app.MapDelete("/admin/rooms/{roomId}",
                    IOptions<ApplicationConfiguration> settings,
                    CancellationToken cancellationToken) =>
 {
-    if (!AdminAuth.IsAdmin(context, settings.Value))
+    if (!AdminAuth.TryGetAdminUser(context, settings.Value, out var adminUser))
     {
         return Results.Unauthorized();
     }
 
+    var roomKey = new RoomId(roomId);
+    if (!registry.TryGetRoom(roomKey, out var room))
+    {
+        return Results.NotFound();
+    }
+
+    if (!adminUser.IsSuperAdmin && !room.IsCreatedBy(adminUser))
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
     var deleted = await registry.DeleteRoomAsync(
-        new RoomId(roomId),
+        roomKey,
         new RoomDeletionReason("Room deleted by admin"),
         cancellationToken).ConfigureAwait(false);
     return deleted ? Results.Ok() : Results.NotFound();

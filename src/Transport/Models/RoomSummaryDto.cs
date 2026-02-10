@@ -14,7 +14,8 @@ public sealed class RoomSummaryDto
     /// <param name="usersCount">The number of connected users.</param>
     /// <param name="lastUpdatedUtc">The last updated timestamp.</param>
     /// <param name="createdBy">The admin that created the room.</param>
-    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc, string createdBy)
+    /// <param name="canDelete">Whether the current admin can delete this room.</param>
+    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc, string createdBy, bool canDelete)
     {
 
         RoomId = roomId;
@@ -23,6 +24,7 @@ public sealed class RoomSummaryDto
         UsersCount = usersCount;
         LastUpdatedUtc = lastUpdatedUtc;
         CreatedBy = createdBy;
+        CanDelete = canDelete;
     }
 
     /// <summary>
@@ -54,4 +56,9 @@ public sealed class RoomSummaryDto
     /// Gets the admin that created the room.
     /// </summary>
     public string CreatedBy { get; }
+
+    /// <summary>
+    /// Gets whether the current admin can delete this room.
+    /// </summary>
+    public bool CanDelete { get; }
 }
