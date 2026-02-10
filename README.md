@@ -33,12 +33,13 @@ Open the room link in a browser and enter a display name.
 
 **Configuration**
 - `src/SealCode/appsettings.json`
-- `AdminUsers`: list of admin name/password pairs.
+- `AdminUsers`: list of admin name/password pairs. Include `IsSuperAdmin` to allow deleting rooms created by other admins.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 
 **Endpoints**
 - `/` landing page
+- `/about.html` about page with repository link
 - `/room/{roomId}` room UI
 - `/admin` admin panel
 - `/admin/login` admin login
