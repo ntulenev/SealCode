@@ -9,7 +9,7 @@ using Models.Configuration;
 
 using Moq;
 
-namespace Transport.Tests;
+namespace SealCode.Tests;
 
 public sealed class RoomHubTests
 {
@@ -32,7 +32,7 @@ public sealed class RoomHubTests
     {
         var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
-        var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
+        var logger = new Mock<ILogger<RoomHub>>().Object;
 
         var action = () => new RoomHub(registry, null!, validator, logger);
 
@@ -45,7 +45,7 @@ public sealed class RoomHubTests
     {
         var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
         var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
-        var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
+        var logger = new Mock<ILogger<RoomHub>>().Object;
 
         var action = () => new RoomHub(registry, settings, null!, logger);
 
@@ -69,7 +69,7 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldThrowWhenRoomIdIsEmpty()
     {
-        var hub = CreateHub(new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object);
+        using var hub = CreateHub(new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object);
 
         Func<Task> action = () => hub.JoinRoomAsync(" ", "Alice");
 
@@ -83,7 +83,7 @@ public sealed class RoomHubTests
         var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict);
         registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
             .Returns(false);
-        var hub = CreateHub(registry.Object);
+        using var hub = CreateHub(registry.Object);
 
         Func<Task> action = () => hub.JoinRoomAsync("room", "Alice");
 
@@ -98,7 +98,7 @@ public sealed class RoomHubTests
         var room = CreateRoomState();
         registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out room))
             .Returns(true);
-        var hub = CreateHub(registry.Object);
+        using var hub = CreateHub(registry.Object);
 
         Func<Task> action = () => hub.JoinRoomAsync("room", " ");
 
@@ -109,7 +109,7 @@ public sealed class RoomHubTests
     {
         var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
-        var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
+        var logger = new Mock<ILogger<RoomHub>>().Object;
 
         return new RoomHub(registry, settings, validator, logger);
     }

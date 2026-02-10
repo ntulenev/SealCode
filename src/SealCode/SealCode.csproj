@@ -7,7 +7,9 @@
 	<PropertyGroup>
 		<NuGetAuditMode>all</NuGetAuditMode>
 	</PropertyGroup>
-
+	<PropertyGroup>
+		<NoWarn>CA1873</NoWarn>
+	</PropertyGroup>
 	<PropertyGroup>
 		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>

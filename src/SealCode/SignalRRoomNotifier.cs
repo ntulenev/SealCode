@@ -1,13 +1,17 @@
-using Microsoft.AspNetCore.SignalR;
 using Abstractions;
+
+using Microsoft.AspNetCore.SignalR;
+
 using Models;
 
-namespace Transport;
+namespace SealCode;
 
 /// <summary>
 /// SignalR-based notifier for room events.
 /// </summary>
+#pragma warning disable CA1515 // Need for testing in mocks
 public sealed class SignalRRoomNotifier : IRoomNotifier
+#pragma warning restore CA1515 
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="SignalRRoomNotifier"/> class.

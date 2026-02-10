@@ -1,18 +1,21 @@
 using Abstractions;
 
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using Models;
 using Models.Configuration;
 
-namespace Transport;
+using Transport;
+
+namespace SealCode;
 
 /// <summary>
 /// SignalR hub for room interactions.
 /// </summary>
+#pragma warning disable CA1515 // Need for testing in mocks
 public sealed class RoomHub : Hub
+#pragma warning restore CA1515 
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RoomHub"/> class.

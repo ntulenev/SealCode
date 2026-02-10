@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 
 using Models;
 
-namespace Transport.Tests;
+namespace SealCode.Tests;
 
 public sealed class SignalRRoomNotifierTests
 {

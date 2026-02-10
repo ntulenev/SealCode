@@ -16,6 +16,7 @@
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.2" />
 		<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.2" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+		<PackageReference Include="Moq" Version="4.20.72" />
 		<PackageReference Include="xunit" Version="2.9.3" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
 			<PrivateAssets>all</PrivateAssets>
@@ -27,6 +28,10 @@
 		<ProjectReference Include="..\SealCode\SealCode.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
 
 	<ItemGroup>
 		<Using Include="Xunit" />
@@ -35,7 +40,6 @@
 	<PropertyGroup>
 		<NuGetAuditMode>all</NuGetAuditMode>
 	</PropertyGroup>
-
 	<PropertyGroup>
 		<NoWarn>IDE0058,IDE1006,CA2234,CS1591,CA1861,IDE0042,CA2007</NoWarn>
 	</PropertyGroup>
