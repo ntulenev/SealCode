@@ -3,10 +3,10 @@ namespace Transport.Models;
 /// <summary>
 /// Represents a summary of a room for listings.
 /// </summary>
-public sealed class RoomSummaryDto
+public sealed class RoomSummary
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="RoomSummaryDto"/> class.
+    /// Initializes a new instance of the <see cref="RoomSummary"/> class.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="name">The room name.</param>
@@ -15,7 +15,7 @@ public sealed class RoomSummaryDto
     /// <param name="lastUpdatedUtc">The last updated timestamp.</param>
     /// <param name="createdBy">The admin that created the room.</param>
     /// <param name="canDelete">Whether the current admin can delete this room.</param>
-    public RoomSummaryDto(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc, string createdBy, bool canDelete)
+    public RoomSummary(string roomId, string name, string language, int usersCount, DateTimeOffset lastUpdatedUtc, string createdBy, bool canDelete)
     {
 
         RoomId = roomId;

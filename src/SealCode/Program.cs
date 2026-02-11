@@ -93,7 +93,7 @@ app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUse
     }
 
     var rooms = roomManager.GetRoomsSnapshot(adminUser)
-        .Select(room => new RoomSummaryDto(
+        .Select(room => new RoomSummary(
             room.RoomId.Value,
             room.Name.Value,
             room.Language.Value,
@@ -120,7 +120,7 @@ app.MapPost("/admin/rooms",
         return Results.Unauthorized();
     }
 
-    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequestDto>(cancellationToken).ConfigureAwait(false);
+    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequest>(cancellationToken).ConfigureAwait(false);
     if (payload is null || string.IsNullOrWhiteSpace(payload.Name))
     {
         return Results.BadRequest(new { error = "Name is required" });

@@ -4,13 +4,13 @@ using Transport.Models;
 
 namespace Transport.Tests;
 
-public sealed class CreateRoomRequestDtoTests
+public sealed class CreateRoomRequestTests
 {
     [Fact(DisplayName = "CtorShouldSetValues")]
     [Trait("Category", "Unit")]
     public void CtorShouldSetValues()
     {
-        var dto = new CreateRoomRequestDto("Room", "csharp");
+        var dto = new CreateRoomRequest("Room", "csharp");
 
         dto.Name.Should().Be("Room");
         dto.Language.Should().Be("csharp");
@@ -20,7 +20,7 @@ public sealed class CreateRoomRequestDtoTests
     [Trait("Category", "Unit")]
     public void CtorShouldAllowNullLanguage()
     {
-        var dto = new CreateRoomRequestDto("Room", null);
+        var dto = new CreateRoomRequest("Room", null);
 
         dto.Language.Should().BeNull();
     }
@@ -31,7 +31,7 @@ public sealed class CreateRoomRequestDtoTests
     [InlineData(" ")]
     public void CtorShouldThrowWhenNameIsWhiteSpace(string value)
     {
-        var action = () => new CreateRoomRequestDto(value, "csharp");
+        var action = () => new CreateRoomRequest(value, "csharp");
 
         action.Should().Throw<ArgumentException>();
     }
@@ -40,7 +40,7 @@ public sealed class CreateRoomRequestDtoTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenNameIsNull()
     {
-        var action = () => new CreateRoomRequestDto(null!, "csharp");
+        var action = () => new CreateRoomRequest(null!, "csharp");
 
         action.Should().Throw<ArgumentNullException>();
     }

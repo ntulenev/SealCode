@@ -3,16 +3,16 @@ namespace Transport.Models;
 /// <summary>
 /// Represents a create-room request payload.
 /// </summary>
-public sealed class CreateRoomRequestDto
+public sealed class CreateRoomRequest
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="CreateRoomRequestDto"/> class.
+    /// Initializes a new instance of the <see cref="CreateRoomRequest"/> class.
     /// </summary>
     /// <param name="name">The room name.</param>
     /// <param name="language">The optional language.</param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is empty or whitespace.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is null.</exception>
-    public CreateRoomRequestDto(string name, string? language)
+    public CreateRoomRequest(string name, string? language)
     {
         ArgumentNullException.ThrowIfNull(name);
         if (string.IsNullOrWhiteSpace(name))

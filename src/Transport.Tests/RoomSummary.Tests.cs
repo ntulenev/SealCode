@@ -4,7 +4,7 @@ using Transport.Models;
 
 namespace Transport.Tests;
 
-public sealed class RoomSummaryDtoTests
+public sealed class RoomSummaryTests
 {
     [Fact(DisplayName = "CtorShouldSetValues")]
     [Trait("Category", "Unit")]
@@ -12,7 +12,7 @@ public sealed class RoomSummaryDtoTests
     {
         var timestamp = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-        var dto = new RoomSummaryDto("room-1", "Room", "sql", 2, timestamp, "admin", true);
+        var dto = new RoomSummary("room-1", "Room", "sql", 2, timestamp, "admin", true);
 
         dto.RoomId.Should().Be("room-1");
         dto.Name.Should().Be("Room");
