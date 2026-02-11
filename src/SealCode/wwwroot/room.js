@@ -308,6 +308,21 @@ function scheduleCursorSend() {
   }, 100);
 }
 
+function hasNonEmptyEditorSelection() {
+  if (!editor) return false;
+  const selections = editor.getSelections();
+  if (!Array.isArray(selections) || selections.length === 0) {
+    return false;
+  }
+  return selections.some((selection) => !selection.isEmpty());
+}
+
+function isCopyShortcutKeyboardEvent(event) {
+  if (!event) return false;
+  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+  return key === 'c' && (event.ctrlKey || event.metaKey) && !event.altKey;
+}
+
 function setLanguage(language) {
   if (!model) return;
   monaco.editor.setModelLanguage(model, language);
@@ -458,6 +473,7 @@ function initMonaco() {
       theme: 'vs-dark',
       minimap: { enabled: false },
       automaticLayout: true,
+      emptySelectionClipboard: false,
       fontFamily: 'IBM Plex Mono, monospace',
       fontSize: 14,
       readOnly: true
@@ -468,6 +484,16 @@ function initMonaco() {
       hideRemoteCaretsTemporarily();
       applyRemoteCursorAdjustment(event.changes);
       scheduleCursorSend();
+    });
+
+    editor.onKeyDown((keyboardEvent) => {
+      const browserEvent = keyboardEvent.browserEvent;
+      if (!isCopyShortcutKeyboardEvent(browserEvent)) return;
+      if (hasNonEmptyEditorSelection()) return;
+      browserEvent.preventDefault();
+      browserEvent.stopImmediatePropagation();
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopPropagation();
     });
 
     editor.onDidChangeCursorSelection(() => {
@@ -633,12 +659,21 @@ languageSelect.addEventListener('change', async () => {
   }
 });
 
-document.addEventListener('copy', () => {
+document.addEventListener('copy', (event) => {
+  if (!editor) return;
+  const target = event.target;
+  const isEditorCopy = editor.hasTextFocus() || (target instanceof Node && editorHost.contains(target));
+  if (!isEditorCopy) return;
+  if (!hasNonEmptyEditorSelection()) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   if (!displayName) return;
   if (connection.state !== signalR.HubConnectionState.Connected) return;
   markCopying(displayName);
   connection.invoke('UpdateCopy', roomId).catch(() => {});
-});
+}, true);
 
 joinBtn.addEventListener('click', async () => {
   displayName = displayNameInput.value.trim();
