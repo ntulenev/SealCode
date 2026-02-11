@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 
+using Models.Exceptions;
+
 namespace Models;
 
 /// <summary>
@@ -105,6 +107,13 @@ public sealed class RoomState
     /// Gets the number of connected users.
     /// </summary>
     public int ConnectedUserCount => _connectedUsers.Count;
+
+    /// <summary>
+    /// Creates a sorted snapshot of connected user display names.
+    /// </summary>
+    /// <returns>Connected users sorted by display name (case-insensitive).</returns>
+    public string[] CreateUsersSnapshot()
+        => [.. _connectedUsers.Values.Select(x => x.Value).OrderBy(name => name, StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
     /// Checks if a display name is already in use by another connection.

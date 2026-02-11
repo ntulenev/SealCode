@@ -1,6 +1,10 @@
 using Abstractions;
 
+using Microsoft.Extensions.Options;
+
 using Models;
+using Models.Configuration;
+using Models.Exceptions;
 
 namespace Logic;
 
@@ -13,23 +17,38 @@ public sealed class RoomManager : IRoomManager
     /// Initializes a new instance of the <see cref="RoomManager"/> class.
     /// </summary>
     /// <param name="registry">The room registry.</param>
-    public RoomManager(IRoomRegistry registry)
+    /// <param name="settings">The application settings.</param>
+    public RoomManager(IRoomRegistry registry, IOptions<ApplicationConfiguration> settings)
     {
         ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(settings);
         _registry = registry;
+        _maxUsersPerRoom = Math.Clamp(settings.Value.MaxUsersPerRoom, 1, 5);
+    }
+
+    /// <inheritdoc />
+    public bool TryGetRoom(RoomId roomId, out RoomState room)
+        => _registry.TryGetRoom(roomId, out room);
+
+    /// <inheritdoc />
+    public RoomState RegisterUserInRoom(
+        RoomId roomId,
+        ConnectionId connectionId,
+        DisplayName displayName)
+    {
+        if (!_registry.TryGetRoom(roomId, out var room))
+        {
+            throw new RoomNotFoundException();
+        }
+
+        room.AddUser(connectionId, displayName, _maxUsersPerRoom);
+        return room;
     }
 
     /// <inheritdoc />
     public RoomView[] GetRoomsSnapshot(AdminUser adminUser)
         => [.. _registry.GetRoomsSnapshot()
-            .Select(room => new RoomView(
-                room.RoomId,
-                room.Name,
-                room.Language,
-                room.ConnectedUserCount,
-                room.LastUpdatedUtc,
-                room.CreatedBy,
-                room.CanDelete(adminUser)))
+            .Select(room => RoomView.From(room, adminUser))
             .OrderBy(room => room.Name.Value, StringComparer.OrdinalIgnoreCase)];
 
     /// <inheritdoc />
@@ -57,4 +76,5 @@ public sealed class RoomManager : IRoomManager
     }
 
     private readonly IRoomRegistry _registry;
+    private readonly int _maxUsersPerRoom;
 }

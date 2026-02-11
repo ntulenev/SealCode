@@ -1,4 +1,4 @@
-namespace Models;
+namespace Models.Exceptions;
 
 /// <summary>
 /// Represents errors that occur when adding a user to a room.

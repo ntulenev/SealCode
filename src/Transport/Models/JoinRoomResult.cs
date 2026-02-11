@@ -1,3 +1,5 @@
+using Models;
+
 namespace Transport.Models;
 
 /// <summary>
@@ -17,4 +19,25 @@ public sealed record JoinRoomResult(
     int Version,
     string[] Users,
     string CreatedBy,
-    string? YjsState);
+    string? YjsState)
+{
+    /// <summary>
+    /// Creates a join-room result from room state.
+    /// </summary>
+    /// <param name="room">The source room state.</param>
+    /// <returns>The mapped join-room result.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="room"/> is null.</exception>
+    public static JoinRoomResult From(RoomState room)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+
+        return new JoinRoomResult(
+            room.Name.Value,
+            room.Language.Value,
+            room.Text.Value,
+            room.Version.Value,
+            room.CreateUsersSnapshot(),
+            room.CreatedBy.Name,
+            room.YjsState.Length > 0 ? Convert.ToBase64String(room.YjsState) : null);
+    }
+}

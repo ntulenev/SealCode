@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Models.Exceptions;
 
 namespace Models.Tests;
 
@@ -121,6 +122,20 @@ public sealed class RoomStateTests
         var result = state.TryGetDisplayName(new ConnectionId("conn-missing"), out _);
 
         result.Should().BeFalse();
+    }
+
+    [Fact(DisplayName = "CreateUsersSnapshotShouldReturnCaseInsensitiveOrderedNames")]
+    [Trait("Category", "Unit")]
+    public void CreateUsersSnapshotShouldReturnCaseInsensitiveOrderedNames()
+    {
+        var state = CreateState();
+        state.AddUser(new ConnectionId("conn-1"), new DisplayName("zoe"), 5);
+        state.AddUser(new ConnectionId("conn-2"), new DisplayName("Alice"), 5);
+        state.AddUser(new ConnectionId("conn-3"), new DisplayName("bob"), 5);
+
+        var snapshot = state.CreateUsersSnapshot();
+
+        snapshot.Should().Equal(["Alice", "bob", "zoe"]);
     }
 
     [Fact(DisplayName = "RemoveUserShouldRemoveUser")]

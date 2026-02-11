@@ -24,4 +24,30 @@ public sealed class RoomViewTests
         view.CreatedBy.Should().Be(createdBy);
         view.CanDelete.Should().BeTrue();
     }
+
+    [Fact(DisplayName = "FromShouldMapRoomAndAdminUser")]
+    [Trait("Category", "Unit")]
+    public void FromShouldMapRoomAndAdminUser()
+    {
+        var room = new RoomState(
+            new RoomId("room-1"),
+            new RoomName("Room"),
+            new RoomLanguage("csharp"),
+            new RoomText("code"),
+            new RoomVersion(1),
+            new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero),
+            new AdminUser("Owner"));
+        room.AddUser(new ConnectionId("conn-1"), new DisplayName("Alice"), 5);
+        var adminUser = new AdminUser("Admin");
+
+        var view = RoomView.From(room, adminUser);
+
+        view.RoomId.Should().Be(room.RoomId);
+        view.Name.Should().Be(room.Name);
+        view.Language.Should().Be(room.Language);
+        view.UsersCount.Should().Be(1);
+        view.LastUpdatedUtc.Should().Be(room.LastUpdatedUtc);
+        view.CreatedBy.Should().Be(room.CreatedBy);
+        view.CanDelete.Should().BeFalse();
+    }
 }

@@ -1,10 +1,13 @@
 using Abstractions;
 
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 
 using Moq;
 
 using Models;
+using Models.Configuration;
+using Models.Exceptions;
 
 namespace Logic.Tests;
 
@@ -14,9 +17,97 @@ public sealed class RoomManagerTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenRegistryIsNull()
     {
-        var action = () => new RoomManager(null!);
+        var action = () => new RoomManager(null!, CreateSettings(3));
 
         action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "CtorShouldThrowWhenSettingsIsNull")]
+    [Trait("Category", "Unit")]
+    public void CtorShouldThrowWhenSettingsIsNull()
+    {
+        var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
+
+        var action = () => new RoomManager(registry.Object, null!);
+
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact(DisplayName = "RegisterUserInRoomShouldThrowWhenRoomIsMissing")]
+    [Trait("Category", "Unit")]
+    public void RegisterUserInRoomShouldThrowWhenRoomIsMissing()
+    {
+        var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
+        registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
+            .Returns(false);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
+
+        var action = () => manager.RegisterUserInRoom(
+            new RoomId("missing"),
+            new ConnectionId("conn-1"),
+            new DisplayName("Alice"));
+
+        action.Should().Throw<RoomNotFoundException>();
+        registry.VerifyAll();
+    }
+
+    [Fact(DisplayName = "TryGetRoomShouldDelegateToRegistry")]
+    [Trait("Category", "Unit")]
+    public void TryGetRoomShouldDelegateToRegistry()
+    {
+        var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
+        var room = CreateRoomState("room-1", "Room", "Admin");
+        registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
+            .Returns(true);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
+
+        var found = manager.TryGetRoom(room.RoomId, out var actualRoom);
+
+        found.Should().BeTrue();
+        actualRoom.Should().BeSameAs(room);
+        registry.VerifyAll();
+    }
+
+    [Fact(DisplayName = "RegisterUserInRoomShouldAddUserAndReturnRoom")]
+    [Trait("Category", "Unit")]
+    public void RegisterUserInRoomShouldAddUserAndReturnRoom()
+    {
+        var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
+        var room = CreateRoomState("room-1", "Room", "Admin");
+        registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
+            .Returns(true);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var connectionId = new ConnectionId("conn-1");
+        var displayName = new DisplayName("Alice");
+
+        var result = manager.RegisterUserInRoom(room.RoomId, connectionId, displayName);
+
+        result.Should().BeSameAs(room);
+        room.ConnectedUsers.Should().ContainKey(connectionId);
+        room.ConnectedUsers[connectionId].Should().Be(displayName);
+        registry.VerifyAll();
+    }
+
+    [Fact(DisplayName = "RegisterUserInRoomShouldClampMaxUsersToAtLeastOne")]
+    [Trait("Category", "Unit")]
+    public void RegisterUserInRoomShouldClampMaxUsersToAtLeastOne()
+    {
+        var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
+        var room = CreateRoomState("room-1", "Room", "Admin");
+        registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
+            .Returns(true);
+        var manager = new RoomManager(registry.Object, CreateSettings(0));
+
+        manager.RegisterUserInRoom(room.RoomId, new ConnectionId("conn-1"), new DisplayName("Alice"));
+
+        var action = () => manager.RegisterUserInRoom(
+            room.RoomId,
+            new ConnectionId("conn-2"),
+            new DisplayName("Bob"));
+
+        action.Should().Throw<AddRoomUserException>()
+            .WithMessage("Room is full (max 1)");
+        registry.VerifyAll();
     }
 
     [Fact(DisplayName = "GetRoomsSnapshotShouldReturnOrderedViewsWithCanDelete")]
@@ -28,7 +119,7 @@ public sealed class RoomManagerTests
         var otherRoom = CreateRoomState("room-2", "Alpha", "Root");
         registry.Setup(r => r.GetRoomsSnapshot())
             .Returns([adminRoom, otherRoom]);
-        var manager = new RoomManager(registry.Object);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
 
         var views = manager.GetRoomsSnapshot(new AdminUser("Admin"));
 
@@ -51,7 +142,7 @@ public sealed class RoomManagerTests
         var created = CreateRoomState("room-1", "Room", "Admin");
         registry.Setup(r => r.CreateRoom(name, language, admin))
             .Returns(created);
-        var manager = new RoomManager(registry.Object);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
 
         var result = manager.CreateRoom(name, language, admin);
 
@@ -66,7 +157,7 @@ public sealed class RoomManagerTests
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
         registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
             .Returns(false);
-        var manager = new RoomManager(registry.Object);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(new RoomId("missing"), new AdminUser("Admin"), CancellationToken.None);
 
@@ -82,7 +173,7 @@ public sealed class RoomManagerTests
         var room = CreateRoomState("room-1", "Room", "Root");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
-        var manager = new RoomManager(registry.Object);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(room.RoomId, new AdminUser("Admin"), CancellationToken.None);
 
@@ -104,7 +195,7 @@ public sealed class RoomManagerTests
                 It.Is<RoomDeletionReason>(reason => reason.Value == "Room deleted by admin"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        var manager = new RoomManager(registry.Object);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(room.RoomId, new AdminUser("Admin"), CancellationToken.None);
 
@@ -125,7 +216,7 @@ public sealed class RoomManagerTests
                 It.IsAny<RoomDeletionReason>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        var manager = new RoomManager(registry.Object);
+        var manager = new RoomManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(room.RoomId, new AdminUser("Admin"), CancellationToken.None);
 
@@ -142,4 +233,20 @@ public sealed class RoomManagerTests
             new RoomVersion(1),
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             new AdminUser(createdBy));
+
+    private static IOptions<ApplicationConfiguration> CreateSettings(int maxUsersPerRoom)
+        => Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers =
+            [
+                new AdminUserConfiguration
+                {
+                    Name = "admin",
+                    Password = "admin",
+                    IsSuperAdmin = true
+                }
+            ],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = maxUsersPerRoom
+        });
 }

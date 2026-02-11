@@ -1,4 +1,5 @@
 using Models;
+using Models.Exceptions;
 
 namespace Abstractions;
 
@@ -7,6 +8,28 @@ namespace Abstractions;
 /// </summary>
 public interface IRoomManager
 {
+    /// <summary>
+    /// Tries to get a room by identifier.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <param name="room">When this method returns, contains the room if found.</param>
+    /// <returns><see langword="true"/> when the room exists; otherwise <see langword="false"/>.</returns>
+    bool TryGetRoom(RoomId roomId, out RoomState room);
+
+    /// <summary>
+    /// Registers a user in the target room.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <param name="connectionId">The user connection identifier.</param>
+    /// <param name="displayName">The user display name.</param>
+    /// <returns>The updated room state.</returns>
+    /// <exception cref="RoomNotFoundException">Thrown when the room cannot be found.</exception>
+    /// <exception cref="AddRoomUserException">Thrown when the user cannot be added to the room.</exception>
+    RoomState RegisterUserInRoom(
+        RoomId roomId,
+        ConnectionId connectionId,
+        DisplayName displayName);
+
     /// <summary>
     /// Gets room snapshots for the specified admin user.
     /// </summary>

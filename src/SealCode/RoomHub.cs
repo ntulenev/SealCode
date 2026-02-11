@@ -1,10 +1,9 @@
 using Abstractions;
 
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
 
 using Models;
-using Models.Configuration;
+using Models.Exceptions;
 
 using Transport.Models;
 
@@ -20,24 +19,20 @@ public sealed class RoomHub : Hub
     /// <summary>
     /// Initializes a new instance of the <see cref="RoomHub"/> class.
     /// </summary>
-    /// <param name="registry">The room registry.</param>
-    /// <param name="settings">The application settings.</param>
+    /// <param name="roomManager">The room manager.</param>
     /// <param name="languageValidator">The language validator.</param>
     /// <param name="logger">The logger.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
     public RoomHub(
-        IRoomRegistry registry,
-        IOptions<ApplicationConfiguration> settings,
+        IRoomManager roomManager,
         ILanguageValidator languageValidator,
         ILogger<RoomHub> logger)
     {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(roomManager);
         ArgumentNullException.ThrowIfNull(languageValidator);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _registry = registry;
-        _settings = settings;
+        _roomManager = roomManager;
         _languageValidator = languageValidator;
         _logger = logger;
     }
@@ -57,11 +52,6 @@ public sealed class RoomHub : Hub
             throw new HubException("Room id required");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
-        {
-            throw new HubException("Room not found");
-        }
-
         displayName = (displayName ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(displayName))
         {
@@ -69,45 +59,39 @@ public sealed class RoomHub : Hub
         }
 
         var connectionId = new ConnectionId(Context.ConnectionId);
-        var maxUsers = Math.Clamp(_settings.Value.MaxUsersPerRoom, 1, 5);
-
-        string[] usersSnapshot;
-        string roomName;
-        string language;
-        string text;
-        string createdBy;
-        string? yjsState;
-        int version;
+        RoomState room;
 
         try
         {
-            room.AddUser(connectionId, new DisplayName(displayName), maxUsers);
+            room = _roomManager.RegisterUserInRoom(
+                new RoomId(roomId),
+                connectionId,
+                new DisplayName(displayName));
+        }
+        catch (RoomNotFoundException ex)
+        {
+            throw new HubException(ex.Message);
         }
         catch (AddRoomUserException ex)
         {
             throw new HubException(ex.Message);
         }
 
-        usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
-        roomName = room.Name.Value;
-        language = room.Language.Value;
-        text = room.Text.Value;
-        createdBy = room.CreatedBy.Name;
-        version = room.Version.Value;
-        yjsState = room.YjsState.Length > 0 ? Convert.ToBase64String(room.YjsState) : null;
+        var joinResult = JoinRoomResult.From(room);
 
         Context.Items["roomId"] = roomId;
         Context.Items["displayName"] = displayName;
 
         var cancellationToken = Context.ConnectionAborted;
+
         await Groups.AddToGroupAsync(connectionId.Value, roomId, cancellationToken).ConfigureAwait(false);
         await Clients.GroupExcept(roomId, connectionId.Value)
-            .SendAsync("UserJoined", displayName, usersSnapshot, cancellationToken)
+            .SendAsync("UserJoined", displayName, joinResult.Users, cancellationToken)
             .ConfigureAwait(false);
 
-        _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, roomName, displayName);
+        _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, room.Name.Value, displayName);
 
-        return new JoinRoomResult(roomName, language, text, version, usersSnapshot, createdBy, yjsState);
+        return joinResult;
     }
 
     /// <summary>
@@ -131,18 +115,15 @@ public sealed class RoomHub : Hub
             throw new HubException("Invalid client version");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
 
-        string author;
-        int newVersion;
         var text = newText ?? string.Empty;
-        newVersion = room.UpdateText(new(text), DateTimeOffset.UtcNow).Value;
-        author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
+        var newVersion = room.UpdateText(new(text), DateTimeOffset.UtcNow).Value;
+        var author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
             ? name.Value
-
             : "unknown";
 
         var cancellationToken = Context.ConnectionAborted;
@@ -178,7 +159,7 @@ public sealed class RoomHub : Hub
             throw new HubException("State payload required");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -231,7 +212,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Language required");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -241,7 +222,7 @@ public sealed class RoomHub : Hub
         try
         {
             normalized = new RoomLanguage(language);
-            newVersion = room.UpdateLanguage(normalized, DateTimeOffset.UtcNow, _languageValidator).Value;
+            newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow, _languageValidator).Value;
         }
         catch (ArgumentException)
         {
@@ -274,7 +255,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Invalid cursor position");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -311,7 +292,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Room id required");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -345,7 +326,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Room id required");
         }
 
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             throw new HubException("Room not found");
         }
@@ -393,7 +374,7 @@ public sealed class RoomHub : Hub
 
     private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify, CancellationToken cancellationToken)
     {
-        if (!_registry.TryGetRoom(new RoomId(roomId), out var room))
+        if (!_roomManager.TryGetRoom(new RoomId(roomId), out var room))
         {
             return;
         }
@@ -404,7 +385,7 @@ public sealed class RoomHub : Hub
         if (room.RemoveUser(connectionId, out var name))
         {
             displayName = name.Value;
-            usersSnapshot = [.. room.ConnectedUsers.Values.Select(x => x.Value).OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
+            usersSnapshot = room.CreateUsersSnapshot();
         }
 
         await Groups.RemoveFromGroupAsync(connectionId.Value, roomId, cancellationToken).ConfigureAwait(false);
@@ -416,8 +397,7 @@ public sealed class RoomHub : Hub
         }
     }
 
-    private readonly IRoomRegistry _registry;
-    private readonly IOptions<ApplicationConfiguration> _settings;
+    private readonly IRoomManager _roomManager;
     private readonly ILanguageValidator _languageValidator;
     private readonly ILogger<RoomHub> _logger;
 }

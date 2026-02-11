@@ -1,11 +1,12 @@
+using Abstractions;
+
 using FluentAssertions;
 
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 using Models;
-using Models.Configuration;
+using Models.Exceptions;
 
 using Moq;
 
@@ -13,28 +14,14 @@ namespace SealCode.Tests;
 
 public sealed class RoomHubTests
 {
-    [Fact(DisplayName = "CtorShouldThrowWhenRegistryIsNull")]
+    [Fact(DisplayName = "CtorShouldThrowWhenRoomManagerIsNull")]
     [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenRegistryIsNull()
+    public void CtorShouldThrowWhenRoomManagerIsNull()
     {
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(null!, settings, validator, logger);
-
-        action.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact(DisplayName = "CtorShouldThrowWhenSettingsIsNull")]
-    [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenSettingsIsNull()
-    {
-        var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
-        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
-        var logger = new Mock<ILogger<RoomHub>>().Object;
-
-        var action = () => new RoomHub(registry, null!, validator, logger);
+        var action = () => new RoomHub(null!, validator, logger);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -43,11 +30,10 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenLanguageValidatorIsNull()
     {
-        var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>().Object;
 
-        var action = () => new RoomHub(registry, settings, null!, logger);
+        var action = () => new RoomHub(roomManager, null!, logger);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -56,11 +42,10 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenLoggerIsNull()
     {
-        var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object;
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict).Object;
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(registry, settings, validator, null!);
+        var action = () => new RoomHub(roomManager, validator, null!);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -69,7 +54,7 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldThrowWhenRoomIdIsEmpty()
     {
-        using var hub = CreateHub(new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict).Object);
+        using var hub = CreateHub();
 
         Func<Task> action = () => hub.JoinRoomAsync(" ", "Alice");
 
@@ -80,46 +65,46 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldThrowWhenRoomIsNotFound()
     {
-        var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict);
-        registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
-            .Returns(false);
-        using var hub = CreateHub(registry.Object);
+        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
+        roomManager.Setup(m => m.RegisterUserInRoom(
+                It.IsAny<RoomId>(),
+                It.IsAny<ConnectionId>(),
+                It.IsAny<DisplayName>()))
+            .Throws(new RoomNotFoundException());
+        using var hub = CreateHub(roomManager.Object);
 
         Func<Task> action = () => hub.JoinRoomAsync("room", "Alice");
 
         await action.Should().ThrowAsync<HubException>();
+        roomManager.VerifyAll();
     }
 
     [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenDisplayNameIsEmpty")]
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldThrowWhenDisplayNameIsEmpty()
     {
-        var registry = new Mock<Abstractions.IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState();
-        registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out room))
-            .Returns(true);
-        using var hub = CreateHub(registry.Object);
+        using var hub = CreateHub();
 
         Func<Task> action = () => hub.JoinRoomAsync("room", " ");
 
         await action.Should().ThrowAsync<HubException>();
     }
 
-    private static RoomHub CreateHub(Abstractions.IRoomRegistry registry)
+    private static RoomHub CreateHub(IRoomManager? roomManager = null)
     {
-        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 3 });
+        roomManager ??= new Mock<IRoomManager>(MockBehavior.Strict).Object;
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>().Object;
+        var context = new Mock<HubCallerContext>(MockBehavior.Strict);
+        context.SetupGet(c => c.ConnectionId).Returns("conn-1");
+        context.SetupGet(c => c.ConnectionAborted).Returns(CancellationToken.None);
+        context.SetupGet(c => c.Items).Returns(new Dictionary<object, object?>());
 
-        return new RoomHub(registry, settings, validator, logger);
+        var hub = new RoomHub(roomManager, validator, logger)
+        {
+            Context = context.Object
+        };
+
+        return hub;
     }
-
-    private static RoomState CreateRoomState() => new(
-        new RoomId("room"),
-        new RoomName("Room"),
-        new RoomLanguage("csharp"),
-        new RoomText("text"),
-        new RoomVersion(1),
-        new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        new AdminUser("admin"));
 }
