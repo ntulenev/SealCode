@@ -162,7 +162,7 @@ function renderUsers(users) {
     const pos = cursorPositions[user];
     const display = truncateName(user);
     li.title = user;
-    if (activeEditors.get(user) && user !== displayName) {
+    if (activeEditors.get(user)) {
       li.classList.add('active');
     }
     if (selectingUsers.get(user)) {
@@ -252,7 +252,7 @@ function hideRemoteCaretsTemporarily() {
 }
 
 function markActiveEditor(name) {
-  if (!name || name === displayName) return;
+  if (!name) return;
   activeEditors.set(name, Date.now());
   renderUsers(currentUsers);
   setTimeout(() => {
@@ -483,6 +483,7 @@ function initMonaco() {
       if (isApplyingRemoteUpdate) return;
       hideRemoteCaretsTemporarily();
       applyRemoteCursorAdjustment(event.changes);
+      markActiveEditor(displayName);
       scheduleCursorSend();
     });
 
