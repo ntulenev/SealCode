@@ -45,3 +45,16 @@ Open the room link in a browser and enter a display name.
 - `/admin/login` admin login
 - `/health` health check
 - `/roomHub` SignalR hub
+
+
+**UI Color Indication**
+
+🎨 The interface uses color cues to reflect user actions and interaction states.
+
+![UIColors](UIColors.png)
+
+| Color  | Meaning | Description |
+|--------|----------|-------------|
+| 🟢 Green | Typing | User is actively typing in an input or editor field. |
+| 🟠 Orange | Multi-selection | Multiple rows/items are selected. |
+| 🔴 Red | Copied | Text has been successfully copied to the clipboard. |
