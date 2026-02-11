@@ -10,7 +10,6 @@ using SealCode;
 using SealCode.Security;
 
 using Transport.Models;
-using Transport.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,13 +24,11 @@ builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 1024 
     .AddJsonProtocol(options =>
     {
         options.PayloadSerializerOptions.PropertyNamingPolicy = null;
-        options.PayloadSerializerOptions.Converters.Add(new DisplayNameDtoJsonConverter());
     });
 
 builder.Services.Configure<JsonOptions>(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = null;
-    options.SerializerOptions.Converters.Add(new DisplayNameDtoJsonConverter());
 });
 
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();

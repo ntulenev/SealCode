@@ -1,4 +1,4 @@
-namespace Transport;
+namespace Transport.Models;
 
 /// <summary>
 /// Represents the result of joining a room.

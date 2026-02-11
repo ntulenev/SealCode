@@ -1,5 +1,7 @@
 using FluentAssertions;
 
+using Transport.Models;
+
 namespace Transport.Tests;
 
 public sealed class JoinRoomResultTests

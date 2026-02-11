@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 using Models;
 using Models.Configuration;
 
-using Transport;
+using Transport.Models;
 
 namespace SealCode;
 
