@@ -69,7 +69,7 @@ public sealed class RoomHubTests
         roomManager.Setup(m => m.RegisterUserInRoom(
                 It.IsAny<RoomId>(),
                 It.IsAny<ConnectionId>(),
-                It.IsAny<DisplayName>()))
+                It.IsAny<RoomUser>()))
             .Throws(new RoomNotFoundException());
         using var hub = CreateHub(roomManager.Object);
 
@@ -79,9 +79,9 @@ public sealed class RoomHubTests
         roomManager.VerifyAll();
     }
 
-    [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenDisplayNameIsEmpty")]
+    [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenRoomUserIsEmpty")]
     [Trait("Category", "Unit")]
-    public async Task JoinRoomAsyncShouldThrowWhenDisplayNameIsEmpty()
+    public async Task JoinRoomAsyncShouldThrowWhenRoomUserIsEmpty()
     {
         using var hub = CreateHub();
 
@@ -108,3 +108,4 @@ public sealed class RoomHubTests
         return hub;
     }
 }
+

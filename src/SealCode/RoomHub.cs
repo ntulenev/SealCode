@@ -66,7 +66,7 @@ public sealed class RoomHub : Hub
             room = _roomManager.RegisterUserInRoom(
                 new RoomId(roomId),
                 connectionId,
-                new DisplayName(displayName));
+                new RoomUser(displayName));
         }
         catch (RoomNotFoundException ex)
         {
@@ -89,7 +89,7 @@ public sealed class RoomHub : Hub
             .SendAsync("UserJoined", displayName, joinResult.Users, cancellationToken)
             .ConfigureAwait(false);
 
-        _logger.LogInformation("User joined {RoomId} ({Name}) as {DisplayName}", roomId, room.Name.Value, displayName);
+        _logger.LogInformation("User joined {RoomId} ({Name}) as {RoomUser}", roomId, room.Name.Value, displayName);
 
         return joinResult;
     }
@@ -122,8 +122,8 @@ public sealed class RoomHub : Hub
 
         var text = newText ?? string.Empty;
         var newVersion = room.UpdateText(new(text), DateTimeOffset.UtcNow).Value;
-        var author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
-            ? name.Value
+        var author = room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user)
+            ? user.Value
             : "unknown";
 
         var cancellationToken = Context.ConnectionAborted;
@@ -176,8 +176,8 @@ public sealed class RoomHub : Hub
             throw new HubException("Invalid Yjs payload");
         }
 
-        var author = room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name)
-            ? name.Value
+        var author = room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user)
+            ? user.Value
             : "unknown";
 
         var text = textSnapshot ?? string.Empty;
@@ -260,16 +260,11 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        string? author = null;
-        if (room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
-        {
-            author = name.Value;
-        }
-
-        if (author is null)
+        if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user))
         {
             return;
         }
+        var author = user.Value;
 
         var cancellationToken = Context.ConnectionAborted;
         await Clients.GroupExcept(roomId, Context.ConnectionId)
@@ -297,16 +292,11 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        string? author = null;
-        if (room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
-        {
-            author = name.Value;
-        }
-
-        if (author is null)
+        if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user))
         {
             return;
         }
+        var author = user.Value;
 
         var cancellationToken = Context.ConnectionAborted;
         await Clients.Group(roomId).SendAsync("UserSelection", author, isMultiLine, cancellationToken).ConfigureAwait(false);
@@ -331,13 +321,13 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        if (!room.TryGetDisplayName(new ConnectionId(Context.ConnectionId), out var name))
+        if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user))
         {
             return;
         }
 
         var cancellationToken = Context.ConnectionAborted;
-        await Clients.Group(roomId).SendAsync("UserCopy", name.Value, cancellationToken).ConfigureAwait(false);
+        await Clients.Group(roomId).SendAsync("UserCopy", user.Value, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -382,9 +372,9 @@ public sealed class RoomHub : Hub
         string? displayName = null;
         string[] usersSnapshot = [];
 
-        if (room.RemoveUser(connectionId, out var name))
+        if (room.RemoveUser(connectionId, out var user))
         {
-            displayName = name.Value;
+            displayName = user.Value;
             usersSnapshot = [.. room.CreateUsersSnapshot().Select(x => x.Value)];
         }
 
@@ -393,7 +383,7 @@ public sealed class RoomHub : Hub
         if (notify && displayName is not null)
         {
             await Clients.Group(roomId).SendAsync("UserLeft", displayName, usersSnapshot, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("User left {RoomId} as {DisplayName}", roomId, displayName);
+            _logger.LogInformation("User left {RoomId} as {RoomUser}", roomId, displayName);
         }
     }
 
@@ -401,3 +391,4 @@ public sealed class RoomHub : Hub
     private readonly ILanguageValidator _languageValidator;
     private readonly ILogger<RoomHub> _logger;
 }
+

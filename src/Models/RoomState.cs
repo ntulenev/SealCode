@@ -101,7 +101,7 @@ public sealed class RoomState
     /// <summary>
     /// Gets the connected users keyed by connection id.
     /// </summary>
-    public IReadOnlyDictionary<ConnectionId, DisplayName> ConnectedUsers => _connectedUsers;
+    public IReadOnlyDictionary<ConnectionId, RoomUser> ConnectedUsers => _connectedUsers;
 
     /// <summary>
     /// Gets the number of connected users.
@@ -109,30 +109,30 @@ public sealed class RoomState
     public int ConnectedUserCount => _connectedUsers.Count;
 
     /// <summary>
-    /// Creates a sorted snapshot of connected user display names.
+    /// Creates a sorted snapshot of connected room users.
     /// </summary>
-    /// <returns>Connected user display names sorted case-insensitively.</returns>
-    public DisplayName[] CreateUsersSnapshot()
+    /// <returns>Connected room users sorted case-insensitively.</returns>
+    public RoomUser[] CreateUsersSnapshot()
         => [.. _connectedUsers.Values.OrderBy(name => name.Value, StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
-    /// Checks if a display name is already in use by another connection.
+    /// Checks if a room user name is already in use by another connection.
     /// </summary>
     /// <param name="connectionId">The connection identifier to exclude.</param>
-    /// <param name="displayName">The display name to check.</param>
-    /// <returns>True when the name is in use by another connection; otherwise false.</returns>
-    public bool IsDisplayNameInUse(ConnectionId connectionId, DisplayName displayName)
+    /// <param name="roomUser">The room user name to check.</param>
+    /// <returns>True when the room user name is in use by another connection; otherwise false.</returns>
+    public bool IsRoomUserInUse(ConnectionId connectionId, RoomUser roomUser)
         => _connectedUsers.Any(entry => entry.Key != connectionId
-            && string.Equals(entry.Value.Value, displayName.Value, StringComparison.OrdinalIgnoreCase));
+            && string.Equals(entry.Value.Value, roomUser.Value, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Adds or updates a connected user with room capacity and name checks.
+    /// Adds or updates a connected room user with room capacity and name checks.
     /// </summary>
     /// <param name="connectionId">The connection identifier.</param>
-    /// <param name="displayName">The display name.</param>
+    /// <param name="roomUser">The room user name.</param>
     /// <param name="maxUsers">The maximum number of users allowed in the room.</param>
     /// <exception cref="AddRoomUserException">Thrown when the room is full or the name is already in use.</exception>
-    public void AddUser(ConnectionId connectionId, DisplayName displayName, int maxUsers)
+    public void AddUser(ConnectionId connectionId, RoomUser roomUser, int maxUsers)
     {
         lock (_addGuard)
         {
@@ -142,40 +142,40 @@ public sealed class RoomState
                 throw new AddRoomUserException($"Room is full (max {maxUsers})");
             }
 
-            if (IsDisplayNameInUse(connectionId, displayName))
+            if (IsRoomUserInUse(connectionId, roomUser))
             {
                 throw new AddRoomUserException("Display name already in use. Choose another name.");
             }
 
-            AddOrUpdateUser(connectionId, displayName);
+            AddOrUpdateUser(connectionId, roomUser);
         }
     }
 
-    private void AddOrUpdateUser(ConnectionId connectionId, DisplayName displayName)
+    private void AddOrUpdateUser(ConnectionId connectionId, RoomUser roomUser)
         => ImmutableInterlocked.AddOrUpdate(
             ref _connectedUsers,
             connectionId,
-            displayName,
+            roomUser,
             static (_, value) => value);
 
     /// <summary>
-    /// Tries to get a connected user's display name.
+    /// Tries to get a connected room user name.
     /// </summary>
     /// <param name="connectionId">The connection identifier.</param>
-    /// <param name="displayName">The display name.</param>
+    /// <param name="roomUser">The room user name.</param>
     /// <returns>True when found; otherwise false.</returns>
-    public bool TryGetDisplayName(ConnectionId connectionId, out DisplayName displayName) => _connectedUsers.TryGetValue(connectionId, out displayName);
+    public bool TryGetRoomUser(ConnectionId connectionId, out RoomUser roomUser) => _connectedUsers.TryGetValue(connectionId, out roomUser);
 
     private bool HasUser(ConnectionId connectionId) => _connectedUsers.ContainsKey(connectionId);
 
     /// <summary>
-    /// Removes a connected user.
+    /// Removes a connected room user.
     /// </summary>
     /// <param name="connectionId">The connection identifier.</param>
-    /// <param name="displayName">The removed display name.</param>
+    /// <param name="roomUser">The removed room user name.</param>
     /// <returns>True when removed; otherwise false.</returns>
-    public bool RemoveUser(ConnectionId connectionId, out DisplayName displayName)
-        => ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out displayName);
+    public bool RemoveUser(ConnectionId connectionId, out RoomUser roomUser)
+        => ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out roomUser);
 
     /// <summary>
     /// Updates the room text and bumps the version.
@@ -253,5 +253,6 @@ public sealed class RoomState
 
     private readonly Lock _addGuard = new();
     private readonly Lock _versionGuard = new();
-    private ImmutableDictionary<ConnectionId, DisplayName> _connectedUsers = [];
+    private ImmutableDictionary<ConnectionId, RoomUser> _connectedUsers = [];
 }
+

@@ -21,14 +21,14 @@ public interface IRoomManager
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="connectionId">The user connection identifier.</param>
-    /// <param name="displayName">The user display name.</param>
+    /// <param name="roomUser">The room user name.</param>
     /// <returns>The updated room state.</returns>
     /// <exception cref="RoomNotFoundException">Thrown when the room cannot be found.</exception>
     /// <exception cref="AddRoomUserException">Thrown when the user cannot be added to the room.</exception>
     RoomState RegisterUserInRoom(
         RoomId roomId,
         ConnectionId connectionId,
-        DisplayName displayName);
+        RoomUser roomUser);
 
     /// <summary>
     /// Gets room snapshots for the specified admin user.
@@ -55,3 +55,4 @@ public interface IRoomManager
     /// <returns>The deletion result.</returns>
     Task<RoomDeletionResult> DeleteRoomAsync(RoomId roomId, AdminUser adminUser, CancellationToken cancellationToken);
 }
+

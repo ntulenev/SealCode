@@ -38,8 +38,8 @@ public sealed class JoinRoomResultTests
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             new AdminUser("admin"),
             [1, 2, 3]);
-        room.AddUser(new ConnectionId("conn-2"), new DisplayName("Bob"), 5);
-        room.AddUser(new ConnectionId("conn-1"), new DisplayName("Alice"), 5);
+        room.AddUser(new ConnectionId("conn-2"), new RoomUser("Bob"), 5);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
 
         var result = JoinRoomResult.From(room);
 
@@ -52,3 +52,4 @@ public sealed class JoinRoomResultTests
         result.YjsState.Should().Be(Convert.ToBase64String([1, 2, 3]));
     }
 }
+

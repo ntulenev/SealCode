@@ -49,7 +49,7 @@ public sealed class RoomStateTests
     {
         var state = CreateState();
         var connectionId = new ConnectionId("conn-1");
-        var displayName = new DisplayName("Alice");
+        var displayName = new RoomUser("Alice");
 
         state.AddUser(connectionId, displayName, 5);
 
@@ -64,63 +64,63 @@ public sealed class RoomStateTests
     {
         var state = CreateState();
         var connectionId = new ConnectionId("conn-1");
-        var displayName = new DisplayName("Alice");
+        var displayName = new RoomUser("Alice");
 
         state.AddUser(connectionId, displayName, 1);
 
-        var action = () => state.AddUser(new ConnectionId("conn-2"), new DisplayName("Bob"), 1);
+        var action = () => state.AddUser(new ConnectionId("conn-2"), new RoomUser("Bob"), 1);
 
         action.Should().Throw<AddRoomUserException>();
     }
 
-    [Fact(DisplayName = "AddUserShouldThrowWhenDisplayNameAlreadyInUse")]
+    [Fact(DisplayName = "AddUserShouldThrowWhenRoomUserAlreadyInUse")]
     [Trait("Category", "Unit")]
-    public void AddUserShouldThrowWhenDisplayNameAlreadyInUse()
+    public void AddUserShouldThrowWhenRoomUserAlreadyInUse()
     {
         var state = CreateState();
 
-        state.AddUser(new ConnectionId("conn-1"), new DisplayName("Alice"), 5);
+        state.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
 
-        var action = () => state.AddUser(new ConnectionId("conn-2"), new DisplayName("alice"), 5);
+        var action = () => state.AddUser(new ConnectionId("conn-2"), new RoomUser("alice"), 5);
 
         action.Should().Throw<AddRoomUserException>();
     }
 
-    [Fact(DisplayName = "IsDisplayNameInUseShouldIgnoreSameConnection")]
+    [Fact(DisplayName = "IsRoomUserInUseShouldIgnoreSameConnection")]
     [Trait("Category", "Unit")]
-    public void IsDisplayNameInUseShouldIgnoreSameConnection()
+    public void IsRoomUserInUseShouldIgnoreSameConnection()
     {
         var state = CreateState();
         var connectionId = new ConnectionId("conn-1");
 
-        state.AddUser(connectionId, new DisplayName("Alice"), 5);
+        state.AddUser(connectionId, new RoomUser("Alice"), 5);
 
-        state.IsDisplayNameInUse(connectionId, new DisplayName("alice")).Should().BeFalse();
+        state.IsRoomUserInUse(connectionId, new RoomUser("alice")).Should().BeFalse();
     }
 
-    [Fact(DisplayName = "TryGetDisplayNameShouldReturnTrueWhenUserExists")]
+    [Fact(DisplayName = "TryGetRoomUserShouldReturnTrueWhenUserExists")]
     [Trait("Category", "Unit")]
-    public void TryGetDisplayNameShouldReturnTrueWhenUserExists()
+    public void TryGetRoomUserShouldReturnTrueWhenUserExists()
     {
         var state = CreateState();
         var connectionId = new ConnectionId("conn-1");
-        var displayName = new DisplayName("Alice");
+        var displayName = new RoomUser("Alice");
 
         state.AddUser(connectionId, displayName, 5);
 
-        var result = state.TryGetDisplayName(connectionId, out var found);
+        var result = state.TryGetRoomUser(connectionId, out var found);
 
         result.Should().BeTrue();
         found.Should().Be(displayName);
     }
 
-    [Fact(DisplayName = "TryGetDisplayNameShouldReturnFalseWhenUserDoesNotExist")]
+    [Fact(DisplayName = "TryGetRoomUserShouldReturnFalseWhenUserDoesNotExist")]
     [Trait("Category", "Unit")]
-    public void TryGetDisplayNameShouldReturnFalseWhenUserDoesNotExist()
+    public void TryGetRoomUserShouldReturnFalseWhenUserDoesNotExist()
     {
         var state = CreateState();
 
-        var result = state.TryGetDisplayName(new ConnectionId("conn-missing"), out _);
+        var result = state.TryGetRoomUser(new ConnectionId("conn-missing"), out _);
 
         result.Should().BeFalse();
     }
@@ -130,13 +130,13 @@ public sealed class RoomStateTests
     public void CreateUsersSnapshotShouldReturnCaseInsensitiveOrderedNames()
     {
         var state = CreateState();
-        state.AddUser(new ConnectionId("conn-1"), new DisplayName("zoe"), 5);
-        state.AddUser(new ConnectionId("conn-2"), new DisplayName("Alice"), 5);
-        state.AddUser(new ConnectionId("conn-3"), new DisplayName("bob"), 5);
+        state.AddUser(new ConnectionId("conn-1"), new RoomUser("zoe"), 5);
+        state.AddUser(new ConnectionId("conn-2"), new RoomUser("Alice"), 5);
+        state.AddUser(new ConnectionId("conn-3"), new RoomUser("bob"), 5);
 
         var snapshot = state.CreateUsersSnapshot();
 
-        snapshot.Should().Equal([new DisplayName("Alice"), new DisplayName("bob"), new DisplayName("zoe")]);
+        snapshot.Should().Equal([new RoomUser("Alice"), new RoomUser("bob"), new RoomUser("zoe")]);
     }
 
     [Fact(DisplayName = "RemoveUserShouldRemoveUser")]
@@ -145,7 +145,7 @@ public sealed class RoomStateTests
     {
         var state = CreateState();
         var connectionId = new ConnectionId("conn-1");
-        var displayName = new DisplayName("Alice");
+        var displayName = new RoomUser("Alice");
 
         state.AddUser(connectionId, displayName, 5);
 
@@ -353,3 +353,4 @@ public sealed class RoomStateTests
         public bool IsValid(RoomLanguage language) => false;
     }
 }
+

@@ -34,14 +34,14 @@ public sealed class RoomManager : IRoomManager
     public RoomState RegisterUserInRoom(
         RoomId roomId,
         ConnectionId connectionId,
-        DisplayName displayName)
+        RoomUser roomUser)
     {
         if (!_registry.TryGetRoom(roomId, out var room))
         {
             throw new RoomNotFoundException();
         }
 
-        room.AddUser(connectionId, displayName, _maxUsersPerRoom);
+        room.AddUser(connectionId, roomUser, _maxUsersPerRoom);
         return room;
     }
 
@@ -78,3 +78,4 @@ public sealed class RoomManager : IRoomManager
     private readonly IRoomRegistry _registry;
     private readonly int _maxUsersPerRoom;
 }
+

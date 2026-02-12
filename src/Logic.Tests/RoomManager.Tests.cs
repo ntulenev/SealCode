@@ -45,7 +45,7 @@ public sealed class RoomManagerTests
         var action = () => manager.RegisterUserInRoom(
             new RoomId("missing"),
             new ConnectionId("conn-1"),
-            new DisplayName("Alice"));
+            new RoomUser("Alice"));
 
         action.Should().Throw<RoomNotFoundException>();
         registry.VerifyAll();
@@ -78,7 +78,7 @@ public sealed class RoomManagerTests
             .Returns(true);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
         var connectionId = new ConnectionId("conn-1");
-        var displayName = new DisplayName("Alice");
+        var displayName = new RoomUser("Alice");
 
         var result = manager.RegisterUserInRoom(room.RoomId, connectionId, displayName);
 
@@ -98,12 +98,12 @@ public sealed class RoomManagerTests
             .Returns(true);
         var manager = new RoomManager(registry.Object, CreateSettings(0));
 
-        manager.RegisterUserInRoom(room.RoomId, new ConnectionId("conn-1"), new DisplayName("Alice"));
+        manager.RegisterUserInRoom(room.RoomId, new ConnectionId("conn-1"), new RoomUser("Alice"));
 
         var action = () => manager.RegisterUserInRoom(
             room.RoomId,
             new ConnectionId("conn-2"),
-            new DisplayName("Bob"));
+            new RoomUser("Bob"));
 
         action.Should().Throw<AddRoomUserException>()
             .WithMessage("Room is full (max 1)");
@@ -250,3 +250,4 @@ public sealed class RoomManagerTests
             MaxUsersPerRoom = maxUsersPerRoom
         });
 }
+

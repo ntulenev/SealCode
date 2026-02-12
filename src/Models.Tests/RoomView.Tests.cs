@@ -37,7 +37,7 @@ public sealed class RoomViewTests
             new RoomVersion(1),
             new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero),
             new AdminUser("Owner"));
-        room.AddUser(new ConnectionId("conn-1"), new DisplayName("Alice"), 5);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         var adminUser = new AdminUser("Admin");
 
         var view = RoomView.From(room, adminUser);
@@ -51,3 +51,4 @@ public sealed class RoomViewTests
         view.CanDelete.Should().BeFalse();
     }
 }
+

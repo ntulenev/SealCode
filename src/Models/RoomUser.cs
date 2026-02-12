@@ -1,17 +1,17 @@
 namespace Models;
 
 /// <summary>
-/// Represents a display name.
+/// Represents a room user name.
 /// </summary>
-public readonly record struct DisplayName
+public readonly record struct RoomUser
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="DisplayName"/> struct.
+    /// Initializes a new instance of the <see cref="RoomUser"/> struct.
     /// </summary>
-    /// <param name="value">The display name value.</param>
+    /// <param name="value">The room user name value.</param>
     /// <exception cref="ArgumentException">Thrown when the value is empty or whitespace.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
-    public DisplayName(string value)
+    public RoomUser(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
 
@@ -25,10 +25,11 @@ public readonly record struct DisplayName
     }
 
     /// <summary>
-    /// Gets the display name value.
+    /// Gets the room user name value.
     /// </summary>
     public string Value { get; }
 
     /// <inheritdoc />
     public override string ToString() => Value;
 }
+
