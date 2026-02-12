@@ -111,9 +111,9 @@ public sealed class RoomState
     /// <summary>
     /// Creates a sorted snapshot of connected user display names.
     /// </summary>
-    /// <returns>Connected users sorted by display name (case-insensitive).</returns>
-    public string[] CreateUsersSnapshot()
-        => [.. _connectedUsers.Values.Select(x => x.Value).OrderBy(name => name, StringComparer.OrdinalIgnoreCase)];
+    /// <returns>Connected user display names sorted case-insensitively.</returns>
+    public DisplayName[] CreateUsersSnapshot()
+        => [.. _connectedUsers.Values.OrderBy(name => name.Value, StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
     /// Checks if a display name is already in use by another connection.

@@ -135,7 +135,7 @@ public sealed class RoomStateTests
 
         var snapshot = state.CreateUsersSnapshot();
 
-        snapshot.Should().Equal(["Alice", "bob", "zoe"]);
+        snapshot.Should().Equal([new DisplayName("Alice"), new DisplayName("bob"), new DisplayName("zoe")]);
     }
 
     [Fact(DisplayName = "RemoveUserShouldRemoveUser")]

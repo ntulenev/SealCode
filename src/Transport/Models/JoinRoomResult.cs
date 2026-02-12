@@ -36,7 +36,7 @@ public sealed record JoinRoomResult(
             room.Language.Value,
             room.Text.Value,
             room.Version.Value,
-            room.CreateUsersSnapshot(),
+            [.. room.CreateUsersSnapshot().Select(x => x.Value)],
             room.CreatedBy.Name,
             room.YjsState.Length > 0 ? Convert.ToBase64String(room.YjsState) : null);
     }

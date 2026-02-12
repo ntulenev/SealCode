@@ -385,7 +385,7 @@ public sealed class RoomHub : Hub
         if (room.RemoveUser(connectionId, out var name))
         {
             displayName = name.Value;
-            usersSnapshot = room.CreateUsersSnapshot();
+            usersSnapshot = [.. room.CreateUsersSnapshot().Select(x => x.Value)];
         }
 
         await Groups.RemoveFromGroupAsync(connectionId.Value, roomId, cancellationToken).ConfigureAwait(false);
