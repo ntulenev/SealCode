@@ -323,6 +323,29 @@ function isCopyShortcutKeyboardEvent(event) {
   return key === 'c' && (event.ctrlKey || event.metaKey) && !event.altKey;
 }
 
+function isUndoShortcutKeyboardEvent(event) {
+  if (!event) return false;
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
+  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+  const code = typeof event.code === 'string' ? event.code.toLowerCase() : '';
+  const isUndoKey = key === 'z' || code === 'keyz';
+  return isUndoKey && !event.shiftKey;
+}
+
+function isRedoShortcutKeyboardEvent(event) {
+  if (!event) return false;
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
+  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+  const code = typeof event.code === 'string' ? event.code.toLowerCase() : '';
+  const isRedoKey = key === 'y' || code === 'keyy';
+  const isShiftedUndoKey = (key === 'z' || code === 'keyz') && event.shiftKey;
+  return isRedoKey || isShiftedUndoKey;
+}
+
+function isUndoRedoShortcutKeyboardEvent(event) {
+  return isUndoShortcutKeyboardEvent(event) || isRedoShortcutKeyboardEvent(event);
+}
+
 function setLanguage(language) {
   if (!model) return;
   monaco.editor.setModelLanguage(model, language);
@@ -489,6 +512,13 @@ function initMonaco() {
 
     editor.onKeyDown((keyboardEvent) => {
       const browserEvent = keyboardEvent.browserEvent;
+      if (isUndoRedoShortcutKeyboardEvent(browserEvent)) {
+        browserEvent.preventDefault();
+        browserEvent.stopImmediatePropagation();
+        keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
+        return;
+      }
       if (!isCopyShortcutKeyboardEvent(browserEvent)) return;
       if (hasNonEmptyEditorSelection()) return;
       browserEvent.preventDefault();
