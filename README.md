@@ -9,7 +9,7 @@ SealCode is a self-hosted collaborative code editor with real-time rooms. The ba
 - Room-based sessions with an admin UI to create and close rooms.
 - Syntax highlighting with language switching.
 - In-memory state only; everything resets when the server restarts.
-- Configurable room capacity (1-5 users).
+- Configurable room capacity.
 
 **Collaboration (Yjs)**
 SealCode uses Yjs (CRDT) to merge concurrent edits. Each client produces incremental updates that the server broadcasts to the room.
