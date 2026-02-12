@@ -26,15 +26,9 @@ builder.Services.AddSignalR(options =>
         options.KeepAliveInterval = TimeSpan.FromSeconds(5);
         options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
     })
-    .AddJsonProtocol(options =>
-    {
-        options.PayloadSerializerOptions.PropertyNamingPolicy = null;
-    });
+    .AddJsonProtocol(options => options.PayloadSerializerOptions.PropertyNamingPolicy = null);
 
-builder.Services.Configure<JsonOptions>(options =>
-{
-    options.SerializerOptions.PropertyNamingPolicy = null;
-});
+builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.PropertyNamingPolicy = null);
 
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();
 builder.Services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
