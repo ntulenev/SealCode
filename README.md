@@ -49,7 +49,15 @@ Open the room link in a browser and enter a display name.
 
 **UI Indication**
 
-User labels can include cursor position in the code editor, for example **User1** **(14:25)**, where the position format is (XX:YY).
+The user's cursor position is displayed in the following format:
+
+`User1 (14:25)`
+
+Where:
+
+- `User1` — the user  
+- `14` — the line number  
+- `25` — the column number (character position within the line)
 
 🎨 The interface uses color cues to reflect user actions and interaction states.
 
