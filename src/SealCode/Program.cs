@@ -20,7 +20,12 @@ builder.Services.AddOptions<ApplicationConfiguration>()
 
 builder.Services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
 
-builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 1024 * 1024)
+builder.Services.AddSignalR(options =>
+    {
+        options.MaximumReceiveMessageSize = 1024 * 1024;
+        options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+        options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
+    })
     .AddJsonProtocol(options =>
     {
         options.PayloadSerializerOptions.PropertyNamingPolicy = null;

@@ -44,11 +44,22 @@ let pendingYjsStateTimer = null;
 let pendingYjsUpdates = [];
 let isBootstrapping = false;
 let roomClosed = false;
+let hasJoinedRoom = false;
+let startConnectionPromise = null;
+let isRejoiningRoom = false;
+let rejoinRetryTimer = null;
+let rejoinRetryAttempt = 0;
+const rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000];
 
 const connection = new signalR.HubConnectionBuilder()
   .withUrl('/roomHub')
-  .withAutomaticReconnect()
+  .withAutomaticReconnect({
+    nextRetryDelayInMilliseconds: () => (navigator.onLine ? 3000 : 2000)
+  })
   .build();
+
+connection.serverTimeoutInMilliseconds = 15000;
+connection.keepAliveIntervalInMilliseconds = 5000;
 
 window.__debugYjsSend = () => {
   if (!ydoc) return false;
@@ -58,6 +69,79 @@ window.__debugYjsSend = () => {
 
 function setStatus(status) {
   connectionStatusEl.textContent = status;
+}
+
+function clearRejoinRetryTimer() {
+  if (!rejoinRetryTimer) return;
+  clearTimeout(rejoinRetryTimer);
+  rejoinRetryTimer = null;
+}
+
+async function ensureConnectionStarted() {
+  if (connection.state !== signalR.HubConnectionState.Disconnected) {
+    return true;
+  }
+  if (startConnectionPromise) {
+    return startConnectionPromise;
+  }
+  startConnectionPromise = connection.start()
+    .then(() => true)
+    .catch((err) => {
+      console.warn('Failed to start connection.', err);
+      return false;
+    })
+    .finally(() => {
+      startConnectionPromise = null;
+    });
+  return startConnectionPromise;
+}
+
+function getRejoinDelayMs() {
+  const index = Math.min(rejoinRetryAttempt, rejoinRetryDelaysMs.length - 1);
+  return rejoinRetryDelaysMs[index];
+}
+
+async function rejoinRoomWithRetry() {
+  if (!hasJoinedRoom || !displayName || roomClosed) return;
+  if (connection.state !== signalR.HubConnectionState.Connected) return;
+  if (isRejoiningRoom) return;
+
+  isRejoiningRoom = true;
+  clearRejoinRetryTimer();
+  setStatus('reconnecting');
+  setEditorReadOnly(true);
+  setLanguageReadOnly(true);
+
+  let joined = false;
+  try {
+    joined = await joinRoom();
+  } finally {
+    isRejoiningRoom = false;
+  }
+
+  if (joined) {
+    rejoinRetryAttempt = 0;
+    setStatus('connected');
+    setEditorReadOnly(false);
+    setLanguageReadOnly(false);
+    if (ydoc) {
+      scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
+    }
+    return;
+  }
+
+  if (roomClosed || connection.state !== signalR.HubConnectionState.Connected) {
+    return;
+  }
+
+  const delayMs = getRejoinDelayMs();
+  rejoinRetryAttempt += 1;
+  rejoinRetryTimer = setTimeout(() => {
+    rejoinRetryTimer = null;
+    rejoinRoomWithRetry().catch((err) => {
+      console.warn('Failed to rejoin room.', err);
+    });
+  }, delayMs);
 }
 
 function base64FromUint8(data) {
@@ -496,6 +580,7 @@ function initMonaco() {
       theme: 'vs-dark',
       minimap: { enabled: false },
       automaticLayout: true,
+      fixedOverflowWidgets: true,
       emptySelectionClipboard: false,
       fontFamily: 'IBM Plex Mono, monospace',
       fontSize: 14,
@@ -566,6 +651,9 @@ async function joinRoom() {
     currentVersion = version;
     versionNumberEl.textContent = currentVersion;
     renderUsers(users);
+    hasJoinedRoom = true;
+    rejoinRetryAttempt = 0;
+    clearRejoinRetryTimer();
     joinOverlay.classList.add('hidden');
     sendCursor();
     return true;
@@ -577,33 +665,45 @@ async function joinRoom() {
 }
 
 connection.onreconnected(async () => {
+  if (hasJoinedRoom && displayName && !roomClosed) {
+    await rejoinRoomWithRetry();
+    return;
+  }
   setStatus('connected');
-  if (displayName && !roomClosed) {
-    setEditorReadOnly(true);
-    setLanguageReadOnly(true);
-    const joined = await joinRoom();
-    if (joined) {
-      setEditorReadOnly(false);
-      setLanguageReadOnly(false);
-    } else {
-      setEditorReadOnly(true);
-      setLanguageReadOnly(true);
-      joinOverlay.classList.remove('hidden');
-    }
-  }
-  if (ydoc) {
-    scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
-  }
 });
 connection.onreconnecting(() => {
+  clearRejoinRetryTimer();
+  isRejoiningRoom = false;
   setStatus('reconnecting');
   setEditorReadOnly(true);
   setLanguageReadOnly(true);
 });
 connection.onclose(() => {
+  clearRejoinRetryTimer();
+  isRejoiningRoom = false;
   setStatus('disconnected');
   setEditorReadOnly(true);
   setLanguageReadOnly(true);
+});
+
+window.addEventListener('offline', () => {
+  if (!hasJoinedRoom || roomClosed) return;
+  setStatus('reconnecting');
+  setEditorReadOnly(true);
+  setLanguageReadOnly(true);
+});
+
+window.addEventListener('online', () => {
+  if (!hasJoinedRoom || roomClosed) return;
+  setStatus('reconnecting');
+  ensureConnectionStarted()
+    .then((started) => {
+      if (!started) return;
+      return rejoinRoomWithRetry();
+    })
+    .catch((err) => {
+      console.warn('Failed to recover after going online.', err);
+    });
 });
 
 connection.on('UserJoined', (name, users) => {
@@ -672,6 +772,8 @@ connection.on('UserCopy', (name) => {
 
 connection.on('RoomKilled', (reason) => {
   roomClosed = true;
+  hasJoinedRoom = false;
+  clearRejoinRetryTimer();
   setEditorReadOnly(true);
   joinError.textContent = reason || 'Room closed.';
   joinError.classList.remove('hidden');
@@ -715,9 +817,15 @@ joinBtn.addEventListener('click', async () => {
   }
   await editorReady;
   if (connection.state === signalR.HubConnectionState.Disconnected) {
-    await connection.start();
-    setStatus('connected');
+    const started = await ensureConnectionStarted();
+    if (!started) {
+      setStatus('disconnected');
+      joinError.textContent = 'Failed to connect. Try again.';
+      joinError.classList.remove('hidden');
+      return;
+    }
   }
+  setStatus('connected');
   setLanguageReadOnly(true);
   const joined = await joinRoom();
   if (joined) {

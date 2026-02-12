@@ -1,4 +1,5 @@
 using FluentAssertions;
+
 using Models.Exceptions;
 
 namespace Models.Tests;
