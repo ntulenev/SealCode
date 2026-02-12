@@ -31,7 +31,7 @@ public readonly record struct RoomVersion
     /// Returns the next version value.
     /// </summary>
     /// <returns>The next room version.</returns>
-    public RoomVersion Next() => new(Value + 1);
+    public RoomVersion Next() => Value == int.MaxValue ? new(1) : new(Value + 1);
 
     /// <inheritdoc />
     public override string ToString() => Value.ToString(CultureInfo.InvariantCulture);

@@ -35,6 +35,17 @@ public sealed class RoomVersionTests
         next.Value.Should().Be(2);
     }
 
+    [Fact(DisplayName = "NextShouldRollOverToOneAtIntMaxValue")]
+    [Trait("Category", "Unit")]
+    public void NextShouldRollOverToOneAtIntMaxValue()
+    {
+        var version = new RoomVersion(int.MaxValue);
+
+        var next = version.Next();
+
+        next.Value.Should().Be(1);
+    }
+
     [Fact(DisplayName = "ToStringShouldReturnValue")]
     [Trait("Category", "Unit")]
     public void ToStringShouldReturnValue()
