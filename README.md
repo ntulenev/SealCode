@@ -47,7 +47,9 @@ Open the room link in a browser and enter a display name.
 - `/roomHub` SignalR hub
 
 
-**UI Color Indication**
+**UI Indication**
+
+User labels can include cursor position in the code editor, for example **User1** **(14:25)**, where the position format is (XX:YY).
 
 🎨 The interface uses color cues to reflect user actions and interaction states.
 
