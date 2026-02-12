@@ -8,7 +8,6 @@ SealCode is a self-hosted collaborative code editor with real-time rooms. The ba
 - Real-time multi-user editing with presence and cursors.
 - Room-based sessions with an admin UI to create and close rooms.
 - Syntax highlighting with language switching.
-- In-memory state only; everything resets when the server restarts.
 - Configurable room capacity.
 
 **Collaboration**
