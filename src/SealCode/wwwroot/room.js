@@ -695,6 +695,12 @@ window.addEventListener('offline', () => {
 
 window.addEventListener('online', () => {
   if (!hasJoinedRoom || roomClosed) return;
+  if (connection.state === signalR.HubConnectionState.Connected) {
+    setStatus('connected');
+    setEditorReadOnly(false);
+    setLanguageReadOnly(false);
+    return;
+  }
   setStatus('reconnecting');
   ensureConnectionStarted()
     .then((started) => {

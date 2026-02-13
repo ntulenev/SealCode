@@ -356,7 +356,8 @@ public sealed class RoomHub : Hub
     {
         if (Context.Items.TryGetValue("roomId", out var roomIdObj) && roomIdObj is string roomId)
         {
-            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true, Context.ConnectionAborted).ConfigureAwait(false);
+            // ConnectionAborted is already canceled during disconnect; use a non-canceled token for cleanup/notifications.
+            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true, CancellationToken.None).ConfigureAwait(false);
         }
 
         await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
