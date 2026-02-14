@@ -9,6 +9,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Models;
+
 using Transport.Models;
 
 namespace SealCode.Tests;
@@ -110,7 +112,8 @@ public sealed class SealCodeApiTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/room/missing");
+        var missingRoomId = RoomId.New().Value;
+        var response = await client.GetAsync($"/room/{missingRoomId}");
         var payload = await response.Content.ReadFromJsonAsync<string>();
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

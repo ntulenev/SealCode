@@ -11,18 +11,20 @@ public sealed class RoomIdTests
         var roomId = RoomId.New();
 
         roomId.Value.Should().NotBeNullOrWhiteSpace();
-        roomId.Value.Length.Should().Be(32);
-        roomId.Value.Should().NotContain("-");
+        roomId.Value.Length.Should().Be(22);
+        roomId.Value.Should().NotContain("=");
+        ShortGuid.TryParse(roomId.Value, out _).Should().BeTrue();
     }
 
     [Fact(DisplayName = "CtorShouldTrimValue")]
     [Trait("Category", "Unit")]
     public void CtorShouldTrimValue()
     {
-        var roomId = new RoomId(" room-1 ");
+        var raw = new ShortGuid(Guid.NewGuid()).ToString();
+        var roomId = new RoomId($" {raw} ");
 
-        roomId.Value.Should().Be("room-1");
-        roomId.ToString().Should().Be("room-1");
+        roomId.Value.Should().Be(raw);
+        roomId.ToString().Should().Be(raw);
     }
 
     [Theory(DisplayName = "CtorShouldThrowWhenValueIsWhiteSpace")]
@@ -61,9 +63,10 @@ public sealed class RoomIdTests
     [Trait("Category", "Unit")]
     public void TryParseShouldReturnTrueWhenValueIsValid()
     {
-        var result = RoomId.TryParse(" room-2 ", out var parsed);
+        var raw = new ShortGuid(Guid.NewGuid()).ToString();
+        var result = RoomId.TryParse(raw, out var parsed);
 
         result.Should().BeTrue();
-        parsed.Value.Should().Be("room-2");
+        parsed.Value.Should().Be(raw);
     }
 }

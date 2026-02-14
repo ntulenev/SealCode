@@ -30,7 +30,7 @@ public sealed class JoinRoomResultTests
     public void FromShouldMapRoomState()
     {
         var room = new RoomState(
-            new RoomId("room-1"),
+            RoomId.New(),
             new RoomName("Room"),
             new RoomLanguage("csharp"),
             new RoomText("text"),

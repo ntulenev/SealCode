@@ -14,6 +14,8 @@ namespace SealCode.Tests;
 
 public sealed class RoomHubTests
 {
+    private static readonly string DefaultRoomId = RoomId.New().Value;
+
     [Fact(DisplayName = "CtorShouldThrowWhenRoomManagerIsNull")]
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenRoomManagerIsNull()
@@ -75,7 +77,7 @@ public sealed class RoomHubTests
             .Throws(new RoomNotFoundException());
         using var hub = CreateHub(roomManager.Object);
 
-        Func<Task> action = () => hub.JoinRoomAsync("room", "Alice");
+        Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, "Alice");
 
         await action.Should().ThrowAsync<HubException>();
         registerUserCalls.Should().Be(1);
@@ -87,7 +89,7 @@ public sealed class RoomHubTests
     {
         using var hub = CreateHub();
 
-        Func<Task> action = () => hub.JoinRoomAsync("room", " ");
+        Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, " ");
 
         await action.Should().ThrowAsync<HubException>();
     }
@@ -96,7 +98,7 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldAddCallerToGroupAndNotifyOthers()
     {
-        var roomId = "room-1";
+        var roomId = DefaultRoomId;
         using var cts = new CancellationTokenSource();
         var room = CreateRoomState(roomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
@@ -169,7 +171,7 @@ public sealed class RoomHubTests
             .Throws(new AddRoomUserException("Display name already in use. Choose another name."));
         using var hub = CreateHub(roomManager.Object);
 
-        Func<Task> action = () => hub.JoinRoomAsync("room", "Alice");
+        Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, "Alice");
 
         await action.Should().ThrowAsync<HubException>();
         registerUserCalls.Should().Be(1);
@@ -187,7 +189,7 @@ public sealed class RoomHubTests
             .Returns(false);
         using var hub = CreateHub(roomManager.Object);
 
-        Func<Task> action = () => hub.UpdateTextAsync("room-1", "hello", 1);
+        Func<Task> action = () => hub.UpdateTextAsync(DefaultRoomId, "hello", 1);
 
         await action.Should().ThrowAsync<HubException>();
         tryGetRoomCalls.Should().Be(1);
@@ -197,7 +199,7 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task UpdateTextAsyncShouldBroadcastUpdate()
     {
-        var roomId = "room-1";
+        var roomId = DefaultRoomId;
         using var cts = new CancellationTokenSource();
         var room = CreateRoomState(roomId, text: "before");
         var tryGetRoomCounter = SetupTryGetRoom(roomId, room, out var roomManager);
@@ -234,11 +236,11 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task UpdateYjsAsyncShouldThrowWhenPayloadIsInvalid()
     {
-        var room = CreateRoomState("room-1");
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var room = CreateRoomState(DefaultRoomId);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         using var hub = CreateHub(roomManager.Object);
 
-        Func<Task> action = () => hub.UpdateYjsAsync("room-1", "not-base64", "still-not-base64", "text");
+        Func<Task> action = () => hub.UpdateYjsAsync(DefaultRoomId, "not-base64", "still-not-base64", "text");
 
         await action.Should().ThrowAsync<HubException>();
         tryGetRoomCounter.Count.Should().Be(1);
@@ -248,7 +250,7 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task UpdateYjsAsyncShouldBroadcastWhenStateChanges()
     {
-        var roomId = "room-1";
+        var roomId = DefaultRoomId;
         using var cts = new CancellationTokenSource();
         var updateBase64 = Convert.ToBase64String([1, 2]);
         var stateBase64 = Convert.ToBase64String([1, 2, 3]);
@@ -287,8 +289,8 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task SetLanguageAsyncShouldThrowWhenLanguageIsInvalid()
     {
-        var room = CreateRoomState("room-1");
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var room = CreateRoomState(DefaultRoomId);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict);
         var isValidCalls = 0;
         validator.Setup(v => v.IsValid(It.IsAny<RoomLanguage>()))
@@ -296,7 +298,7 @@ public sealed class RoomHubTests
             .Returns(false);
         using var hub = CreateHub(roomManager.Object, validator.Object);
 
-        Func<Task> action = () => hub.SetLanguageAsync("room-1", "javascript");
+        Func<Task> action = () => hub.SetLanguageAsync(DefaultRoomId, "javascript");
 
         await action.Should().ThrowAsync<HubException>();
         tryGetRoomCounter.Count.Should().Be(1);
@@ -308,8 +310,8 @@ public sealed class RoomHubTests
     public async Task SetLanguageAsyncShouldBroadcastWhenLanguageIsValid()
     {
         using var cts = new CancellationTokenSource();
-        var room = CreateRoomState("room-1");
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var room = CreateRoomState(DefaultRoomId);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict);
         var isValidCalls = 0;
@@ -328,13 +330,13 @@ public sealed class RoomHubTests
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == "room-1")))
+        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
             .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, validator.Object, clients.Object, cancellationToken: cts.Token);
 
-        await hub.SetLanguageAsync("room-1", "JavaScript");
+        await hub.SetLanguageAsync(DefaultRoomId, "JavaScript");
 
         room.Language.Value.Should().Be("javascript");
         room.Version.Value.Should().Be(2);
@@ -348,12 +350,12 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task UpdateCursorAsyncShouldReturnWhenUserNotFound()
     {
-        var room = CreateRoomState("room-1");
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var room = CreateRoomState(DefaultRoomId);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);
 
-        await hub.UpdateCursorAsync("room-1", 3);
+        await hub.UpdateCursorAsync(DefaultRoomId, 3);
 
         tryGetRoomCounter.Count.Should().Be(1);
         clients.VerifyNoOtherCalls();
@@ -364,9 +366,9 @@ public sealed class RoomHubTests
     public async Task UpdateCursorAsyncShouldBroadcastWhenUserFound()
     {
         using var cts = new CancellationTokenSource();
-        var room = CreateRoomState("room-1");
+        var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
         var cursorUpdatedCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -380,14 +382,14 @@ public sealed class RoomHubTests
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupExceptCalls = 0;
         clients.Setup(c => c.GroupExcept(
-                It.Is<string>(group => group == "room-1"),
+                It.Is<string>(group => group == DefaultRoomId),
                 It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
             .Callback(() => groupExceptCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
-        await hub.UpdateCursorAsync("room-1", 3);
+        await hub.UpdateCursorAsync(DefaultRoomId, 3);
 
         tryGetRoomCounter.Count.Should().Be(1);
         groupExceptCalls.Should().Be(1);
@@ -399,9 +401,9 @@ public sealed class RoomHubTests
     public async Task UpdateSelectionAsyncShouldBroadcastWhenUserFound()
     {
         using var cts = new CancellationTokenSource();
-        var room = CreateRoomState("room-1");
+        var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
         var userSelectionCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -414,13 +416,13 @@ public sealed class RoomHubTests
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == "room-1")))
+        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
             .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
-        await hub.UpdateSelectionAsync("room-1", true);
+        await hub.UpdateSelectionAsync(DefaultRoomId, true);
 
         tryGetRoomCounter.Count.Should().Be(1);
         groupCalls.Should().Be(1);
@@ -432,9 +434,9 @@ public sealed class RoomHubTests
     public async Task UpdateCopyAsyncShouldBroadcastWhenUserFound()
     {
         using var cts = new CancellationTokenSource();
-        var room = CreateRoomState("room-1");
+        var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
         var userCopyCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -447,13 +449,13 @@ public sealed class RoomHubTests
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == "room-1")))
+        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
             .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
-        await hub.UpdateCopyAsync("room-1");
+        await hub.UpdateCopyAsync(DefaultRoomId);
 
         tryGetRoomCounter.Count.Should().Be(1);
         groupCalls.Should().Be(1);
@@ -465,16 +467,16 @@ public sealed class RoomHubTests
     public async Task LeaveRoomAsyncShouldRemoveUserAndNotifyGroup()
     {
         using var cts = new CancellationTokenSource();
-        var room = CreateRoomState("room-1");
+        var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         room.AddUser(new ConnectionId("conn-2"), new RoomUser("Bob"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom("room-1", room, out var roomManager);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
         var removeFromGroupCalls = 0;
         var groups = new Mock<IGroupManager>(MockBehavior.Strict);
         groups.Setup(g => g.RemoveFromGroupAsync(
                 It.Is<string>(conn => conn == "conn-1"),
-                It.Is<string>(group => group == "room-1"),
+                It.Is<string>(group => group == DefaultRoomId),
                 It.Is<CancellationToken>(token => token == cts.Token)))
             .Callback(() => removeFromGroupCalls++)
             .Returns(Task.CompletedTask);
@@ -490,7 +492,7 @@ public sealed class RoomHubTests
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == "room-1")))
+        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
             .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
@@ -500,7 +502,7 @@ public sealed class RoomHubTests
             groups: groups.Object,
             cancellationToken: cts.Token);
 
-        await hub.LeaveRoomAsync("room-1");
+        await hub.LeaveRoomAsync(DefaultRoomId);
 
         room.ConnectedUserCount.Should().Be(1);
         tryGetRoomCounter.Count.Should().Be(1);

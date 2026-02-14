@@ -10,7 +10,7 @@ public sealed class RoomStateTests
     [Trait("Category", "Unit")]
     public void CtorShouldSetProperties()
     {
-        var roomId = new RoomId("room-1");
+        var roomId = RoomId.New();
         var name = new RoomName("Room");
         var language = new RoomLanguage("csharp");
         var text = new RoomText("text");
@@ -206,7 +206,7 @@ public sealed class RoomStateTests
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
         var initialUpdatedUtc = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var state = new RoomState(
-            new RoomId("room-1"),
+            RoomId.New(),
             new RoomName("Room"),
             new RoomLanguage("csharp"),
             new RoomText("hello"),
@@ -230,7 +230,7 @@ public sealed class RoomStateTests
     {
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
         var state = new RoomState(
-            new RoomId("room-1"),
+            RoomId.New(),
             new RoomName("Room"),
             new RoomLanguage("csharp"),
             new RoomText("hello"),
@@ -265,7 +265,7 @@ public sealed class RoomStateTests
     public void IsCreatedByShouldReturnTrueWhenAdminMatches()
     {
         var state = new RoomState(
-            new RoomId("room-1"),
+            RoomId.New(),
             new RoomName("Room"),
             new RoomLanguage("csharp"),
             new RoomText("text"),
@@ -330,7 +330,7 @@ public sealed class RoomStateTests
 
     private static RoomState CreateState(byte[]? yjsState = null)
         => new(
-            new RoomId("room-1"),
+            RoomId.New(),
             new RoomName("Room"),
             new RoomLanguage("csharp"),
             new RoomText("text"),

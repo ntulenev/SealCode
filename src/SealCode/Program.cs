@@ -7,9 +7,11 @@ using Models;
 
 using SealCode;
 
+using SealCode.Routing;
 using SealCode.Security;
 
 using Transport.Models;
+using Transport.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,9 +28,18 @@ builder.Services.AddSignalR(options =>
         options.KeepAliveInterval = TimeSpan.FromSeconds(5);
         options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
     })
-    .AddJsonProtocol(options => options.PayloadSerializerOptions.PropertyNamingPolicy = null);
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+        options.PayloadSerializerOptions.Converters.Add(new ShortGuidJsonConverter());
+    });
 
-builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.PropertyNamingPolicy = null);
+builder.Services.Configure<JsonOptions>(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = null;
+    options.SerializerOptions.Converters.Add(new ShortGuidJsonConverter());
+});
+builder.Services.Configure<RouteOptions>(options => options.ConstraintMap["ShortGuid"] = typeof(ShortGuidRouteConstraint));
 
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();
 builder.Services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
@@ -137,8 +148,8 @@ app.MapPost("/admin/rooms",
     });
 });
 
-app.MapDelete("/admin/rooms/{roomId}",
-            async (string roomId,
+app.MapDelete("/admin/rooms/{roomId:ShortGuid}",
+            async (RoomId roomId,
                    IRoomManager roomManager,
                    IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
@@ -148,7 +159,7 @@ app.MapDelete("/admin/rooms/{roomId}",
         return Results.Unauthorized();
     }
 
-    var result = await roomManager.DeleteRoomAsync(new RoomId(roomId), adminUser, cancellationToken).ConfigureAwait(false);
+    var result = await roomManager.DeleteRoomAsync(roomId, adminUser, cancellationToken).ConfigureAwait(false);
     return result switch
     {
         RoomDeletionResult.Deleted => Results.Ok(),
@@ -158,14 +169,9 @@ app.MapDelete("/admin/rooms/{roomId}",
     };
 });
 
-app.MapGet("/room/{roomId}", (string roomId, IRoomRegistry registry, IWebHostEnvironment env) =>
+app.MapGet("/room/{roomId:ShortGuid}", (RoomId roomId, IRoomRegistry registry, IWebHostEnvironment env) =>
 {
-    if (!RoomId.TryParse(roomId, out var parsedRoomId))
-    {
-        return Results.BadRequest("Invalid room id");
-    }
-
-    if (!registry.TryGetRoom(parsedRoomId, out _))
+    if (!registry.TryGetRoom(roomId, out _))
     {
         return Results.NotFound("Room not found");
     }

@@ -74,6 +74,7 @@ public sealed class RoomRegistryTests
     {
         var notifier = new Mock<IRoomNotifier>(MockBehavior.Strict);
         var registry = CreateRegistry(notifier.Object);
+        var missingRoomId = RoomId.New();
         var notifierCalls = 0;
         using var cts = new CancellationTokenSource();
 
@@ -84,7 +85,7 @@ public sealed class RoomRegistryTests
             .Callback(() => notifierCalls++)
             .Returns(Task.CompletedTask);
 
-        var result = await registry.DeleteRoomAsync(new RoomId("missing"), new RoomDeletionReason("cleanup"), cts.Token);
+        var result = await registry.DeleteRoomAsync(missingRoomId, new RoomDeletionReason("cleanup"), cts.Token);
 
         result.Should().BeFalse();
         notifierCalls.Should().Be(0);
@@ -120,10 +121,11 @@ public sealed class RoomRegistryTests
     public async Task DeleteRoomAsyncShouldThrowWhenCanceled()
     {
         var registry = CreateRegistry();
+        var roomId = RoomId.New();
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        Func<Task> action = () => registry.DeleteRoomAsync(new RoomId("room"), new RoomDeletionReason("cleanup"), cts.Token);
+        Func<Task> action = () => registry.DeleteRoomAsync(roomId, new RoomDeletionReason("cleanup"), cts.Token);
 
         await action.Should().ThrowAsync<OperationCanceledException>();
     }

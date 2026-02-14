@@ -36,7 +36,7 @@ public sealed class SignalRRoomNotifierTests
     {
         var notifier = new SignalRRoomNotifier(new Mock<IHubContext<RoomHub>>(MockBehavior.Strict).Object);
 
-        Func<Task> action = () => notifier.RoomKilledAsync(new RoomId("room"), default, CancellationToken.None);
+        Func<Task> action = () => notifier.RoomKilledAsync(RoomId.New(), default, CancellationToken.None);
 
         action.Should().ThrowAsync<ArgumentException>();
     }
@@ -45,7 +45,7 @@ public sealed class SignalRRoomNotifierTests
     [Trait("Category", "Unit")]
     public async Task RoomKilledAsyncShouldNotifyGroup()
     {
-        var roomId = new RoomId("room-1");
+        var roomId = RoomId.New();
         var reason = new RoomDeletionReason("cleanup");
         using var cts = new CancellationTokenSource();
         var proxyCalls = 0;

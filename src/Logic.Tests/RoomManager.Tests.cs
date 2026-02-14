@@ -41,9 +41,10 @@ public sealed class RoomManagerTests
         registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
             .Returns(false);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var missingRoomId = RoomId.New();
 
         var action = () => manager.RegisterUserInRoom(
-            new RoomId("missing"),
+            missingRoomId,
             new ConnectionId("conn-1"),
             new RoomUser("Alice"));
 
@@ -56,7 +57,7 @@ public sealed class RoomManagerTests
     public void TryGetRoomShouldDelegateToRegistry()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState("room-1", "Room", "Admin");
+        var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
@@ -73,7 +74,7 @@ public sealed class RoomManagerTests
     public void RegisterUserInRoomShouldAddUserAndReturnRoom()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState("room-1", "Room", "Admin");
+        var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
@@ -93,7 +94,7 @@ public sealed class RoomManagerTests
     public void RegisterUserInRoomShouldClampMaxUsersToAtLeastOne()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState("room-1", "Room", "Admin");
+        var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
         var manager = new RoomManager(registry.Object, CreateSettings(0));
@@ -115,8 +116,8 @@ public sealed class RoomManagerTests
     public void GetRoomsSnapshotShouldReturnOrderedViewsWithCanDelete()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var adminRoom = CreateRoomState("room-1", "Zulu", "Admin");
-        var otherRoom = CreateRoomState("room-2", "Alpha", "Root");
+        var adminRoom = CreateRoomState(RoomId.New(), "Zulu", "Admin");
+        var otherRoom = CreateRoomState(RoomId.New(), "Alpha", "Root");
         registry.Setup(r => r.GetRoomsSnapshot())
             .Returns([adminRoom, otherRoom]);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
@@ -139,7 +140,7 @@ public sealed class RoomManagerTests
         var admin = new AdminUser("Admin");
         var name = new RoomName("Room");
         var language = new RoomLanguage("csharp");
-        var created = CreateRoomState("room-1", "Room", "Admin");
+        var created = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.CreateRoom(name, language, admin))
             .Returns(created);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
@@ -159,7 +160,7 @@ public sealed class RoomManagerTests
             .Returns(false);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
 
-        var result = await manager.DeleteRoomAsync(new RoomId("missing"), new AdminUser("Admin"), CancellationToken.None);
+        var result = await manager.DeleteRoomAsync(RoomId.New(), new AdminUser("Admin"), CancellationToken.None);
 
         result.Should().Be(RoomDeletionResult.NotFound);
         registry.VerifyAll();
@@ -170,7 +171,7 @@ public sealed class RoomManagerTests
     public async Task DeleteRoomAsyncShouldReturnForbiddenWhenNotAllowed()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState("room-1", "Room", "Root");
+        var room = CreateRoomState(RoomId.New(), "Room", "Root");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
         var manager = new RoomManager(registry.Object, CreateSettings(3));
@@ -187,7 +188,7 @@ public sealed class RoomManagerTests
     public async Task DeleteRoomAsyncShouldReturnDeletedWhenSuccessful()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState("room-1", "Room", "Admin");
+        var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
         registry.Setup(r => r.DeleteRoomAsync(
@@ -208,7 +209,7 @@ public sealed class RoomManagerTests
     public async Task DeleteRoomAsyncShouldReturnNotFoundWhenDeleteFails()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
-        var room = CreateRoomState("room-1", "Room", "Admin");
+        var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
         registry.Setup(r => r.DeleteRoomAsync(
@@ -224,9 +225,9 @@ public sealed class RoomManagerTests
         registry.VerifyAll();
     }
 
-    private static RoomState CreateRoomState(string id, string name, string createdBy)
+    private static RoomState CreateRoomState(RoomId id, string name, string createdBy)
         => new(
-            new RoomId(id),
+            id,
             new RoomName(name),
             new RoomLanguage("csharp"),
             new RoomText(string.Empty),

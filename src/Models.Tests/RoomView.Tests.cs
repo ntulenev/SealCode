@@ -8,7 +8,7 @@ public sealed class RoomViewTests
     [Trait("Category", "Unit")]
     public void CtorShouldSetValues()
     {
-        var roomId = new RoomId("room-1");
+        var roomId = RoomId.New();
         var name = new RoomName("Room");
         var language = new RoomLanguage("csharp");
         var createdBy = new AdminUser("Admin");
@@ -30,7 +30,7 @@ public sealed class RoomViewTests
     public void FromShouldMapRoomAndAdminUser()
     {
         var room = new RoomState(
-            new RoomId("room-1"),
+            RoomId.New(),
             new RoomName("Room"),
             new RoomLanguage("csharp"),
             new RoomText("code"),
