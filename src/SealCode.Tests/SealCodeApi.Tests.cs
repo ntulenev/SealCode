@@ -1,13 +1,13 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
-
-using System.Net;
-using System.Net.Http.Json;
-using System.Text.Json;
 
 using Models;
 
@@ -44,6 +44,20 @@ public sealed class SealCodeApiTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         payload.Should().NotBeNull();
         payload!.Should().Contain(["csharp", "sql"]);
+    }
+
+    [Fact(DisplayName = "GET /features returns collaborative undo flag")]
+    [Trait("Category", "Integration")]
+    public async Task GetFeaturesReturnsCollaborativeUndoFlag()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/features");
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        payload.GetProperty("CollaborativeUndoEnabled").GetBoolean().Should().BeTrue();
     }
 
     [Fact(DisplayName = "GET /admin/rooms returns unauthorized without cookie")]
@@ -155,7 +169,10 @@ public sealed class SealCodeApiTests
         result.Version.Should().BeGreaterThanOrEqualTo(1);
         result.Users.Should().ContainSingle().Which.Should().Be("Alice");
         result.CreatedBy.Should().Be("Admin");
+        result.DocumentRevision.Should().Be(0);
+        result.CheckpointRevision.Should().Be(0);
         result.YjsState.Should().BeNull();
+        result.YjsUpdates.Should().BeEmpty();
 
         await connection.DisposeAsync();
     }
@@ -190,29 +207,36 @@ public sealed class SealCodeApiTests
         joinedPayload.name.Should().Be("Alice");
         joinedPayload.users.Should().Contain(["Alice", "Bob"]);
 
-        var textUpdated = new TaskCompletionSource<(string text, int version, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, int, string>("TextUpdated", (text, version, author) =>
-            textUpdated.TrySetResult((text, version, author))))
-        {
-            await alice.InvokeAsync("UpdateText", roomId, "new text", 1);
-            var payload = await AwaitWithTimeout(textUpdated.Task);
-            payload.author.Should().Be("Alice");
-            payload.text.Should().Be("new text");
-        }
-
-        var yjsUpdated = new TaskCompletionSource<(string update, int version, string author, string state)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, int, string, string>("YjsUpdated", (update, version, author, state) =>
-            yjsUpdated.TrySetResult((update, version, author, state))))
+        var yjsUpdated = new TaskCompletionSource<(string update, long documentRevision, int roomVersion, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (bob.On<string, long, int, string>("YjsUpdated", (update, documentRevision, roomVersion, author) =>
+            yjsUpdated.TrySetResult((update, documentRevision, roomVersion, author))))
         {
             var update = Convert.ToBase64String(new byte[] { 1, 2, 3 });
-            var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
-            await alice.InvokeAsync("UpdateYjs", roomId, update, state, "snapshot");
+            await alice.InvokeAsync("UpdateYjs", roomId, update);
 
             var payload = await AwaitWithTimeout(yjsUpdated.Task);
             payload.update.Should().Be(update);
-            payload.state.Should().Be(state);
             payload.author.Should().Be("Alice");
-            payload.version.Should().BeGreaterThanOrEqualTo(2);
+            payload.documentRevision.Should().Be(1);
+            payload.roomVersion.Should().BeGreaterThanOrEqualTo(2);
+
+            await using var charlie = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+            var charlieJoin = await charlie.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Charlie");
+            charlieJoin.DocumentRevision.Should().Be(1);
+            charlieJoin.CheckpointRevision.Should().Be(0);
+            charlieJoin.YjsState.Should().BeNull();
+            charlieJoin.YjsUpdates.Should().ContainSingle();
+            charlieJoin.YjsUpdates[0].Update.Should().Be(update);
+
+            var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
+            var accepted = await alice.InvokeAsync<bool>("CheckpointYjs", roomId, state, "snapshot", payload.documentRevision);
+            accepted.Should().BeTrue();
+
+            var charlieJoinAfterCheckpoint = await charlie.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Charlie");
+            charlieJoinAfterCheckpoint.DocumentRevision.Should().Be(1);
+            charlieJoinAfterCheckpoint.CheckpointRevision.Should().Be(1);
+            charlieJoinAfterCheckpoint.YjsState.Should().Be(state);
+            charlieJoinAfterCheckpoint.YjsUpdates.Should().BeEmpty();
         }
 
         var languageUpdated = new TaskCompletionSource<(string language, int version)>(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -1,12 +1,14 @@
+using Abstractions;
+
+using Logic;
+
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
+
+using Models;
 using Models.Configuration;
 
-using Abstractions;
-using Logic;
-using Models;
-
 using SealCode;
-
 using SealCode.Routing;
 using SealCode.Security;
 
@@ -118,6 +120,12 @@ app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUse
 
 app.MapGet("/languages", (ILanguageValidator validator)
     => Results.Json(validator.Languages));
+
+app.MapGet("/features", (IOptions<ApplicationConfiguration> settings)
+    => Results.Json(new
+    {
+        settings.Value.CollaborativeUndoEnabled
+    }));
 
 app.MapPost("/admin/rooms",
             async (HttpContext context,

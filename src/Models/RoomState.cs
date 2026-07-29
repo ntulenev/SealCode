@@ -37,7 +37,7 @@ public sealed class RoomState
         Version = version;
         LastUpdatedUtc = lastUpdatedUtc;
         CreatedBy = createdBy;
-        YjsState = yjsState ?? [];
+        YjsState = yjsState is null ? [] : [.. yjsState];
     }
 
     /// <summary>
@@ -71,6 +71,16 @@ public sealed class RoomState
     /// Gets the serialized Yjs document state (full update).
     /// </summary>
     public byte[] YjsState { get; private set; }
+
+    /// <summary>
+    /// Gets the latest CRDT document revision.
+    /// </summary>
+    public RoomDocumentRevision DocumentRevision { get; private set; }
+
+    /// <summary>
+    /// Gets the document revision represented by <see cref="YjsState"/>.
+    /// </summary>
+    public RoomDocumentRevision YjsCheckpointRevision { get; private set; }
 
     /// <summary>
     /// Gets the last updated timestamp in UTC.
@@ -178,23 +188,6 @@ public sealed class RoomState
         => ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out roomUser);
 
     /// <summary>
-    /// Updates the room text and bumps the version.
-    /// </summary>
-    /// <param name="text">The new text.</param>
-    /// <param name="updatedUtc">The update timestamp in UTC.</param>
-    /// <returns>The new room version.</returns>
-    public RoomVersion UpdateText(RoomText text, DateTimeOffset updatedUtc)
-    {
-        lock (_versionGuard)
-        {
-            Text = text;
-            Version = Version.Next();
-            LastUpdatedUtc = updatedUtc;
-            return Version;
-        }
-    }
-
-    /// <summary>
     /// Updates the room language and bumps the version.
     /// </summary>
     /// <param name="language">The new language.</param>
@@ -222,37 +215,86 @@ public sealed class RoomState
     }
 
     /// <summary>
-    /// Updates the stored Yjs state and text snapshot, bumping the version.
+    /// Appends an opaque incremental Yjs update and bumps both document and room revisions.
     /// </summary>
-    /// <param name="state">The serialized Yjs document state.</param>
-    /// <param name="text">The plain text snapshot.</param>
+    /// <param name="update">The serialized incremental Yjs update.</param>
     /// <param name="updatedUtc">The update timestamp in UTC.</param>
-    /// <param name="version">The resulting room version.</param>
-    /// <returns>True when the state changed and the version was bumped; otherwise false.</returns>
-    public bool TryUpdateYjsState(byte[] state, RoomText text, DateTimeOffset updatedUtc, out RoomVersion version)
+    /// <returns>The assigned document revision and resulting room version.</returns>
+    /// <exception cref="ArgumentException">Thrown when the update is empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the update is null.</exception>
+    public RoomDocumentAppendResult AppendYjsUpdate(byte[] update, DateTimeOffset updatedUtc)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(update);
+        if (update.Length == 0)
+        {
+            throw new ArgumentException("Document update cannot be empty.", nameof(update));
+        }
+
         lock (_versionGuard)
         {
-            var sameState = state.AsSpan().SequenceEqual(YjsState);
-            var sameText = string.Equals(text.Value, Text.Value, StringComparison.Ordinal);
-            if (sameState && sameText)
+            DocumentRevision = DocumentRevision.Next();
+            _yjsUpdates = _yjsUpdates.Add(new RoomDocumentUpdate(DocumentRevision, update));
+            Version = Version.Next();
+            LastUpdatedUtc = updatedUtc;
+            return new RoomDocumentAppendResult(DocumentRevision, Version);
+        }
+    }
+
+    /// <summary>
+    /// Tries to replace the checkpoint and clear all updates represented by it.
+    /// </summary>
+    /// <param name="basedOnRevision">The latest revision contained in the checkpoint.</param>
+    /// <param name="state">The serialized full Yjs document state.</param>
+    /// <param name="text">The corresponding plain text snapshot.</param>
+    /// <param name="updatedUtc">The checkpoint timestamp in UTC.</param>
+    /// <returns>True when the checkpoint was current and accepted; otherwise false.</returns>
+    public bool TryCreateYjsCheckpoint(
+        RoomDocumentRevision basedOnRevision,
+        byte[] state,
+        RoomText text,
+        DateTimeOffset updatedUtc)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Length == 0)
+        {
+            throw new ArgumentException("Document checkpoint cannot be empty.", nameof(state));
+        }
+
+        lock (_versionGuard)
+        {
+            if (basedOnRevision != DocumentRevision)
             {
-                version = Version;
                 return false;
             }
 
-            YjsState = state;
+            YjsState = [.. state];
+            YjsCheckpointRevision = basedOnRevision;
+            _yjsUpdates = [];
             Text = text;
-            Version = Version.Next();
             LastUpdatedUtc = updatedUtc;
-            version = Version;
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Creates an atomic CRDT synchronization snapshot.
+    /// </summary>
+    /// <returns>The checkpoint and all updates appended after it.</returns>
+    public RoomDocumentSyncState CreateYjsSyncState()
+    {
+        lock (_versionGuard)
+        {
+            return new RoomDocumentSyncState(
+                DocumentRevision,
+                YjsCheckpointRevision,
+                [.. YjsState],
+                [.. _yjsUpdates.Select(update => new RoomDocumentUpdate(update.Revision, update.Payload))]);
         }
     }
 
     private readonly Lock _addGuard = new();
     private readonly Lock _versionGuard = new();
     private ImmutableDictionary<ConnectionId, RoomUser> _connectedUsers = [];
+    private ImmutableArray<RoomDocumentUpdate> _yjsUpdates = [];
 }
 
