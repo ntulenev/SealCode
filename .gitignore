@@ -416,3 +416,7 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Playwright test artifacts
+test-results/
+playwright-report/
