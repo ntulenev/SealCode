@@ -140,6 +140,7 @@ app.MapGet("/features", (IOptions<ApplicationConfiguration> settings)
 app.MapPost("/admin/rooms",
             async (HttpContext context,
                    IRoomManager roomManager,
+                   ILanguageValidator languageValidator,
                    IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
@@ -155,6 +156,10 @@ app.MapPost("/admin/rooms",
     }
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
+    if (!languageValidator.IsValid(language))
+    {
+        return Results.BadRequest(new { error = "Invalid language" });
+    }
     var name = new RoomName(payload.Name);
     var room = roomManager.CreateRoom(name, language, adminUser);
     return Results.Json(new

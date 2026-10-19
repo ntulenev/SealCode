@@ -77,7 +77,10 @@ function renderRooms(rooms) {
     name.innerHTML = `<strong>${escapeHtml(room.Name)}</strong><br/><small>${room.RoomId}</small>`;
 
     const lang = document.createElement('div');
-    lang.innerHTML = `<span class="badge">${room.Language}</span>`;
+    const languageBadge = document.createElement('span');
+    languageBadge.className = 'badge';
+    languageBadge.textContent = room.Language;
+    lang.appendChild(languageBadge);
 
     const users = document.createElement('div');
     users.textContent = `${room.UsersCount} users`;

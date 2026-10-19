@@ -333,6 +333,23 @@ public sealed class SealCodeApiTests
     private static SealCodeAppFactory CreateFactory() => new();
 
     [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    [InlineData("<img src=x onerror=alert(1)>")]
+    public async Task CreateRoomShouldRejectUnconfiguredLanguage(string language)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+
+        var response = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Invalid language", Language = language });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var rooms = await client.GetFromJsonAsync<RoomSummary[]>("/admin/rooms");
+        rooms.Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData("Admin")]
     [InlineData("Root")]
     public async Task ForgedAdminCookieShouldNotAuthenticate(string name)
