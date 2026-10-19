@@ -129,9 +129,84 @@ test('memory guard clears the complete history safely', () => {
   });
   doc.transact(() => text.insert(0, 'large edit'), localOrigin);
 
-  const cleared = history.recordLocalUpdateSize(11);
-
-  assert.equal(cleared, true);
   assert.equal(history.canUndo(), false);
   assert.equal(history.lastClearReason, 'memory-limit');
+});
+
+test('deleting a large bootstrap document clears history despite a tiny update', () => {
+  const doc = new Y.Doc();
+  const text = doc.getText('monaco');
+  text.insert(0, 'x'.repeat(10 * 1024 * 1024));
+  const localOrigin = {};
+  const history = new BoundedUndoManager(Y, text, { trackedOrigin: localOrigin });
+  let updateBytes = 0;
+  doc.on('update', (update, origin) => {
+    if (origin === localOrigin) updateBytes = update.length;
+  });
+
+  doc.transact(() => text.delete(0, text.length), localOrigin);
+
+  assert.ok(updateBytes < 100);
+  assert.equal(text.toString(), '');
+  assert.equal(history.canUndo(), false);
+  assert.equal(history.lastClearReason, 'memory-limit');
+  assert.equal(history.estimatedBytes, 0);
+  assert.ok(doc.store.clients.get(doc.clientID).every((item) => !item.keep));
+  assert.ok(doc.store.clients.get(doc.clientID).every((item) => typeof item.content?.str !== 'string'));
+  doc.transact(() => text.insert(0, 'fresh'), localOrigin);
+  history.undo();
+  assert.equal(text.toString(), '');
+  history.redo();
+  assert.equal(text.toString(), 'fresh');
+  history.destroy();
+  doc.destroy();
+});
+
+test('the memory budget includes discarded deletions and clears redo as well', () => {
+  const doc = new Y.Doc();
+  const text = doc.getText('monaco');
+  text.insert(0, 'x'.repeat(3000));
+  const localOrigin = {};
+  const history = new BoundedUndoManager(Y, text, {
+    trackedOrigin: localOrigin,
+    maxDepth: 1,
+    maxEstimatedBytes: 5000
+  });
+  for (let index = 0; index < 2; index += 1) {
+    doc.transact(() => text.delete(0, 500), localOrigin);
+    history.stopCapturing();
+  }
+  assert.equal(history.discardedStackItems.length, 1);
+  const budgetBeforeUndo = history.estimatedBytes;
+  history.undo();
+  assert.equal(history.canRedo(), true);
+  assert.ok(history.estimatedBytes > budgetBeforeUndo);
+
+  // Redo deletes the restored text, and must also be charged to the budget.
+  history.redo();
+
+  assert.equal(history.lastClearReason, 'memory-limit');
+  assert.equal(history.canUndo(), false);
+  assert.equal(history.canRedo(), false);
+  assert.equal(history.discardedStackItems.length, 0);
+  assert.ok(doc.store.clients.get(doc.clientID)
+    .filter((item) => item.deleted)
+    .every((item) => typeof item.content?.str !== 'string'));
+  history.destroy();
+  doc.destroy();
+});
+
+test('remote deletions do not consume the local history budget', () => {
+  const client = createClient();
+  client.doc.transact(() => client.text.insert(0, 'x'.repeat(10000)), remoteOrigin);
+  insert(client, client.text.length, 'local');
+  const budget = client.history.estimatedBytes;
+
+  client.doc.transact(() => client.text.delete(0, 10000), remoteOrigin);
+
+  assert.equal(client.history.estimatedBytes, budget);
+  client.history.undo();
+  assert.equal(client.text.toString(), '');
+  client.history.destroy();
+  client.doc.destroy();
 });

@@ -22,6 +22,9 @@ cannot merge client snapshots itself.
 - The visible local history is limited to 100 grouped operations. Continuous
   edits within 500 ms may form one operation. A complete memory guard clears
   the history after its estimated retained updates exceed 8 MiB.
+  The estimate conservatively accumulates encoded updates, UTF-16 deleted text,
+  and item overhead, including undo/redo and discarded entries. Clearing releases
+  retained deleted content through Yjs garbage collection when GC is enabled.
 - A reconnect merges the server sync payload into the existing `Y.Doc`, keeping
   local history. Leaving the room or reloading the page starts a new history.
 - The server stores a checkpoint plus every incremental update after it. A

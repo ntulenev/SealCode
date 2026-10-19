@@ -705,9 +705,6 @@ function initializeYjs(text, stateBase64, updates, documentRevision, checkpointR
   }
   ydoc.on('update', (update, origin) => {
     if (origin === remoteYjsOrigin || origin === bootstrapYjsOrigin) return;
-    if (origin === monacoBinding && undoHistory?.recordLocalUpdateSize(update.length)) {
-      console.warn('Collaborative undo history was cleared after reaching its memory limit.');
-    }
     scheduleYjsUpdateSend(update);
   });
   resetDocumentRevisionState(documentRevision, checkpointRevision, normalizedUpdates);

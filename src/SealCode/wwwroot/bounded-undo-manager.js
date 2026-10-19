@@ -1,6 +1,7 @@
 const DEFAULT_MAX_DEPTH = 100;
 const DEFAULT_CAPTURE_TIMEOUT_MS = 500;
 const DEFAULT_MAX_ESTIMATED_BYTES = 8 * 1024 * 1024;
+const ESTIMATED_ITEM_OVERHEAD_BYTES = 128;
 
 /**
  * Bounds the user-visible Yjs undo stack without releasing CRDT items that may
@@ -14,9 +15,11 @@ export class BoundedUndoManager {
     if (!options?.trackedOrigin) throw new TypeError('A tracked origin is required.');
 
     this.maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
+    this.Y = Y;
     this.maxEstimatedBytes = options.maxEstimatedBytes ?? DEFAULT_MAX_ESTIMATED_BYTES;
     this.trackedOrigin = options.trackedOrigin;
     this.discardedStackItems = [];
+    this.retainedStackItems = new Set();
     this.estimatedBytes = 0;
     this.listeners = new Set();
     this.lastClearReason = null;
@@ -34,6 +37,9 @@ export class BoundedUndoManager {
     });
 
     this.handleStackItemAdded = (event) => {
+      // Popped entries can still retain the original items behind redo links.
+      // Remember them until a complete clear can release all keep flags.
+      this.retainedStackItems.add(event.stackItem);
       if (event.origin === this.trackedOrigin && event.type === 'undo') {
         this.trimVisibleUndoStack();
       }
@@ -44,6 +50,24 @@ export class BoundedUndoManager {
     this.undoManager.on('stack-item-updated', this.handleStackChanged);
     this.undoManager.on('stack-item-popped', this.handleStackChanged);
     this.undoManager.on('stack-cleared', this.handleStackChanged);
+
+    // Update payloads contain only IDs for deletions. Account for the actual
+    // retained text before Yjs garbage collection can discard its content.
+    this.handleAfterTransaction = (transaction) => {
+      if (!this.isTrackedOrigin(transaction.origin)) return;
+      Y.iterateDeletedStructs(transaction, transaction.deleteSet, (item) => {
+        if (!(item instanceof Y.Item) || !Y.isParentOf(scope, item)) return;
+        const textBytes = typeof item.content.str === 'string'
+          ? item.content.str.length * 2
+          : 0;
+        this.estimatedBytes += textBytes + ESTIMATED_ITEM_OVERHEAD_BYTES;
+      });
+    };
+    this.handleDocumentUpdate = (update, origin) => {
+      if (this.isTrackedOrigin(origin)) this.recordLocalUpdateSize(update.length);
+    };
+    this.undoManager.doc.on('afterTransaction', this.handleAfterTransaction);
+    this.undoManager.doc.on('update', this.handleDocumentUpdate);
   }
 
   get undoDepth() {
@@ -83,7 +107,9 @@ export class BoundedUndoManager {
 
   recordLocalUpdateSize(byteLength) {
     if (!Number.isFinite(byteLength) || byteLength <= 0) return false;
-    this.estimatedBytes += byteLength;
+    // A conservative cumulative budget, including undo/redo and discarded
+    // entries. Do not subtract entries while other history may reference them.
+    this.estimatedBytes += byteLength * 2 + ESTIMATED_ITEM_OVERHEAD_BYTES;
     if (this.estimatedBytes <= this.maxEstimatedBytes) return false;
     this.clear('memory-limit');
     return true;
@@ -96,17 +122,30 @@ export class BoundedUndoManager {
   }
 
   clear(reason = 'manual') {
-    if (this.discardedStackItems.length > 0) {
-      this.undoManager.undoStack.unshift(...this.discardedStackItems);
-      this.discardedStackItems = [];
-    }
+    this.undoManager.undoStack = [...new Set([
+      ...this.retainedStackItems,
+      ...this.discardedStackItems,
+      ...this.undoManager.undoStack
+    ])];
+    this.retainedStackItems.clear();
+    this.discardedStackItems = [];
+    const releasedDeletions = this.Y.mergeDeleteSets([
+      ...this.undoManager.undoStack.map((item) => item.deletions),
+      ...this.undoManager.redoStack.map((item) => item.deletions)
+    ]);
     this.undoManager.clear(true, true);
+    // clear() releases keep flags, but old transactions have already passed
+    // Yjs GC. Collect their deleted content now that no history references it.
+    const doc = this.undoManager.doc;
+    if (doc.gc) this.Y.tryGc(releasedDeletions, doc.store, doc.gcFilter);
     this.estimatedBytes = 0;
     this.lastClearReason = reason;
     this.emitChange();
   }
 
   destroy() {
+    this.undoManager.doc.off('afterTransaction', this.handleAfterTransaction);
+    this.undoManager.doc.off('update', this.handleDocumentUpdate);
     this.clear('destroy');
     this.undoManager.off('stack-item-added', this.handleStackItemAdded);
     this.undoManager.off('stack-item-updated', this.handleStackChanged);
@@ -121,6 +160,10 @@ export class BoundedUndoManager {
       const discarded = this.undoManager.undoStack.shift();
       if (discarded) this.discardedStackItems.push(discarded);
     }
+  }
+
+  isTrackedOrigin(origin) {
+    return origin === this.trackedOrigin || origin === this.undoManager;
   }
 
   emitChange() {
