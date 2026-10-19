@@ -5,9 +5,12 @@ using System.Text.Json;
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using Models;
 
@@ -58,6 +61,10 @@ public sealed class SealCodeApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         payload.GetProperty("CollaborativeUndoEnabled").GetBoolean().Should().BeTrue();
+        var advertisedLimit = payload.GetProperty("MaxYjsMessageBytes").GetInt64();
+        advertisedLimit.Should().Be(16 * 1024 * 1024);
+        advertisedLimit.Should().Be(factory.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.SignalR.HubOptions>>()
+            .Value.MaximumReceiveMessageSize);
     }
 
     [Fact(DisplayName = "GET /admin/rooms returns unauthorized without cookie")]
@@ -328,6 +335,173 @@ public sealed class SealCodeApiTests
     }
 
     private static SealCodeAppFactory CreateFactory() => new();
+
+    [Fact]
+    public async Task ConnectionShouldBelongToOnlyOneRoomAndCleanUpOnDisconnect()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomA = await CreateRoomAsync(client, cookie);
+        var roomB = await CreateRoomAsync(client, cookie);
+        await using var alice = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        await using var inspector = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Alice");
+        var repeatedJoin = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Alice");
+        repeatedJoin.Users.Should().Equal("Alice");
+
+        Func<Task> joinOther = () => alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomB, "Alice");
+        await joinOther.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Leave the current room*");
+        var otherRoom = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomB, "Inspector");
+        otherRoom.Users.Should().Equal("Inspector");
+        await inspector.InvokeAsync("LeaveRoom", roomB);
+
+        var left = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var leftSubscription = inspector.On<string, string[]>("UserLeft", (name, _) =>
+        {
+            if (name == "Alice")
+            {
+                left.TrySetResult();
+            }
+        });
+        _ = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Inspector");
+        await alice.StopAsync();
+        await left.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var afterDisconnect = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Inspector");
+        afterDisconnect.Users.Should().Equal("Inspector");
+
+        // An explicit leave also allows a subsequent join on the same connection.
+        await inspector.InvokeAsync("LeaveRoom", roomA);
+        var nextRoom = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomB, "Inspector");
+        nextRoom.Users.Should().Equal("Inspector");
+        // The disconnected participant's name is available again.
+        await using var replacement = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        var replacementJoin = await replacement.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Alice");
+        replacementJoin.Users.Should().Equal("Alice");
+    }
+
+    [Theory]
+    [InlineData("before-join")]
+    [InlineData("after-leave")]
+    [InlineData("other-room")]
+    public async Task NonParticipantsShouldNotMutateRoom(string scenario)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var targetRoom = await CreateRoomAsync(client, cookie);
+        await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        if (scenario == "after-leave")
+        {
+            _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", targetRoom, "Alice");
+            await connection.InvokeAsync("LeaveRoom", targetRoom);
+        }
+        else if (scenario == "other-room")
+        {
+            var otherRoom = await CreateRoomAsync(client, cookie);
+            _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", otherRoom, "Alice");
+        }
+
+        var bytes = Convert.ToBase64String([1, 2]);
+        Func<Task> update = () => connection.InvokeAsync("UpdateYjs", targetRoom, bytes);
+        Func<Task> checkpoint = () => connection.InvokeAsync<bool>("CheckpointYjs", targetRoom, bytes, "forged", 0L);
+        Func<Task> language = () => connection.InvokeAsync("SetLanguage", targetRoom, "csharp");
+
+        await update.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await checkpoint.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await language.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await using var inspector = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        var state = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", targetRoom, "Inspector");
+        state.DocumentRevision.Should().Be(0);
+        state.YjsState.Should().BeNull();
+        state.YjsUpdates.Should().BeEmpty();
+        state.Language.Should().Be("sql");
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    [InlineData("<img src=x onerror=alert(1)>")]
+    public async Task CreateRoomShouldRejectUnconfiguredLanguage(string language)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+
+        var response = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Invalid language", Language = language });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var rooms = await client.GetFromJsonAsync<RoomSummary[]>("/admin/rooms");
+        rooms.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData("Root")]
+    public async Task ForgedAdminCookieShouldNotAuthenticate(string name)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Cookie", $"admin_auth={name}");
+
+        var response = await client.GetAsync("/admin/rooms");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var createResponse = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Forged", Language = "sql" });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task TamperedAdminTicketShouldNotAuthenticate()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+        var cookie = await LoginAsAdminAsync(client);
+        var value = cookie.Value.ToCharArray();
+        var middle = value.Length / 2;
+        value[middle] = value[middle] == 'A' ? 'B' : 'A';
+        client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={new string(value)}");
+
+        var response = await client.GetAsync("/admin/rooms");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ExpiredAdminTicketShouldNotAuthenticate()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+        var cookie = await LoginAsAdminAsync(client);
+        var options = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(CookieAuthenticationDefaults.AuthenticationScheme);
+        var ticket = options.TicketDataFormat.Unprotect(cookie.Value)!;
+        ticket.Properties.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var expiredCookie = options.TicketDataFormat.Protect(ticket);
+        client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={expiredCookie}");
+
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task LogoutShouldRemoveAuthenticatedSessionCookie()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.PostAsync("/admin/logout", null)).StatusCode.Should().Be(HttpStatusCode.Redirect);
+
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 
     private static Task<Cookie> LoginAsAdminAsync(HttpClient client)
         => LoginAsync(client, "Admin", "pass1");

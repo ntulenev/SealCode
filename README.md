@@ -51,6 +51,16 @@ Open the room link in a browser and enter a display name.
 - Each tab retains up to 100 grouped local operations; reconnect keeps the
   history, while leaving or reloading clears it.
 
+**Synchronization limits**
+- SignalR accepts messages up to 16 MiB. The client checks the complete UTF-8
+  JSON message, including the full CRDT state and text in a checkpoint, before sending.
+- A checkpoint over the limit is skipped with a visible warning; incremental
+  edits continue syncing. It is reconsidered when the document revision changes.
+- An edit over the limit remains local and queued, with a warning to copy the
+  text before reloading. Oversized messages are not retried automatically.
+- Admin sessions use protected authentication cookies; old name-only cookies
+  require signing in again after upgrading.
+
 **Endpoints**
 - `/` landing page
 - `/about.html` about page with repository link

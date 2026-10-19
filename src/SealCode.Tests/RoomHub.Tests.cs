@@ -231,6 +231,7 @@ public sealed class RoomHubTests
     public async Task UpdateYjsAsyncShouldThrowWhenPayloadIsInvalid()
     {
         var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         using var hub = CreateHub(roomManager.Object);
 
@@ -284,6 +285,7 @@ public sealed class RoomHubTests
     public async Task CheckpointYjsAsyncShouldAcceptCurrentCheckpoint()
     {
         var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         using var hub = CreateHub(roomManager.Object);
@@ -307,6 +309,7 @@ public sealed class RoomHubTests
     public async Task CheckpointYjsAsyncShouldRejectStaleCheckpoint()
     {
         var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
         room.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
@@ -328,6 +331,7 @@ public sealed class RoomHubTests
     public async Task SetLanguageAsyncShouldThrowWhenLanguageIsInvalid()
     {
         var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict);
         var isValidCalls = 0;
@@ -349,6 +353,7 @@ public sealed class RoomHubTests
     {
         using var cts = new CancellationTokenSource();
         var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict);

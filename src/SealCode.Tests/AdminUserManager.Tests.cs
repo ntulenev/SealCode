@@ -1,11 +1,17 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
+using System.Text;
+
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.DependencyInjection;
 
-using System.Diagnostics.CodeAnalysis;
-using System.Text;
+using Moq;
 
 using Models;
 using Models.Configuration;
@@ -85,7 +91,7 @@ public sealed class AdminUserManagerTests
     {
         var context = new DefaultHttpContext();
         var manager = CreateManager(context);
-        SetCookie(context, $"{COOKIENAME}=unknown");
+        SetAuthenticatedUser(context, "unknown");
 
         var result = manager.TryGetAdminUser(out var user);
 
@@ -99,7 +105,7 @@ public sealed class AdminUserManagerTests
     {
         var context = new DefaultHttpContext();
         var manager = CreateManager(context);
-        SetCookie(context, $"{COOKIENAME}=ADMIN");
+        SetAuthenticatedUser(context, "ADMIN");
 
         var result = manager.TryGetAdminUser(out var user);
 
@@ -141,27 +147,38 @@ public sealed class AdminUserManagerTests
     public async Task TrySetCurrentUserShouldAppendCookieWhenValid()
     {
         var context = new DefaultHttpContext();
+        var authentication = new Mock<IAuthenticationService>(MockBehavior.Strict);
+        authentication.Setup(service => service.SignInAsync(
+                context, CookieAuthenticationDefaults.AuthenticationScheme,
+                It.Is<ClaimsPrincipal>(principal => principal.Identity!.IsAuthenticated && principal.Identity.Name == "Admin"),
+                null))
+            .Returns(Task.CompletedTask).Verifiable();
+        using var services = new ServiceCollection().AddSingleton(authentication.Object).BuildServiceProvider();
+        context.RequestServices = services;
         var manager = CreateManager(context);
         SetForm(context, "name=Admin&password=pass1");
 
         var result = await manager.TrySetCurrentUserAsync(CancellationToken.None);
 
         result.Should().BeTrue();
-        context.Response.Headers.TryGetValue("Set-Cookie", out var headerValues).Should().BeTrue();
-        headerValues.ToString().Should().Contain($"{COOKIENAME}=Admin");
+        authentication.Verify();
     }
 
     [Fact(DisplayName = "ClearCurrentAdminUserShouldDeleteCookie")]
     [Trait("Category", "Unit")]
-    public void ClearCurrentAdminUserShouldDeleteCookie()
+    public async Task ClearCurrentAdminUserShouldDeleteCookie()
     {
         var context = new DefaultHttpContext();
+        var authentication = new Mock<IAuthenticationService>(MockBehavior.Strict);
+        authentication.Setup(service => service.SignOutAsync(context, CookieAuthenticationDefaults.AuthenticationScheme, null))
+            .Returns(Task.CompletedTask).Verifiable();
+        using var services = new ServiceCollection().AddSingleton(authentication.Object).BuildServiceProvider();
+        context.RequestServices = services;
         var manager = CreateManager(context);
 
-        manager.ClearCurrentAdminUser();
+        await manager.ClearCurrentAdminUserAsync();
 
-        context.Response.Headers.TryGetValue("Set-Cookie", out var headerValues).Should().BeTrue();
-        headerValues.ToString().Should().Contain($"{COOKIENAME}=");
+        authentication.Verify();
     }
 
     [Fact(DisplayName = "TryGetAdminUserShouldMapSuperAdminFlag")]
@@ -170,7 +187,7 @@ public sealed class AdminUserManagerTests
     {
         var context = new DefaultHttpContext();
         var manager = CreateManager(context);
-        SetCookie(context, $"{COOKIENAME}=root");
+        SetAuthenticatedUser(context, "root");
 
         var result = manager.TryGetAdminUser(out var user);
 
@@ -178,6 +195,18 @@ public sealed class AdminUserManagerTests
         user.Name.Should().Be("Root");
         user.IsSuperAdmin.Should().BeTrue();
     }
+
+    [Fact]
+    public void KnownAdminNameInCookieShouldNotAuthenticate()
+    {
+        var context = new DefaultHttpContext();
+        SetCookie(context, $"{COOKIENAME}=Root");
+        CreateManager(context).TryGetAdminUser(out _).Should().BeFalse();
+    }
+
+    private static void SetAuthenticatedUser(DefaultHttpContext context, string name)
+        => context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, name)], CookieAuthenticationDefaults.AuthenticationScheme));
 
     private static IOptions<ApplicationConfiguration> CreateSettings() => Options.Create(new ApplicationConfiguration
     {

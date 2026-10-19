@@ -3,6 +3,7 @@ using Abstractions;
 using Logic;
 
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 
 using Models;
@@ -16,6 +17,7 @@ using Transport.Models;
 using Transport.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+const int maxYjsMessageBytes = 16 * 1024 * 1024;
 
 builder.Services.AddOptions<ApplicationConfiguration>()
     .Bind(builder.Configuration)
@@ -26,7 +28,7 @@ builder.Services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator
 
 builder.Services.AddSignalR(options =>
     {
-        options.MaximumReceiveMessageSize = 1024 * 1024;
+        options.MaximumReceiveMessageSize = maxYjsMessageBytes;
         options.KeepAliveInterval = TimeSpan.FromSeconds(5);
         options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
     })
@@ -53,11 +55,20 @@ builder.Services.AddScoped(sp =>
     return accessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
 });
 builder.Services.AddScoped<IAdminUserManager, AdminUserManager>();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "admin_auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    });
 
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthentication();
 
 app.MapGet("/", (IWebHostEnvironment env) =>
 {
@@ -80,9 +91,9 @@ app.MapPost("/admin/login",
         : Results.Redirect("/admin/login?error=1");
 });
 
-app.MapPost("/admin/logout", (IAdminUserManager adminUserManager) =>
+app.MapPost("/admin/logout", async (IAdminUserManager adminUserManager) =>
 {
-    adminUserManager.ClearCurrentAdminUser();
+    await adminUserManager.ClearCurrentAdminUserAsync().ConfigureAwait(false);
     return Results.Redirect("/admin/login");
 });
 
@@ -124,12 +135,14 @@ app.MapGet("/languages", (ILanguageValidator validator)
 app.MapGet("/features", (IOptions<ApplicationConfiguration> settings)
     => Results.Json(new
     {
-        settings.Value.CollaborativeUndoEnabled
+        settings.Value.CollaborativeUndoEnabled,
+        MaxYjsMessageBytes = maxYjsMessageBytes
     }));
 
 app.MapPost("/admin/rooms",
             async (HttpContext context,
                    IRoomManager roomManager,
+                   ILanguageValidator languageValidator,
                    IAdminUserManager adminUserManager,
                    CancellationToken cancellationToken) =>
 {
@@ -145,6 +158,10 @@ app.MapPost("/admin/rooms",
     }
 
     var language = new RoomLanguage(payload.Language ?? "csharp");
+    if (!languageValidator.IsValid(language))
+    {
+        return Results.BadRequest(new { error = "Invalid language" });
+    }
     var name = new RoomName(payload.Name);
     var room = roomManager.CreateRoom(name, language, adminUser);
     return Results.Json(new
