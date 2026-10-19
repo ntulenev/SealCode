@@ -109,10 +109,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Update payload required");
         }
 
-        if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
-        {
-            throw new HubException("Room not found");
-        }
+        var room = GetRoomForParticipant(parsedRoomId, out var user);
 
         byte[] update;
         try
@@ -129,9 +126,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Update payload required");
         }
 
-        var author = room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user)
-            ? user.Value
-            : "unknown";
+        var author = user.Value;
 
         var appendResult = room.AppendYjsUpdate(update, DateTimeOffset.UtcNow);
 
@@ -174,10 +169,7 @@ public sealed class RoomHub : Hub
             throw new HubException("State payload required");
         }
 
-        if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
-        {
-            throw new HubException("Room not found");
-        }
+        var room = GetRoomForParticipant(parsedRoomId, out _);
 
         byte[] state;
         try
@@ -229,10 +221,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Language required");
         }
 
-        if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
-        {
-            throw new HubException("Room not found");
-        }
+        var room = GetRoomForParticipant(parsedRoomId, out _);
 
         int newVersion;
         RoomLanguage normalized;
@@ -396,6 +385,21 @@ public sealed class RoomHub : Hub
             await Clients.Group(parsedRoomId.Value).SendAsync("UserLeft", displayName, usersSnapshot, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
         }
+    }
+
+    private RoomState GetRoomForParticipant(RoomId roomId, out RoomUser user)
+    {
+        if (!_roomManager.TryGetRoom(roomId, out var room))
+        {
+            throw new HubException("Room not found");
+        }
+
+        if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out user))
+        {
+            throw new HubException("Join the room before changing it");
+        }
+
+        return room;
     }
 
     private static RoomId ParseRoomIdOrThrow(string roomId)

@@ -333,6 +333,44 @@ public sealed class SealCodeApiTests
     private static SealCodeAppFactory CreateFactory() => new();
 
     [Theory]
+    [InlineData("before-join")]
+    [InlineData("after-leave")]
+    [InlineData("other-room")]
+    public async Task NonParticipantsShouldNotMutateRoom(string scenario)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var targetRoom = await CreateRoomAsync(client, cookie);
+        await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        if (scenario == "after-leave")
+        {
+            _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", targetRoom, "Alice");
+            await connection.InvokeAsync("LeaveRoom", targetRoom);
+        }
+        else if (scenario == "other-room")
+        {
+            var otherRoom = await CreateRoomAsync(client, cookie);
+            _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", otherRoom, "Alice");
+        }
+
+        var bytes = Convert.ToBase64String([1, 2]);
+        Func<Task> update = () => connection.InvokeAsync("UpdateYjs", targetRoom, bytes);
+        Func<Task> checkpoint = () => connection.InvokeAsync<bool>("CheckpointYjs", targetRoom, bytes, "forged", 0L);
+        Func<Task> language = () => connection.InvokeAsync("SetLanguage", targetRoom, "csharp");
+
+        await update.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await checkpoint.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await language.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await using var inspector = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        var state = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", targetRoom, "Inspector");
+        state.DocumentRevision.Should().Be(0);
+        state.YjsState.Should().BeNull();
+        state.YjsUpdates.Should().BeEmpty();
+        state.Language.Should().Be("sql");
+    }
+
+    [Theory]
     [InlineData("unknown")]
     [InlineData("")]
     [InlineData("<img src=x onerror=alert(1)>")]
