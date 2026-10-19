@@ -3,6 +3,7 @@ using Abstractions;
 using Logic;
 
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 
 using Models;
@@ -53,11 +54,20 @@ builder.Services.AddScoped(sp =>
     return accessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
 });
 builder.Services.AddScoped<IAdminUserManager, AdminUserManager>();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "admin_auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    });
 
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthentication();
 
 app.MapGet("/", (IWebHostEnvironment env) =>
 {
@@ -80,9 +90,9 @@ app.MapPost("/admin/login",
         : Results.Redirect("/admin/login?error=1");
 });
 
-app.MapPost("/admin/logout", (IAdminUserManager adminUserManager) =>
+app.MapPost("/admin/logout", async (IAdminUserManager adminUserManager) =>
 {
-    adminUserManager.ClearCurrentAdminUser();
+    await adminUserManager.ClearCurrentAdminUserAsync().ConfigureAwait(false);
     return Results.Redirect("/admin/login");
 });
 

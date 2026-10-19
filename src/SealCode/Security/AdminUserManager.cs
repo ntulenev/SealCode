@@ -1,3 +1,7 @@
+using System.Security.Claims;
+
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 
 using Models;
@@ -10,11 +14,6 @@ namespace SealCode.Security;
 /// </summary>
 internal sealed class AdminUserManager : IAdminUserManager
 {
-    /// <summary>
-    /// Gets the admin cookie name.
-    /// </summary>
-    private const string COOKIENAME = "admin_auth";
-
     /// <summary>
     /// Initializes a new instance of the <see cref="AdminUserManager"/> class.
     /// </summary>
@@ -36,13 +35,14 @@ internal sealed class AdminUserManager : IAdminUserManager
     public bool TryGetAdminUser(out AdminUser adminUser)
     {
         adminUser = default;
-        if (!_context.Request.Cookies.TryGetValue(COOKIENAME, out var value) || string.IsNullOrWhiteSpace(value))
+        if (_context.User.Identity?.IsAuthenticated != true
+            || string.IsNullOrWhiteSpace(_context.User.Identity.Name))
         {
             return false;
         }
 
         var user = _settings.AdminUsers.FirstOrDefault(user =>
-            string.Equals(user.Name, value, StringComparison.OrdinalIgnoreCase));
+            string.Equals(user.Name, _context.User.Identity.Name, StringComparison.OrdinalIgnoreCase));
         if (user is null)
         {
             return false;
@@ -71,19 +71,19 @@ internal sealed class AdminUserManager : IAdminUserManager
             return false;
         }
 
-        _context.Response.Cookies.Append(COOKIENAME, user.Name, new CookieOptions
-        {
-            HttpOnly = true,
-            IsEssential = true,
-            SameSite = SameSiteMode.Lax
-        });
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, user.Name)],
+            CookieAuthenticationDefaults.AuthenticationScheme);
+        await _context.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identity)).ConfigureAwait(false);
 
         return true;
     }
 
     /// <inheritdoc />
-    public void ClearCurrentAdminUser()
-        => _context.Response.Cookies.Delete(COOKIENAME);
+    public Task ClearCurrentAdminUserAsync()
+        => _context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
     private readonly ApplicationConfiguration _settings;
     private readonly HttpContext _context;

@@ -30,5 +30,5 @@ internal interface IAdminUserManager
     /// <summary>
     /// Clears the current admin user authentication cookie.
     /// </summary>
-    void ClearCurrentAdminUser();
+    Task ClearCurrentAdminUserAsync();
 }

@@ -5,9 +5,12 @@ using System.Text.Json;
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using Models;
 
@@ -328,6 +331,74 @@ public sealed class SealCodeApiTests
     }
 
     private static SealCodeAppFactory CreateFactory() => new();
+
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData("Root")]
+    public async Task ForgedAdminCookieShouldNotAuthenticate(string name)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Cookie", $"admin_auth={name}");
+
+        var response = await client.GetAsync("/admin/rooms");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var createResponse = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Forged", Language = "sql" });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task TamperedAdminTicketShouldNotAuthenticate()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+        var cookie = await LoginAsAdminAsync(client);
+        var value = cookie.Value.ToCharArray();
+        var middle = value.Length / 2;
+        value[middle] = value[middle] == 'A' ? 'B' : 'A';
+        client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={new string(value)}");
+
+        var response = await client.GetAsync("/admin/rooms");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ExpiredAdminTicketShouldNotAuthenticate()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = false
+        });
+        var cookie = await LoginAsAdminAsync(client);
+        var options = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(CookieAuthenticationDefaults.AuthenticationScheme);
+        var ticket = options.TicketDataFormat.Unprotect(cookie.Value)!;
+        ticket.Properties.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var expiredCookie = options.TicketDataFormat.Protect(ticket);
+        client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={expiredCookie}");
+
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task LogoutShouldRemoveAuthenticatedSessionCookie()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.PostAsync("/admin/logout", null)).StatusCode.Should().Be(HttpStatusCode.Redirect);
+
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 
     private static Task<Cookie> LoginAsAdminAsync(HttpClient client)
         => LoginAsync(client, "Admin", "pass1");
