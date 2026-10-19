@@ -163,6 +163,7 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldIncludeUpdatesDuringSubscription(bool reconnect)
     {
+        using var cts = new CancellationTokenSource();
         var room = CreateRoomState(DefaultRoomId);
         if (reconnect)
         {
@@ -171,21 +172,28 @@ public sealed class RoomHubTests
 
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
         roomManager.Setup(m => m.RegisterUserInRoom(
-                It.IsAny<RoomId>(), It.IsAny<ConnectionId>(), It.IsAny<RoomUser>()))
+                new RoomId(DefaultRoomId), new ConnectionId("conn-1"), new RoomUser("Alice")))
             .Returns(room);
 
         var subscriptionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var subscriptionCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var groups = new Mock<IGroupManager>(MockBehavior.Strict);
-        groups.Setup(g => g.AddToGroupAsync("conn-1", DefaultRoomId, It.IsAny<CancellationToken>()))
+        groups.Setup(g => g.AddToGroupAsync("conn-1", DefaultRoomId, cts.Token))
             .Callback(() => subscriptionStarted.SetResult())
             .Returns(subscriptionCompleted.Task);
 
-        var proxy = new Mock<IClientProxy>();
-        var clients = new Mock<IHubCallerClients>();
-        clients.Setup(c => c.GroupExcept(DefaultRoomId, It.IsAny<IReadOnlyList<string>>()))
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        proxy.Setup(p => p.SendCoreAsync(
+                "UserJoined",
+                It.Is<object?[]>(args => MatchUserJoinedArgs(args, "Alice", Array.Empty<string>())),
+                cts.Token))
+            .Returns(Task.CompletedTask);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        clients.Setup(c => c.GroupExcept(DefaultRoomId,
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
             .Returns(proxy.Object);
-        using var hub = CreateHub(roomManager.Object, clients: clients.Object, groups: groups.Object);
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object, groups: groups.Object,
+            cancellationToken: cts.Token);
 
         var joinTask = hub.JoinRoomAsync(DefaultRoomId, "Alice");
         await subscriptionStarted.Task;
