@@ -74,14 +74,15 @@ public sealed class RoomHub : Hub
             throw new HubException(ex.Message);
         }
 
-        var joinResult = JoinRoomResult.From(room);
-
         Context.Items["roomId"] = parsedRoomId.Value;
         Context.Items["displayName"] = displayName;
 
         var cancellationToken = Context.ConnectionAborted;
 
         await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        // Subscribe before taking the snapshot so concurrent updates are either
+        // included in it or delivered to the client's synchronization buffer.
+        var joinResult = JoinRoomResult.From(room);
         await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
             .SendAsync("UserJoined", displayName, joinResult.Users, cancellationToken)
             .ConfigureAwait(false);

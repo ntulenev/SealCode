@@ -157,6 +157,47 @@ public sealed class RoomHubTests
         addToGroupCalls.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    public async Task JoinRoomAsyncShouldIncludeUpdatesDuringSubscription(bool reconnect)
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        if (reconnect)
+        {
+            room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
+        }
+
+        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
+        roomManager.Setup(m => m.RegisterUserInRoom(
+                It.IsAny<RoomId>(), It.IsAny<ConnectionId>(), It.IsAny<RoomUser>()))
+            .Returns(room);
+
+        var subscriptionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscriptionCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var groups = new Mock<IGroupManager>(MockBehavior.Strict);
+        groups.Setup(g => g.AddToGroupAsync("conn-1", DefaultRoomId, It.IsAny<CancellationToken>()))
+            .Callback(() => subscriptionStarted.SetResult())
+            .Returns(subscriptionCompleted.Task);
+
+        var proxy = new Mock<IClientProxy>();
+        var clients = new Mock<IHubCallerClients>();
+        clients.Setup(c => c.GroupExcept(DefaultRoomId, It.IsAny<IReadOnlyList<string>>()))
+            .Returns(proxy.Object);
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object, groups: groups.Object);
+
+        var joinTask = hub.JoinRoomAsync(DefaultRoomId, "Alice");
+        await subscriptionStarted.Task;
+        var appended = room.AppendYjsUpdate([2, 3], DateTimeOffset.UtcNow);
+        subscriptionCompleted.SetResult();
+        var result = await joinTask;
+
+        result.DocumentRevision.Should().Be(appended.DocumentRevision.Value);
+        result.YjsUpdates.Last().Revision.Should().Be(appended.DocumentRevision.Value);
+        result.YjsUpdates.Last().Update.Should().Be(Convert.ToBase64String([2, 3]));
+    }
+
     [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenAddUserFails")]
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldThrowWhenAddUserFails()
