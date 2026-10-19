@@ -257,7 +257,7 @@ public sealed class RoomHubTests
         proxy.Setup(p => p.SendCoreAsync(
                 "YjsUpdated",
                 It.Is<object?[]>(args => MatchYjsUpdatedArgs(args, updateBase64, 1, 2, "Alice")),
-                It.Is<CancellationToken>(token => token == cts.Token)))
+                CancellationToken.None))
             .Callback(() => yjsUpdatedCalls++)
             .Returns(Task.CompletedTask);
 
@@ -269,6 +269,7 @@ public sealed class RoomHubTests
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
+        await cts.CancelAsync();
         await hub.UpdateYjsAsync(roomId, updateBase64);
 
         room.Text.Value.Should().Be("before");

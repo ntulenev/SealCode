@@ -56,6 +56,9 @@ let pendingYjsUpdates = [];
 let yjsSendInFlight = false;
 let checkpointTimer = null;
 let checkpointInFlight = false;
+let recoveryTimer = null;
+let recoveryDue = 0;
+let recoveryInFlight = false;
 let currentDocumentRevision = 0;
 let highestDocumentRevisionSeen = 0;
 let oversizedCheckpointRevision = -1;
@@ -652,7 +655,59 @@ function noteDocumentRevision(revision) {
   if (advanced && currentDocumentRevision === highestDocumentRevisionSeen) {
     scheduleYjsCheckpoint();
   }
+  if (currentDocumentRevision < highestDocumentRevisionSeen) scheduleYjsRecovery(250);
   return advanced;
+}
+
+function scheduleYjsRecovery(delay = 5000) {
+  if (roomClosed || !hasJoinedRoom || !ydoc) return;
+  const due = performance.now() + delay;
+  if (recoveryTimer && recoveryDue <= due) return;
+  if (recoveryTimer) clearTimeout(recoveryTimer);
+  recoveryDue = due;
+  recoveryTimer = setTimeout(recoverYjs, delay);
+}
+
+async function recoverYjs() {
+  recoveryTimer = null;
+  if (roomClosed || !hasJoinedRoom || !ydoc) return;
+  if (recoveryInFlight || isSynchronizingYjs
+      || connection.state !== signalR.HubConnectionState.Connected) {
+    scheduleYjsRecovery();
+    return;
+  }
+  const document = ydoc;
+  const connectionId = connection.connectionId;
+  let synchronizing = false;
+  recoveryInFlight = true;
+  try {
+    const revision = await connection.invoke('GetDocumentRevision', roomId);
+    if (roomClosed || ydoc !== document || connection.connectionId !== connectionId) return;
+    if (Number(revision) <= currentDocumentRevision) return;
+    isSynchronizingYjs = true;
+    synchronizing = true;
+    const result = await connection.invoke('SyncYjs', roomId);
+    if (roomClosed || ydoc !== document || connection.connectionId !== connectionId) return;
+    if (!mergeYjsSyncState(result.YjsState ?? result.yjsState,
+        result.YjsUpdates ?? result.yjsUpdates ?? [],
+        result.DocumentRevision ?? result.documentRevision,
+        result.CheckpointRevision ?? result.checkpointRevision)) {
+      throw new Error('Failed to recover the room document.');
+    }
+    clearSyncError('recovery');
+  } catch (err) {
+    if (!roomClosed) {
+      console.warn('Failed to recover missing Yjs updates.', err);
+      showSyncError('recovery', 'Some changes have not arrived. Retrying synchronization; keep this page open.');
+    }
+  } finally {
+    recoveryInFlight = false;
+    if (synchronizing) {
+      isSynchronizingYjs = false;
+      flushBufferedYjsMessages();
+    }
+    scheduleYjsRecovery();
+  }
 }
 
 function scheduleYjsCheckpoint() {
@@ -698,6 +753,8 @@ async function sendYjsCheckpoint() {
 }
 
 function disposeYjs() {
+  if (recoveryTimer) clearTimeout(recoveryTimer);
+  recoveryTimer = null;
   if (checkpointTimer) {
     clearTimeout(checkpointTimer);
     checkpointTimer = null;
@@ -892,6 +949,7 @@ async function joinRoom() {
     versionNumberEl.textContent = currentVersion;
     renderUsers(users);
     hasJoinedRoom = true;
+    scheduleYjsRecovery();
     rejoinRetryAttempt = 0;
     clearRejoinRetryTimer();
     joinOverlay.classList.add('hidden');

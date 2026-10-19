@@ -136,7 +136,8 @@ public sealed class RoomHub : Hub
 
         var appendResult = room.AppendYjsUpdate(update, DateTimeOffset.UtcNow);
 
-        var cancellationToken = Context.ConnectionAborted;
+        // Once appended, the update belongs to the room even if its author disconnects.
+        var cancellationToken = CancellationToken.None;
         await Clients.Group(parsedRoomId.Value)
             .SendAsync(
                 "YjsUpdated",
@@ -147,6 +148,26 @@ public sealed class RoomHub : Hub
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Returns the current document revision to an active room participant.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <returns>The latest accepted document revision.</returns>
+    /// <exception cref="HubException">The caller has not joined the room or the room does not exist.</exception>
+    [HubMethodName("GetDocumentRevision")]
+    public long GetDocumentRevision(string roomId)
+        => GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).DocumentRevision.Value;
+
+    /// <summary>
+    /// Returns an atomic document snapshot without repeating room registration.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <returns>The current checkpoint and update journal.</returns>
+    /// <exception cref="HubException">The caller has not joined the room or the room does not exist.</exception>
+    [HubMethodName("SyncYjs")]
+    public JoinRoomResult SyncYjs(string roomId)
+        => JoinRoomResult.From(GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _));
 
     /// <summary>
     /// Stores a compact Yjs checkpoint when it represents the latest document revision.
