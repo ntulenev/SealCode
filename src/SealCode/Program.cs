@@ -17,6 +17,7 @@ using Transport.Models;
 using Transport.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+const int maxYjsMessageBytes = 16 * 1024 * 1024;
 
 builder.Services.AddOptions<ApplicationConfiguration>()
     .Bind(builder.Configuration)
@@ -27,7 +28,7 @@ builder.Services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator
 
 builder.Services.AddSignalR(options =>
     {
-        options.MaximumReceiveMessageSize = 1024 * 1024;
+        options.MaximumReceiveMessageSize = maxYjsMessageBytes;
         options.KeepAliveInterval = TimeSpan.FromSeconds(5);
         options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
     })
@@ -134,7 +135,8 @@ app.MapGet("/languages", (ILanguageValidator validator)
 app.MapGet("/features", (IOptions<ApplicationConfiguration> settings)
     => Results.Json(new
     {
-        settings.Value.CollaborativeUndoEnabled
+        settings.Value.CollaborativeUndoEnabled,
+        MaxYjsMessageBytes = maxYjsMessageBytes
     }));
 
 app.MapPost("/admin/rooms",

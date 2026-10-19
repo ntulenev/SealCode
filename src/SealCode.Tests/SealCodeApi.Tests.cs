@@ -61,6 +61,10 @@ public sealed class SealCodeApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         payload.GetProperty("CollaborativeUndoEnabled").GetBoolean().Should().BeTrue();
+        var advertisedLimit = payload.GetProperty("MaxYjsMessageBytes").GetInt64();
+        advertisedLimit.Should().Be(16 * 1024 * 1024);
+        advertisedLimit.Should().Be(factory.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.SignalR.HubOptions>>()
+            .Value.MaximumReceiveMessageSize);
     }
 
     [Fact(DisplayName = "GET /admin/rooms returns unauthorized without cookie")]

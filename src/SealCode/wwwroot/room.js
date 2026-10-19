@@ -2,12 +2,14 @@
 import { MonacoBinding } from 'https://esm.sh/y-monaco@0.1.6';
 import { Awareness } from 'https://esm.sh/y-protocols@1.0.7/awareness';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
+import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
 
 const remoteYjsOrigin = Object.freeze({ source: 'signalr' });
 const bootstrapYjsOrigin = Object.freeze({ source: 'bootstrap' });
 const maxUndoDepth = 100;
 const maxUndoEstimatedBytes = 8 * 1024 * 1024;
 let collaborativeUndoEnabled = true;
+let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
 
 const connectionStatusEl = document.getElementById('connectionStatus');
 const roomNameEl = document.getElementById('roomName');
@@ -20,6 +22,7 @@ const joinOverlay = document.getElementById('joinOverlay');
 const joinBtn = document.getElementById('joinBtn');
 const displayNameInput = document.getElementById('displayNameInput');
 const joinError = document.getElementById('joinError');
+const syncError = document.getElementById('syncError');
 
 const pathSegments = new URL(window.location.href).pathname.split('/').filter(Boolean);
 const roomId = pathSegments[pathSegments.length - 1] ?? '';
@@ -55,6 +58,7 @@ let checkpointTimer = null;
 let checkpointInFlight = false;
 let currentDocumentRevision = 0;
 let highestDocumentRevisionSeen = 0;
+let oversizedCheckpointRevision = -1;
 const pendingDocumentRevisions = new Set();
 let isSynchronizingYjs = false;
 const bufferedYjsMessages = [];
@@ -103,6 +107,18 @@ window.__debugReconnect = async () => {
 
 function setStatus(status) {
   connectionStatusEl.textContent = status;
+}
+
+function showSyncError(kind, message) {
+  syncError.dataset.kind = kind;
+  syncError.textContent = message;
+  syncError.classList.remove('hidden');
+}
+
+function clearSyncError(kind) {
+  if (syncError.dataset.kind !== kind) return;
+  syncError.textContent = '';
+  syncError.classList.add('hidden');
 }
 
 function clearRejoinRetryTimer() {
@@ -476,6 +492,10 @@ async function loadFeatures() {
     collaborativeUndoEnabled = features.CollaborativeUndoEnabled
       ?? features.collaborativeUndoEnabled
       ?? true;
+    const messageLimit = features.MaxYjsMessageBytes ?? features.maxYjsMessageBytes;
+    if (Number.isSafeInteger(messageLimit) && messageLimit > 1024) {
+      maxYjsMessageBytes = messageLimit;
+    }
   } catch (err) {
     console.warn('Failed to load feature flags; collaborative undo remains enabled.', err);
     collaborativeUndoEnabled = true;
@@ -515,15 +535,22 @@ function scheduleYjsUpdateSend(update) {
     if (connection.state !== signalR.HubConnectionState.Connected) return;
 
     const updates = pendingYjsUpdates.splice(0, pendingYjsUpdates.length);
+    const merged = updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
+    const args = [roomId, base64FromUint8(merged)];
+    if (!fitsYjsMessage('UpdateYjs', args, maxYjsMessageBytes)) {
+      pendingYjsUpdates.unshift(...updates);
+      showSyncError('update-size', 'An edit is too large to send. Copy your text before reloading; some changes have not synced.');
+      return;
+    }
     yjsSendInFlight = true;
     try {
-      const merged = updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
-      await connection.invoke('UpdateYjs', roomId, base64FromUint8(merged));
+      await connection.invoke('UpdateYjs', ...args);
+      clearSyncError('update-size');
+      clearSyncError('transport');
     } catch (err) {
       pendingYjsUpdates.unshift(...updates);
       console.error('Failed to send Yjs update.', err);
-      joinError.textContent = 'Failed to sync changes. Try refreshing.';
-      joinError.classList.remove('hidden');
+      showSyncError('transport', 'Changes could not be sent. Retrying; keep this page open.');
     } finally {
       yjsSendInFlight = false;
       if (pendingYjsUpdates.length > 0) scheduleYjsUpdateSend();
@@ -630,6 +657,7 @@ function noteDocumentRevision(revision) {
 
 function scheduleYjsCheckpoint() {
   if (!ydoc || !ytext || currentDocumentRevision <= 0) return;
+  if (oversizedCheckpointRevision === currentDocumentRevision) return;
   if (currentDocumentRevision !== highestDocumentRevisionSeen) return;
   if (pendingYjsUpdates.length > 0 || pendingYjsStateTimer || yjsSendInFlight) return;
   if (checkpointTimer || checkpointInFlight) return;
@@ -646,10 +674,17 @@ async function sendYjsCheckpoint() {
   const basedOnRevision = currentDocumentRevision;
   const stateBase64 = base64FromUint8(Y.encodeStateAsUpdate(ydoc));
   const snapshot = ytext.toString();
+  const args = [roomId, stateBase64, snapshot, basedOnRevision];
+  if (!fitsYjsMessage('CheckpointYjs', args, maxYjsMessageBytes)) {
+    oversizedCheckpointRevision = basedOnRevision;
+    showSyncError('checkpoint-size', 'The document is too large to save a snapshot. Edits still sync; reduce its size to restore snapshots.');
+    return;
+  }
   let retry = false;
   checkpointInFlight = true;
   try {
-    await connection.invoke('CheckpointYjs', roomId, stateBase64, snapshot, basedOnRevision);
+    const accepted = await connection.invoke('CheckpointYjs', ...args);
+    if (accepted) clearSyncError('checkpoint-size');
   } catch (err) {
     retry = true;
     console.warn('Failed to checkpoint Yjs state.', err);
@@ -668,6 +703,7 @@ function disposeYjs() {
     checkpointTimer = null;
   }
   checkpointInFlight = false;
+  oversizedCheckpointRevision = -1;
   undoHistory?.destroy();
   undoHistory = null;
   monacoBinding?.destroy();
