@@ -68,3 +68,48 @@ for (const scenario of ['gap', 'last-update']) {
     await context.close();
   });
 }
+
+for (const notification of ['received', 'missed']) {
+  test(`stops in-flight retries when room closure notification is ${notification}`, async ({ browser, request }) => {
+    const roomId = await createRoom(request);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    let releaseUpdate;
+    let updateAttempts = 0;
+    await page.routeWebSocket('**/roomHub*', route => {
+      const server = route.connectToServer();
+      route.onMessage(message => {
+        const frames = typeof message === 'string'
+          ? message.split('\x1e').filter(Boolean).map(record => JSON.parse(record)) : [];
+        if (frames.some(frame => frame.target === 'UpdateYjs')) {
+          updateAttempts++;
+          if (!releaseUpdate) {
+            releaseUpdate = () => server.send(message);
+            return;
+          }
+        }
+        server.send(message);
+      });
+      server.onMessage(message => {
+        if (notification !== 'missed' || typeof message !== 'string') return route.send(message);
+        const records = message.split('\x1e').filter(Boolean)
+          .filter(record => JSON.parse(record).target !== 'RoomKilled');
+        if (records.length) route.send(records.join('\x1e') + '\x1e');
+      });
+    });
+    await join(page, roomId, 'Alice');
+    await insert(page, 'Keep this text');
+    await expect.poll(() => !!releaseUpdate).toBe(true);
+    expect((await request.delete(`/admin/rooms/${roomId}`)).ok()).toBeTruthy();
+    if (notification === 'received') {
+      await expect(page.locator('#joinOverlay')).not.toHaveClass(/hidden/);
+    }
+    releaseUpdate();
+    await expect(page.locator('#joinOverlay')).not.toHaveClass(/hidden/);
+    await page.waitForTimeout(1200);
+    expect(updateAttempts).toBe(1);
+    expect(await text(page)).toBe('Keep this text');
+    expect(await page.evaluate(() => window.__debugYjsSend())).toBe(false);
+    await context.close();
+  });
+}

@@ -54,6 +54,7 @@ let undoHistory = null;
 let pendingYjsStateTimer = null;
 let pendingYjsUpdates = [];
 let yjsSendInFlight = false;
+let yjsSession = 0;
 let checkpointTimer = null;
 let checkpointInFlight = false;
 let recoveryTimer = null;
@@ -64,6 +65,7 @@ let highestDocumentRevisionSeen = 0;
 let oversizedCheckpointRevision = -1;
 const pendingDocumentRevisions = new Set();
 let isSynchronizingYjs = false;
+let synchronizationEpoch = 0;
 const bufferedYjsMessages = [];
 let roomClosed = false;
 let hasJoinedRoom = false;
@@ -531,12 +533,15 @@ function setLanguageReadOnly(isReadOnly) {
 }
 
 function scheduleYjsUpdateSend(update) {
+  if (roomClosed || !ydoc) return;
   if (update?.length > 0) pendingYjsUpdates.push(update);
   if (pendingYjsUpdates.length === 0 || pendingYjsStateTimer || yjsSendInFlight) return;
   pendingYjsStateTimer = setTimeout(async () => {
     pendingYjsStateTimer = null;
-    if (connection.state !== signalR.HubConnectionState.Connected) return;
+    if (roomClosed || !ydoc || isSynchronizingYjs
+        || connection.state !== signalR.HubConnectionState.Connected) return;
 
+    const session = yjsSession;
     const updates = pendingYjsUpdates.splice(0, pendingYjsUpdates.length);
     const merged = updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
     const args = [roomId, base64FromUint8(merged)];
@@ -548,16 +553,24 @@ function scheduleYjsUpdateSend(update) {
     yjsSendInFlight = true;
     try {
       await connection.invoke('UpdateYjs', ...args);
+      if (session !== yjsSession || roomClosed) return;
       clearSyncError('update-size');
       clearSyncError('transport');
     } catch (err) {
+      if (session !== yjsSession || roomClosed) return;
+      if (isRoomNotFound(err)) {
+        closeRoom('Room not found.');
+        return;
+      }
       pendingYjsUpdates.unshift(...updates);
       console.error('Failed to send Yjs update.', err);
       showSyncError('transport', 'Changes could not be sent. Retrying; keep this page open.');
     } finally {
-      yjsSendInFlight = false;
-      if (pendingYjsUpdates.length > 0) scheduleYjsUpdateSend();
-      else scheduleYjsCheckpoint();
+      if (session === yjsSession && !roomClosed) {
+        yjsSendInFlight = false;
+        if (pendingYjsUpdates.length > 0) scheduleYjsUpdateSend();
+        else scheduleYjsCheckpoint();
+      }
     }
   }, 60);
 }
@@ -677,14 +690,21 @@ async function recoverYjs() {
     return;
   }
   const document = ydoc;
+  const session = yjsSession;
   const connectionId = connection.connectionId;
   let synchronizing = false;
+  let epoch = 0;
   recoveryInFlight = true;
   try {
     const revision = await connection.invoke('GetDocumentRevision', roomId);
     if (roomClosed || ydoc !== document || connection.connectionId !== connectionId) return;
-    if (Number(revision) <= currentDocumentRevision) return;
+    if (isSynchronizingYjs) return;
+    if (Number(revision) <= currentDocumentRevision) {
+      clearSyncError('recovery');
+      return;
+    }
     isSynchronizingYjs = true;
+    epoch = ++synchronizationEpoch;
     synchronizing = true;
     const result = await connection.invoke('SyncYjs', roomId);
     if (roomClosed || ydoc !== document || connection.connectionId !== connectionId) return;
@@ -694,23 +714,31 @@ async function recoverYjs() {
         result.CheckpointRevision ?? result.checkpointRevision)) {
       throw new Error('Failed to recover the room document.');
     }
+    currentVersion = Math.max(currentVersion, Number(result.Version ?? result.version) || 0);
+    versionNumberEl.textContent = currentVersion;
     clearSyncError('recovery');
   } catch (err) {
-    if (!roomClosed) {
+    if (session === yjsSession && !roomClosed && isRoomNotFound(err)) {
+      closeRoom('Room not found.');
+    } else if (session === yjsSession && !roomClosed) {
       console.warn('Failed to recover missing Yjs updates.', err);
       showSyncError('recovery', 'Some changes have not arrived. Retrying synchronization; keep this page open.');
     }
   } finally {
-    recoveryInFlight = false;
-    if (synchronizing) {
-      isSynchronizingYjs = false;
-      flushBufferedYjsMessages();
+    if (session === yjsSession && !roomClosed) {
+      recoveryInFlight = false;
+      if (synchronizing && epoch === synchronizationEpoch) {
+        isSynchronizingYjs = false;
+        flushBufferedYjsMessages();
+        scheduleYjsUpdateSend();
+      }
+      scheduleYjsRecovery();
     }
-    scheduleYjsRecovery();
   }
 }
 
 function scheduleYjsCheckpoint() {
+  if (roomClosed || !hasJoinedRoom) return;
   if (!ydoc || !ytext || currentDocumentRevision <= 0) return;
   if (oversizedCheckpointRevision === currentDocumentRevision) return;
   if (currentDocumentRevision !== highestDocumentRevisionSeen) return;
@@ -721,12 +749,13 @@ function scheduleYjsCheckpoint() {
 
 async function sendYjsCheckpoint() {
   checkpointTimer = null;
-  if (!ydoc || !ytext) return;
+  if (roomClosed || !hasJoinedRoom || !ydoc || !ytext) return;
   if (connection.state !== signalR.HubConnectionState.Connected) return;
   if (currentDocumentRevision !== highestDocumentRevisionSeen) return;
   if (pendingYjsUpdates.length > 0 || pendingYjsStateTimer || yjsSendInFlight) return;
 
   const basedOnRevision = currentDocumentRevision;
+  const session = yjsSession;
   const stateBase64 = base64FromUint8(Y.encodeStateAsUpdate(ydoc));
   const snapshot = ytext.toString();
   const args = [roomId, stateBase64, snapshot, basedOnRevision];
@@ -739,20 +768,34 @@ async function sendYjsCheckpoint() {
   checkpointInFlight = true;
   try {
     const accepted = await connection.invoke('CheckpointYjs', ...args);
+    if (session !== yjsSession || roomClosed) return;
     if (accepted) clearSyncError('checkpoint-size');
   } catch (err) {
+    if (session !== yjsSession || roomClosed) return;
+    if (isRoomNotFound(err)) {
+      closeRoom('Room not found.');
+      return;
+    }
     retry = true;
     console.warn('Failed to checkpoint Yjs state.', err);
   } finally {
-    checkpointInFlight = false;
-    if ((retry || currentDocumentRevision > basedOnRevision)
-        && currentDocumentRevision === highestDocumentRevisionSeen) {
-      scheduleYjsCheckpoint();
+    if (session === yjsSession && !roomClosed) {
+      checkpointInFlight = false;
+      if ((retry || currentDocumentRevision > basedOnRevision)
+          && currentDocumentRevision === highestDocumentRevisionSeen) {
+        scheduleYjsCheckpoint();
+      }
     }
   }
 }
 
 function disposeYjs() {
+  yjsSession += 1;
+  if (pendingYjsStateTimer) clearTimeout(pendingYjsStateTimer);
+  pendingYjsStateTimer = null;
+  pendingYjsUpdates = [];
+  yjsSendInFlight = false;
+  recoveryInFlight = false;
   if (recoveryTimer) clearTimeout(recoveryTimer);
   recoveryTimer = null;
   if (checkpointTimer) {
@@ -917,10 +960,13 @@ function initMonaco() {
 }
 
 async function joinRoom() {
+  if (roomClosed) return false;
   joinError.classList.add('hidden');
   isSynchronizingYjs = true;
+  const epoch = ++synchronizationEpoch;
   try {
     const result = await connection.invoke('JoinRoom', roomId, displayName);
+    if (roomClosed || epoch !== synchronizationEpoch) return false;
     const name = result.Name ?? result.name;
     const language = result.Language ?? result.language;
     const text = result.Text ?? result.text;
@@ -956,12 +1002,20 @@ async function joinRoom() {
     sendCursor();
     return true;
   } catch (err) {
+    if (isRoomNotFound(err)) {
+      closeRoom('Room not found.');
+      return false;
+    }
     joinError.textContent = err?.message || 'Failed to join room.';
     joinError.classList.remove('hidden');
     return false;
   } finally {
-    isSynchronizingYjs = false;
-    flushBufferedYjsMessages();
+    if (epoch === synchronizationEpoch) {
+      isSynchronizingYjs = false;
+      flushBufferedYjsMessages();
+      scheduleYjsUpdateSend();
+      scheduleYjsCheckpoint();
+    }
   }
 }
 
@@ -1088,16 +1142,26 @@ connection.on('UserCopy', (name) => {
   markCopying(name);
 });
 
-connection.on('RoomKilled', (reason) => {
+function isRoomNotFound(error) {
+  return /\bRoom not found\b/.test(error?.message ?? '');
+}
+
+function closeRoom(reason) {
   roomClosed = true;
+  synchronizationEpoch += 1;
+  isSynchronizingYjs = false;
   hasJoinedRoom = false;
+  bufferedYjsMessages.length = 0;
   clearRejoinRetryTimer();
   setEditorReadOnly(true);
+  setLanguageReadOnly(true);
   disposeYjs();
   joinError.textContent = reason || 'Room closed.';
   joinError.classList.remove('hidden');
   joinOverlay.classList.remove('hidden');
-});
+}
+
+connection.on('RoomKilled', closeRoom);
 
 languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
