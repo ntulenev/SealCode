@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Reflection;
 
 using FluentAssertions;
 
@@ -20,6 +21,24 @@ namespace SealCode.Tests;
 
 public sealed class SealCodeApiTests
 {
+    [Fact]
+    public async Task GetVersionShouldReturnRunningAssemblyMetadataWithoutCaching()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var expected = typeof(RoomHub).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
+
+        var response = await client.GetAsync("/version");
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        payload.GetProperty("InformationalVersion").GetString().Should().Be(expected);
+        payload.GetProperty("Version").GetString().Should().Be(expected.Split('+', 2)[0]);
+        payload.GetProperty("Commit").GetString().Should().MatchRegex("^[0-9a-f]{40}$");
+        expected.Should().EndWith(payload.GetProperty("Commit").GetString());
+    }
+
     [Fact(DisplayName = "GET /health returns ok")]
     [Trait("Category", "Integration")]
     public async Task GetHealthReturnsOk()

@@ -1,3 +1,5 @@
+using System.Reflection;
+
 using Abstractions;
 
 using Logic;
@@ -65,6 +67,15 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 
 var app = builder.Build();
+var informationalVersion = typeof(Program).Assembly
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "development";
+var versionParts = informationalVersion.Split('+', 2);
+var applicationVersion = new
+{
+    Version = versionParts[0],
+    Commit = versionParts.Length > 1 ? versionParts[1].Split('.').Last() : null,
+    InformationalVersion = informationalVersion
+};
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -206,6 +217,12 @@ app.MapGet("/room/{roomId:ShortGuid}", (RoomId roomId, IRoomRegistry registry, I
 });
 
 app.MapGet("/health", () => Results.Ok("ok"));
+
+app.MapGet("/version", (HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Json(applicationVersion);
+});
 
 app.MapHub<RoomHub>("/roomHub");
 
