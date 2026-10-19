@@ -254,6 +254,10 @@ public sealed class SealCodeApiTests
             charlieJoin.YjsUpdates.Should().ContainSingle();
             charlieJoin.YjsUpdates[0].Update.Should().Be(update);
 
+            var sync = await alice.InvokeAsync<JoinRoomResult>("SyncYjs", roomId);
+            sync.Should().BeEquivalentTo(charlieJoin);
+            (await alice.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(1);
+
             var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
             var accepted = await alice.InvokeAsync<bool>("CheckpointYjs", roomId, state, "snapshot", payload.documentRevision);
             accepted.Should().BeTrue();
@@ -425,10 +429,14 @@ public sealed class SealCodeApiTests
         Func<Task> update = () => connection.InvokeAsync("UpdateYjs", targetRoom, bytes);
         Func<Task> checkpoint = () => connection.InvokeAsync<bool>("CheckpointYjs", targetRoom, bytes, "forged", 0L);
         Func<Task> language = () => connection.InvokeAsync("SetLanguage", targetRoom, "csharp");
+        Func<Task> sync = () => connection.InvokeAsync<JoinRoomResult>("SyncYjs", targetRoom);
+        Func<Task> revision = () => connection.InvokeAsync<long>("GetDocumentRevision", targetRoom);
 
         await update.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
         await checkpoint.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
         await language.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await sync.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
+        await revision.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Join the room*");
         await using var inspector = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
         var state = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", targetRoom, "Inspector");
         state.DocumentRevision.Should().Be(0);
