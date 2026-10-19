@@ -157,6 +157,55 @@ public sealed class RoomHubTests
         addToGroupCalls.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    public async Task JoinRoomAsyncShouldIncludeUpdatesDuringSubscription(bool reconnect)
+    {
+        using var cts = new CancellationTokenSource();
+        var room = CreateRoomState(DefaultRoomId);
+        if (reconnect)
+        {
+            room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
+        }
+
+        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
+        roomManager.Setup(m => m.RegisterUserInRoom(
+                new RoomId(DefaultRoomId), new ConnectionId("conn-1"), new RoomUser("Alice")))
+            .Returns(room);
+
+        var subscriptionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscriptionCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var groups = new Mock<IGroupManager>(MockBehavior.Strict);
+        groups.Setup(g => g.AddToGroupAsync("conn-1", DefaultRoomId, cts.Token))
+            .Callback(() => subscriptionStarted.SetResult())
+            .Returns(subscriptionCompleted.Task);
+
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        proxy.Setup(p => p.SendCoreAsync(
+                "UserJoined",
+                It.Is<object?[]>(args => MatchUserJoinedArgs(args, "Alice", Array.Empty<string>())),
+                cts.Token))
+            .Returns(Task.CompletedTask);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        clients.Setup(c => c.GroupExcept(DefaultRoomId,
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
+            .Returns(proxy.Object);
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object, groups: groups.Object,
+            cancellationToken: cts.Token);
+
+        var joinTask = hub.JoinRoomAsync(DefaultRoomId, "Alice");
+        await subscriptionStarted.Task;
+        var appended = room.AppendYjsUpdate([2, 3], DateTimeOffset.UtcNow);
+        subscriptionCompleted.SetResult();
+        var result = await joinTask;
+
+        result.DocumentRevision.Should().Be(appended.DocumentRevision.Value);
+        result.YjsUpdates.Last().Revision.Should().Be(appended.DocumentRevision.Value);
+        result.YjsUpdates.Last().Update.Should().Be(Convert.ToBase64String([2, 3]));
+    }
+
     [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenAddUserFails")]
     [Trait("Category", "Unit")]
     public async Task JoinRoomAsyncShouldThrowWhenAddUserFails()
@@ -177,61 +226,6 @@ public sealed class RoomHubTests
         registerUserCalls.Should().Be(1);
     }
 
-    [Fact(DisplayName = "UpdateTextAsyncShouldThrowWhenRoomIsNotFound")]
-    [Trait("Category", "Unit")]
-    public async Task UpdateTextAsyncShouldThrowWhenRoomIsNotFound()
-    {
-        RoomState missing = null!;
-        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
-        var tryGetRoomCalls = 0;
-        roomManager.Setup(m => m.TryGetRoom(It.IsAny<RoomId>(), out missing))
-            .Callback(() => tryGetRoomCalls++)
-            .Returns(false);
-        using var hub = CreateHub(roomManager.Object);
-
-        Func<Task> action = () => hub.UpdateTextAsync(DefaultRoomId, "hello", 1);
-
-        await action.Should().ThrowAsync<HubException>();
-        tryGetRoomCalls.Should().Be(1);
-    }
-
-    [Fact(DisplayName = "UpdateTextAsyncShouldBroadcastUpdate")]
-    [Trait("Category", "Unit")]
-    public async Task UpdateTextAsyncShouldBroadcastUpdate()
-    {
-        var roomId = DefaultRoomId;
-        using var cts = new CancellationTokenSource();
-        var room = CreateRoomState(roomId, text: "before");
-        var tryGetRoomCounter = SetupTryGetRoom(roomId, room, out var roomManager);
-
-        var textUpdatedCalls = 0;
-        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
-        proxy.Setup(p => p.SendCoreAsync(
-                "TextUpdated",
-                It.Is<object?[]>(args => MatchTextUpdatedArgs(args, "after", 2, "unknown")),
-                It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => textUpdatedCalls++)
-            .Returns(Task.CompletedTask);
-
-        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupExceptCalls = 0;
-        clients.Setup(c => c.GroupExcept(
-                It.Is<string>(group => group == roomId),
-                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
-            .Callback(() => groupExceptCalls++)
-            .Returns(proxy.Object);
-
-        using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
-
-        await hub.UpdateTextAsync(roomId, "after", 1);
-
-        room.Text.Value.Should().Be("after");
-        room.Version.Value.Should().Be(2);
-        tryGetRoomCounter.Count.Should().Be(1);
-        groupExceptCalls.Should().Be(1);
-        textUpdatedCalls.Should().Be(1);
-    }
-
     [Fact(DisplayName = "UpdateYjsAsyncShouldThrowWhenPayloadIsInvalid")]
     [Trait("Category", "Unit")]
     public async Task UpdateYjsAsyncShouldThrowWhenPayloadIsInvalid()
@@ -240,20 +234,19 @@ public sealed class RoomHubTests
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         using var hub = CreateHub(roomManager.Object);
 
-        Func<Task> action = () => hub.UpdateYjsAsync(DefaultRoomId, "not-base64", "still-not-base64", "text");
+        Func<Task> action = () => hub.UpdateYjsAsync(DefaultRoomId, "not-base64");
 
         await action.Should().ThrowAsync<HubException>();
         tryGetRoomCounter.Count.Should().Be(1);
     }
 
-    [Fact(DisplayName = "UpdateYjsAsyncShouldBroadcastWhenStateChanges")]
+    [Fact(DisplayName = "UpdateYjsAsyncShouldAppendAndBroadcastUpdate")]
     [Trait("Category", "Unit")]
-    public async Task UpdateYjsAsyncShouldBroadcastWhenStateChanges()
+    public async Task UpdateYjsAsyncShouldAppendAndBroadcastUpdate()
     {
         var roomId = DefaultRoomId;
         using var cts = new CancellationTokenSource();
         var updateBase64 = Convert.ToBase64String([1, 2]);
-        var stateBase64 = Convert.ToBase64String([1, 2, 3]);
         var room = CreateRoomState(roomId, text: "before");
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         var tryGetRoomCounter = SetupTryGetRoom(roomId, room, out var roomManager);
@@ -262,7 +255,7 @@ public sealed class RoomHubTests
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "YjsUpdated",
-                It.Is<object?[]>(args => MatchYjsUpdatedArgs(args, updateBase64, 2, "Alice", stateBase64)),
+                It.Is<object?[]>(args => MatchYjsUpdatedArgs(args, updateBase64, 1, 2, "Alice")),
                 It.Is<CancellationToken>(token => token == cts.Token)))
             .Callback(() => yjsUpdatedCalls++)
             .Returns(Task.CompletedTask);
@@ -275,14 +268,59 @@ public sealed class RoomHubTests
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
-        await hub.UpdateYjsAsync(roomId, updateBase64, stateBase64, "after");
+        await hub.UpdateYjsAsync(roomId, updateBase64);
 
-        room.Text.Value.Should().Be("after");
+        room.Text.Value.Should().Be("before");
         room.Version.Value.Should().Be(2);
-        room.YjsState.Should().Equal([1, 2, 3]);
+        room.DocumentRevision.Value.Should().Be(1);
+        room.CreateYjsSyncState().Updates.Should().ContainSingle();
         tryGetRoomCounter.Count.Should().Be(1);
         groupCalls.Should().Be(1);
         yjsUpdatedCalls.Should().Be(1);
+    }
+
+    [Fact(DisplayName = "CheckpointYjsAsyncShouldAcceptCurrentCheckpoint")]
+    [Trait("Category", "Unit")]
+    public async Task CheckpointYjsAsyncShouldAcceptCurrentCheckpoint()
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        using var hub = CreateHub(roomManager.Object);
+
+        var accepted = await hub.CheckpointYjsAsync(
+            DefaultRoomId,
+            Convert.ToBase64String([3, 4]),
+            "merged",
+            1);
+
+        accepted.Should().BeTrue();
+        room.Text.Value.Should().Be("merged");
+        room.YjsState.Should().Equal([3, 4]);
+        room.YjsCheckpointRevision.Value.Should().Be(1);
+        room.CreateYjsSyncState().Updates.Should().BeEmpty();
+        tryGetRoomCounter.Count.Should().Be(1);
+    }
+
+    [Fact(DisplayName = "CheckpointYjsAsyncShouldRejectStaleCheckpoint")]
+    [Trait("Category", "Unit")]
+    public async Task CheckpointYjsAsyncShouldRejectStaleCheckpoint()
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
+        room.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        using var hub = CreateHub(roomManager.Object);
+
+        var accepted = await hub.CheckpointYjsAsync(
+            DefaultRoomId,
+            Convert.ToBase64String([3]),
+            "stale",
+            1);
+
+        accepted.Should().BeFalse();
+        room.Text.Value.Should().BeEmpty();
+        room.CreateYjsSyncState().Updates.Should().HaveCount(2);
     }
 
     [Fact(DisplayName = "SetLanguageAsyncShouldThrowWhenLanguageIsInvalid")]
@@ -527,27 +565,12 @@ public sealed class RoomHubTests
         return actualUsers is not null && actualUsers.SequenceEqual(users);
     }
 
-    private static bool MatchTextUpdatedArgs(object?[] args, string text, int version, string author)
-    {
-        if (args.Length != 3)
-        {
-            return false;
-        }
-
-        if (!string.Equals(args[0] as string, text, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (args[1] is not int actualVersion || actualVersion != version)
-        {
-            return false;
-        }
-
-        return string.Equals(args[2] as string, author, StringComparison.Ordinal);
-    }
-
-    private static bool MatchYjsUpdatedArgs(object?[] args, string updateBase64, int version, string author, string stateBase64)
+    private static bool MatchYjsUpdatedArgs(
+        object?[] args,
+        string updateBase64,
+        long documentRevision,
+        int roomVersion,
+        string author)
     {
         if (args.Length != 4)
         {
@@ -559,17 +582,17 @@ public sealed class RoomHubTests
             return false;
         }
 
-        if (args[1] is not int actualVersion || actualVersion != version)
+        if (args[1] is not long actualDocumentRevision || actualDocumentRevision != documentRevision)
         {
             return false;
         }
 
-        if (!string.Equals(args[2] as string, author, StringComparison.Ordinal))
+        if (args[2] is not int actualRoomVersion || actualRoomVersion != roomVersion)
         {
             return false;
         }
 
-        return string.Equals(args[3] as string, stateBase64, StringComparison.Ordinal);
+        return string.Equals(args[3] as string, author, StringComparison.Ordinal);
     }
 
     private static bool MatchLanguageUpdatedArgs(object?[] args, string language, int version)

@@ -1,0 +1,17 @@
+{
+  "name": "sealcode-client-tests",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "npm run test:client && npm run test:e2e",
+    "test:client": "node --test tests/client/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0",
+    "yjs": "13.6.29"
+  }
+}

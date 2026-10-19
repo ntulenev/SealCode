@@ -26,6 +26,11 @@ public sealed class ApplicationConfiguration
     /// </summary>
     [Range(1, 5)]
     public int MaxUsersPerRoom { get; init; }
+
+    /// <summary>
+    /// Gets or sets whether selective collaborative undo and redo are enabled.
+    /// </summary>
+    public bool CollaborativeUndoEnabled { get; init; } = true;
 }
 
 /// <summary>

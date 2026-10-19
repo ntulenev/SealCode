@@ -6,6 +6,7 @@ SealCode is a self-hosted collaborative code editor with real-time rooms. The ba
 
 **Features**
 - Real-time multi-user editing with presence and cursors.
+- Selective local undo/redo that preserves concurrent edits from other users.
 - Room-based sessions with an admin UI to create and close rooms.
 - Syntax highlighting with language switching.
 - Configurable room capacity.
@@ -23,6 +24,11 @@ dotnet run --project src/SealCode/SealCode.csproj
 
 2. Open the app at `http://localhost:5000` (or the URL shown in the console).
 
+**Tests**
+- `dotnet test src/SealCode.slnx`
+- With Node.js 20 or newer: `npm install`, `npx playwright install chromium`,
+  then `npm test` for CRDT unit tests and two-browser collaboration tests.
+
 **Admin Workflow**
 1. Visit `/admin/login`.
 2. Sign in with a user from `src/SealCode/appsettings.json` (`AdminUsers`).
@@ -36,6 +42,14 @@ Open the room link in a browser and enter a display name.
 - `AdminUsers`: list of admin name/password pairs. Include `IsSuperAdmin` to allow deleting rooms created by other admins.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
+- `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
+
+**Undo and redo**
+- `Ctrl+Z` / `Cmd+Z` undoes the current user's latest grouped text operation.
+- `Ctrl+Y`, `Ctrl+Shift+Z`, or `Cmd+Shift+Z` redoes it.
+- Remote edits are never added to the local undo history.
+- Each tab retains up to 100 grouped local operations; reconnect keeps the
+  history, while leaving or reloading clears it.
 
 **Endpoints**
 - `/` landing page

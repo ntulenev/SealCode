@@ -74,14 +74,15 @@ public sealed class RoomHub : Hub
             throw new HubException(ex.Message);
         }
 
-        var joinResult = JoinRoomResult.From(room);
-
         Context.Items["roomId"] = parsedRoomId.Value;
         Context.Items["displayName"] = displayName;
 
         var cancellationToken = Context.ConnectionAborted;
 
         await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        // Subscribe before taking the snapshot so concurrent updates are either
+        // included in it or delivered to the client's synchronization buffer.
+        var joinResult = JoinRoomResult.From(room);
         await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
             .SendAsync("UserJoined", displayName, joinResult.Users, cancellationToken)
             .ConfigureAwait(false);
@@ -92,21 +93,20 @@ public sealed class RoomHub : Hub
     }
 
     /// <summary>
-    /// Updates the room text.
+    /// Appends and broadcasts an incremental Yjs update.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
-    /// <param name="newText">The new text.</param>
-    /// <param name="clientVersion">The client version.</param>
+    /// <param name="updateBase64">The incremental Yjs update (base64).</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
-    [HubMethodName("UpdateText")]
-    public async Task UpdateTextAsync(string roomId, string newText, int clientVersion)
+    [HubMethodName("UpdateYjs")]
+    public async Task UpdateYjsAsync(string roomId, string updateBase64)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
 
-        if (clientVersion < 0)
+        if (string.IsNullOrWhiteSpace(updateBase64))
         {
-            throw new HubException("Invalid client version");
+            throw new HubException("Update payload required");
         }
 
         if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
@@ -114,35 +114,59 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        var text = newText ?? string.Empty;
-        var newVersion = room.UpdateText(new(text), DateTimeOffset.UtcNow).Value;
+        byte[] update;
+        try
+        {
+            update = Convert.FromBase64String(updateBase64);
+        }
+        catch (FormatException)
+        {
+            throw new HubException("Invalid Yjs payload");
+        }
+
+        if (update.Length == 0)
+        {
+            throw new HubException("Update payload required");
+        }
+
         var author = room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user)
             ? user.Value
             : "unknown";
 
+        var appendResult = room.AppendYjsUpdate(update, DateTimeOffset.UtcNow);
+
         var cancellationToken = Context.ConnectionAborted;
-        await Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId)
-            .SendAsync("TextUpdated", newText ?? string.Empty, newVersion, author, cancellationToken)
+        await Clients.Group(parsedRoomId.Value)
+            .SendAsync(
+                "YjsUpdated",
+                updateBase64,
+                appendResult.DocumentRevision.Value,
+                appendResult.RoomVersion.Value,
+                author,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Applies a Yjs update and stores the latest Yjs state for new joiners.
+    /// Stores a compact Yjs checkpoint when it represents the latest document revision.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
-    /// <param name="updateBase64">The incremental Yjs update (base64).</param>
     /// <param name="stateBase64">The full Yjs document state (base64).</param>
-    /// <param name="textSnapshot">The plain text snapshot of the document.</param>
-    /// <returns>A task that represents the asynchronous operation.</returns>
+    /// <param name="textSnapshot">The corresponding plain text snapshot.</param>
+    /// <param name="basedOnRevision">The latest document revision contained in the checkpoint.</param>
+    /// <returns>True when the checkpoint was accepted; otherwise false.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
-    [HubMethodName("UpdateYjs")]
-    public async Task UpdateYjsAsync(string roomId, string updateBase64, string stateBase64, string textSnapshot)
+    [HubMethodName("CheckpointYjs")]
+    public Task<bool> CheckpointYjsAsync(
+        string roomId,
+        string stateBase64,
+        string textSnapshot,
+        long basedOnRevision)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
-
-        if (string.IsNullOrWhiteSpace(updateBase64))
+        if (basedOnRevision < 0)
         {
-            throw new HubException("Update payload required");
+            throw new HubException("Invalid document revision");
         }
 
         if (string.IsNullOrWhiteSpace(stateBase64))
@@ -155,11 +179,9 @@ public sealed class RoomHub : Hub
             throw new HubException("Room not found");
         }
 
-        byte[] update;
         byte[] state;
         try
         {
-            update = Convert.FromBase64String(updateBase64);
             state = Convert.FromBase64String(stateBase64);
         }
         catch (FormatException)
@@ -167,20 +189,27 @@ public sealed class RoomHub : Hub
             throw new HubException("Invalid Yjs payload");
         }
 
-        var author = room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user)
-            ? user.Value
-            : "unknown";
-
-        var text = textSnapshot ?? string.Empty;
-        if (!room.TryUpdateYjsState(state, new RoomText(text), DateTimeOffset.UtcNow, out var newVersion))
+        if (state.Length == 0)
         {
-            return;
+            throw new HubException("State payload required");
         }
 
-        var cancellationToken = Context.ConnectionAborted;
-        await Clients.Group(parsedRoomId.Value)
-            .SendAsync("YjsUpdated", updateBase64, newVersion.Value, author, stateBase64, cancellationToken)
-            .ConfigureAwait(false);
+        var accepted = room.TryCreateYjsCheckpoint(
+            new RoomDocumentRevision(basedOnRevision),
+            state,
+            new RoomText(textSnapshot ?? string.Empty),
+            DateTimeOffset.UtcNow);
+
+        if (!accepted)
+        {
+            _logger.LogDebug(
+                "Ignored stale Yjs checkpoint for {RoomId}: based on {BasedOnRevision}, current {DocumentRevision}",
+                parsedRoomId.Value,
+                basedOnRevision,
+                room.DocumentRevision.Value);
+        }
+
+        return Task.FromResult(accepted);
     }
 
     /// <summary>

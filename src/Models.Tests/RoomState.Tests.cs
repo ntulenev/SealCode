@@ -29,6 +29,8 @@ public sealed class RoomStateTests
         state.LastUpdatedUtc.Should().Be(updatedUtc);
         state.CreatedBy.Should().Be(createdBy);
         state.YjsState.Should().Equal(yjsState);
+        state.DocumentRevision.Value.Should().Be(0);
+        state.YjsCheckpointRevision.Value.Should().Be(0);
         state.ConnectedUserCount.Should().Be(0);
         state.ConnectedUsers.Should().BeEmpty();
     }
@@ -156,21 +158,6 @@ public sealed class RoomStateTests
         state.ConnectedUserCount.Should().Be(0);
     }
 
-    [Fact(DisplayName = "UpdateTextShouldUpdateAndIncrementVersion")]
-    [Trait("Category", "Unit")]
-    public void UpdateTextShouldUpdateAndIncrementVersion()
-    {
-        var state = CreateState();
-        var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
-
-        var version = state.UpdateText(new RoomText("new"), updatedUtc);
-
-        version.Value.Should().Be(2);
-        state.Text.Value.Should().Be("new");
-        state.Version.Value.Should().Be(2);
-        state.LastUpdatedUtc.Should().Be(updatedUtc);
-    }
-
     [Fact(DisplayName = "UpdateLanguageShouldUpdateAndIncrementVersion")]
     [Trait("Category", "Unit")]
     public void UpdateLanguageShouldUpdateAndIncrementVersion()
@@ -199,65 +186,71 @@ public sealed class RoomStateTests
         action.Should().Throw<ArgumentException>();
     }
 
-    [Fact(DisplayName = "TryUpdateYjsStateShouldReturnFalseWhenUnchanged")]
+    [Fact(DisplayName = "AppendYjsUpdateShouldAppendAndIncrementRevisions")]
     [Trait("Category", "Unit")]
-    public void TryUpdateYjsStateShouldReturnFalseWhenUnchanged()
+    public void AppendYjsUpdateShouldAppendAndIncrementRevisions()
     {
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
-        var initialUpdatedUtc = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var state = new RoomState(
-            RoomId.New(),
-            new RoomName("Room"),
-            new RoomLanguage("csharp"),
-            new RoomText("hello"),
-            new RoomVersion(1),
-            initialUpdatedUtc,
-            new AdminUser("admin"),
-            [1, 2]);
+        var state = CreateState([9]);
 
-        var result = state.TryUpdateYjsState([1, 2], new RoomText("hello"), updatedUtc, out var version);
+        var result = state.AppendYjsUpdate([1, 2], updatedUtc);
+        var syncState = state.CreateYjsSyncState();
 
-        result.Should().BeFalse();
-        version.Value.Should().Be(1);
-        state.Version.Value.Should().Be(1);
-        state.LastUpdatedUtc.Should().Be(initialUpdatedUtc);
-        state.YjsState.Should().Equal([1, 2]);
+        result.DocumentRevision.Value.Should().Be(1);
+        result.RoomVersion.Value.Should().Be(2);
+        state.DocumentRevision.Value.Should().Be(1);
+        state.Version.Value.Should().Be(2);
+        state.LastUpdatedUtc.Should().Be(updatedUtc);
+        syncState.Checkpoint.Should().Equal([9]);
+        syncState.Updates.Should().ContainSingle();
+        syncState.Updates[0].Revision.Value.Should().Be(1);
+        syncState.Updates[0].Payload.Should().Equal([1, 2]);
     }
 
-    [Fact(DisplayName = "TryUpdateYjsStateShouldUpdateWhenChanged")]
+    [Fact(DisplayName = "TryCreateYjsCheckpointShouldCompactCurrentUpdates")]
     [Trait("Category", "Unit")]
-    public void TryUpdateYjsStateShouldUpdateWhenChanged()
+    public void TryCreateYjsCheckpointShouldCompactCurrentUpdates()
     {
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
-        var state = new RoomState(
-            RoomId.New(),
-            new RoomName("Room"),
-            new RoomLanguage("csharp"),
-            new RoomText("hello"),
-            new RoomVersion(1),
-            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            new AdminUser("admin"),
-            [1, 2]);
+        var state = CreateState();
+        state.AppendYjsUpdate([1], updatedUtc);
+        state.AppendYjsUpdate([2], updatedUtc);
 
-        var result = state.TryUpdateYjsState("\t"u8.ToArray(), new RoomText("updated"), updatedUtc, out var version);
+        var result = state.TryCreateYjsCheckpoint(
+            new RoomDocumentRevision(2),
+            [7, 8],
+            new RoomText("updated"),
+            updatedUtc);
+        var syncState = state.CreateYjsSyncState();
 
         result.Should().BeTrue();
-        version.Value.Should().Be(2);
-        state.Version.Value.Should().Be(2);
+        state.Version.Value.Should().Be(3);
         state.Text.Value.Should().Be("updated");
-        state.YjsState.Should().Equal("\t"u8.ToArray());
+        state.YjsState.Should().Equal([7, 8]);
+        state.YjsCheckpointRevision.Value.Should().Be(2);
+        syncState.Updates.Should().BeEmpty();
         state.LastUpdatedUtc.Should().Be(updatedUtc);
     }
 
-    [Fact(DisplayName = "TryUpdateYjsStateShouldThrowWhenStateIsNull")]
+    [Fact(DisplayName = "TryCreateYjsCheckpointShouldRejectStaleRevisionWithoutLosingTail")]
     [Trait("Category", "Unit")]
-    public void TryUpdateYjsStateShouldThrowWhenStateIsNull()
+    public void TryCreateYjsCheckpointShouldRejectStaleRevisionWithoutLosingTail()
     {
         var state = CreateState();
+        state.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
+        state.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
 
-        var action = () => state.TryUpdateYjsState(null!, new RoomText("text"), DateTimeOffset.UtcNow, out _);
+        var result = state.TryCreateYjsCheckpoint(
+            new RoomDocumentRevision(1),
+            [9],
+            new RoomText("stale"),
+            DateTimeOffset.UtcNow);
+        var syncState = state.CreateYjsSyncState();
 
-        action.Should().Throw<ArgumentNullException>();
+        result.Should().BeFalse();
+        state.Text.Value.Should().Be("text");
+        state.YjsState.Should().BeEmpty();
+        syncState.Updates.Should().HaveCount(2);
     }
 
     [Fact(DisplayName = "IsCreatedByShouldReturnTrueWhenAdminMatches")]

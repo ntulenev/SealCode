@@ -11,7 +11,10 @@ namespace Transport.Models;
 /// <param name="Version">The current room version.</param>
 /// <param name="Users">The display names of users currently in the room.</param>
 /// <param name="CreatedBy">The display name of the room creator.</param>
-/// <param name="YjsState">Optional Yjs document state for the room.</param>
+/// <param name="DocumentRevision">The latest CRDT document revision.</param>
+/// <param name="CheckpointRevision">The revision represented by <paramref name="YjsState"/>.</param>
+/// <param name="YjsState">Optional checkpoint state for the CRDT document.</param>
+/// <param name="YjsUpdates">The incremental updates after the checkpoint.</param>
 public sealed record JoinRoomResult(
     string Name,
     string Language,
@@ -19,7 +22,10 @@ public sealed record JoinRoomResult(
     int Version,
     string[] Users,
     string CreatedBy,
-    string? YjsState)
+    long DocumentRevision,
+    long CheckpointRevision,
+    string? YjsState,
+    YjsDocumentUpdate[] YjsUpdates)
 {
     /// <summary>
     /// Creates a join-room result from room state.
@@ -30,6 +36,7 @@ public sealed record JoinRoomResult(
     public static JoinRoomResult From(RoomState room)
     {
         ArgumentNullException.ThrowIfNull(room);
+        var syncState = room.CreateYjsSyncState();
 
         return new JoinRoomResult(
             room.Name.Value,
@@ -38,6 +45,11 @@ public sealed record JoinRoomResult(
             room.Version.Value,
             [.. room.CreateUsersSnapshot().Select(x => x.Value)],
             room.CreatedBy.Name,
-            room.YjsState.Length > 0 ? Convert.ToBase64String(room.YjsState) : null);
+            syncState.DocumentRevision.Value,
+            syncState.CheckpointRevision.Value,
+            syncState.Checkpoint.Length > 0 ? Convert.ToBase64String(syncState.Checkpoint) : null,
+            [.. syncState.Updates.Select(update => new YjsDocumentUpdate(
+                update.Revision.Value,
+                Convert.ToBase64String(update.Payload)))]);
     }
 }
