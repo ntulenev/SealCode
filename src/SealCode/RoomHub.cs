@@ -48,6 +48,12 @@ public sealed class RoomHub : Hub
     public async Task<JoinRoomResult> JoinRoomAsync(string roomId, string displayName)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
+        if (Context.Items.TryGetValue("roomId", out var activeRoom)
+            && activeRoom is string activeRoomId
+            && !string.Equals(activeRoomId, parsedRoomId.Value, StringComparison.Ordinal))
+        {
+            throw new HubException("Leave the current room before joining another room");
+        }
 
         displayName = (displayName ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(displayName))
@@ -362,6 +368,14 @@ public sealed class RoomHub : Hub
         if (!RoomId.TryParse(roomId, out var parsedRoomId))
         {
             return;
+        }
+
+        if (Context.Items.TryGetValue("roomId", out var activeRoom)
+            && activeRoom is string activeRoomId
+            && string.Equals(activeRoomId, parsedRoomId.Value, StringComparison.Ordinal))
+        {
+            _ = Context.Items.Remove("roomId");
+            _ = Context.Items.Remove("displayName");
         }
 
         if (!_roomManager.TryGetRoom(parsedRoomId, out var room))

@@ -332,6 +332,50 @@ public sealed class SealCodeApiTests
 
     private static SealCodeAppFactory CreateFactory() => new();
 
+    [Fact]
+    public async Task ConnectionShouldBelongToOnlyOneRoomAndCleanUpOnDisconnect()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomA = await CreateRoomAsync(client, cookie);
+        var roomB = await CreateRoomAsync(client, cookie);
+        await using var alice = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        await using var inspector = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Alice");
+        var repeatedJoin = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Alice");
+        repeatedJoin.Users.Should().Equal("Alice");
+
+        Func<Task> joinOther = () => alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomB, "Alice");
+        await joinOther.Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*Leave the current room*");
+        var otherRoom = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomB, "Inspector");
+        otherRoom.Users.Should().Equal("Inspector");
+        await inspector.InvokeAsync("LeaveRoom", roomB);
+
+        var left = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var leftSubscription = inspector.On<string, string[]>("UserLeft", (name, _) =>
+        {
+            if (name == "Alice")
+            {
+                left.TrySetResult();
+            }
+        });
+        _ = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Inspector");
+        await alice.StopAsync();
+        await left.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var afterDisconnect = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Inspector");
+        afterDisconnect.Users.Should().Equal("Inspector");
+
+        // An explicit leave also allows a subsequent join on the same connection.
+        await inspector.InvokeAsync("LeaveRoom", roomA);
+        var nextRoom = await inspector.InvokeAsync<JoinRoomResult>("JoinRoom", roomB, "Inspector");
+        nextRoom.Users.Should().Equal("Inspector");
+        // The disconnected participant's name is available again.
+        await using var replacement = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        var replacementJoin = await replacement.InvokeAsync<JoinRoomResult>("JoinRoom", roomA, "Alice");
+        replacementJoin.Users.Should().Equal("Alice");
+    }
+
     [Theory]
     [InlineData("before-join")]
     [InlineData("after-leave")]
