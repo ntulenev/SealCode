@@ -9,6 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="stylesheet" href="/site.css?v=20260210" />
   <link rel="stylesheet" href="/admin.css?v=20260210" />
+  <script src="/version.js" defer></script>
 </head>
 <body>
   <main class="container">
@@ -28,7 +29,10 @@
       <p id="error" class="error hidden">Invalid credentials. Try again.</p>
     </form>
   </main>
-  <footer class="tiny-footer">Personal pet project for private use · Not intended for public use</footer>
+  <footer class="tiny-footer">
+    Personal pet project for private use · Not intended for public use
+    <span class="app-version" data-app-version>SealCode</span>
+  </footer>
   <script>
     const params = new URLSearchParams(window.location.search);
     if (params.get('error')) {

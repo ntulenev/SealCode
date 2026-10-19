@@ -68,7 +68,19 @@ Open the room link in a browser and enter a display name.
 - `/admin` admin panel
 - `/admin/login` admin login
 - `/health` health check
+- `/version` version and commit of the running build (not cached)
 - `/roomHub` SignalR hub
+
+**Version shown in the footer**
+- MinVer stamps the application from Git tags during Build/Publish, including
+  Visual Studio Publish. No deployment script or Git installation on the server is needed.
+- Release tags use `v` followed by SemVer, for example `v1.2.0`. Publish after
+  the tag is created on the release commit, from a checkout containing Git history and tags.
+- Commits after a release receive a `dev` prerelease version automatically.
+  The footer shows the version and short commit; its tooltip contains the full build version.
+- Publishing without building uses the version already embedded in the existing binaries.
+  A build is required after creating a release tag. The footer cannot determine
+  uncommitted source changes; publish committed code for an identifiable release.
 
 
 **UI Indication**

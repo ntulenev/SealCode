@@ -180,3 +180,10 @@ a:hover { text-decoration: underline; }
   color: var(--text);
   opacity: 1;
 }
+
+.app-version {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
