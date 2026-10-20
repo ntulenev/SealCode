@@ -4,17 +4,17 @@ using System.Text;
 
 using FluentAssertions;
 
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
-
-using Moq;
+using Microsoft.Extensions.Options;
 
 using Models;
 using Models.Configuration;
+
+using Moq;
 
 using SealCode.Security;
 
@@ -158,7 +158,11 @@ public sealed class AdminUserManagerTests
         using var services = new ServiceCollection().AddSingleton(authentication.Object).BuildServiceProvider();
         context.RequestServices = services;
         var settings = CreateSettings();
-        settings.Value.AdminUsers[0] = new() { Name = configuredName, Password = "pass1" };
+        settings.Value.AdminUsers[0] = new()
+        {
+            Name = configuredName,
+            Password = "pass1"
+        };
         var manager = new AdminUserManager(settings, context);
         SetForm(context, "name=Admin&password=pass1");
 

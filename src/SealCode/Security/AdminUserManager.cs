@@ -2,10 +2,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
-using Microsoft.AspNetCore.Identity;
-
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
 using Models;
@@ -23,7 +22,9 @@ internal sealed class AdminUserManager : IAdminUserManager
     /// </summary>
     /// <param name="settings">The application configuration.</param>
     /// <param name="context">The HTTP context.</param>
-    public AdminUserManager(IOptions<ApplicationConfiguration> settings, HttpContext context)
+    public AdminUserManager(
+        IOptions<ApplicationConfiguration> settings,
+        HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(context);
@@ -73,12 +74,20 @@ internal sealed class AdminUserManager : IAdminUserManager
         var hash = user?.PasswordHash;
         // Legacy settings are accepted only by Development startup validation.
         if (user is not null && string.IsNullOrEmpty(hash) && user.Password is not null)
+        {
             hash = hasher.HashPassword(user, user.Password);
+        }
+
         var verificationUser = user ?? new AdminUserConfiguration { Name = "unknown" };
         if (string.IsNullOrEmpty(hash))
+        {
             hash = _dummyHash;
+        }
+
         if (hasher.VerifyHashedPassword(verificationUser, hash, password) == PasswordVerificationResult.Failed || user is null)
+        {
             return false;
+        }
 
         var identity = new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, user.Name.Trim()), new Claim("credential", CredentialStamp(user))],
@@ -94,6 +103,11 @@ internal sealed class AdminUserManager : IAdminUserManager
     public Task ClearCurrentAdminUserAsync()
         => _context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
+    /// <summary>
+    /// Creates the credential fingerprint bound to an admin authentication ticket.
+    /// </summary>
+    /// <param name="user">The configured admin account.</param>
+    /// <returns>The hexadecimal SHA-256 fingerprint of the configured credential.</returns>
     internal static string CredentialStamp(AdminUserConfiguration user)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user.PasswordHash ?? user.Password ?? "")));
 

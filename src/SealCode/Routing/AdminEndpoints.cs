@@ -8,8 +8,15 @@ using Transport.Models;
 
 namespace SealCode.Routing;
 
+/// <summary>
+/// Registers admin authentication and room management endpoints.
+/// </summary>
 internal static class AdminEndpoints
 {
+    /// <summary>
+    /// Maps the admin routes for the application.
+    /// </summary>
+    /// <param name="app">The application to configure.</param>
     public static void MapAdminEndpoints(this WebApplication app)
     {
         _ = app.MapGet("/admin/login", (IWebHostEnvironment env) =>
@@ -80,13 +87,19 @@ internal static class AdminEndpoints
             var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequest>(cancellationToken).ConfigureAwait(false);
             if (payload is null || string.IsNullOrWhiteSpace(payload.Name))
             {
-                return Results.BadRequest(new { error = "Name is required" });
+                return Results.BadRequest(new
+                {
+                    error = "Name is required"
+                });
             }
 
             var language = new RoomLanguage(payload.Language ?? "csharp");
             if (!languageValidator.IsValid(language))
             {
-                return Results.BadRequest(new { error = "Invalid language" });
+                return Results.BadRequest(new
+                {
+                    error = "Invalid language"
+                });
             }
             var name = new RoomName(payload.Name);
             var room = roomManager.CreateRoom(name, language, adminUser);
@@ -119,7 +132,6 @@ internal static class AdminEndpoints
                 _ => throw new NotImplementedException()
             };
         });
-
 
     }
 }

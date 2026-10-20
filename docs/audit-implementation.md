@@ -41,3 +41,22 @@ and restored npm dependencies. Set HTTPS, exact trusted proxy IPs and AllowedHos
 for deployment; optionally persist Data Protection keys for session continuity.
 Rooms remain in-memory, single-process, and disappear on restart. See README and
 ADR 0004 for limits, antiforgery integration and retained trusted-participant risks.
+
+## Review follow-up
+
+The follow-up keeps `feature/audit-plan` and the original commit identity.
+RoomHub delegates display-name normalization/validation to RoomUser, revision
+validation to RoomDocumentRevision, and language acceptance to the domain
+operation. Wire-format and pre-decode size checks remain at the Hub boundary.
+IRoomSessionService is an obligatory injected dependency; production code no
+longer creates a fallback service. RoomManager and RoomRegistry dependencies
+are likewise mandatory. Test fixtures compose all dependencies explicitly.
+
+New production types and members have complete XMLDoc (including parameters
+and results), or inherit their interface documentation. Fields are grouped
+last, constructors/properties precede operations, and private helpers follow
+public methods. C# formatting follows the repository editorconfig; JavaScript
+keeps two-space indentation and single quotes. Verification covers 216 server,
+21 client unit, 14 Chromium, and 2 real HTTPS tests, plus XMLDoc completeness,
+formatter checks and git diff whitespace validation. Local appsettings remains
+outside the commit.

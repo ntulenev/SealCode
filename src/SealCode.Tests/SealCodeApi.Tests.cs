@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using System.Reflection;
+using System.Text.Json;
 
 using FluentAssertions;
 
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
@@ -105,7 +105,11 @@ public sealed class SealCodeApiTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Room", Language = "csharp" });
+        var response = await SecureJsonAsync(client, "/admin/rooms", new
+        {
+            Name = "Room",
+            Language = "csharp"
+        });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -135,7 +139,11 @@ public sealed class SealCodeApiTests
 
         client.DefaultRequestHeaders.Add("Cookie", cookie);
 
-        var createResponse = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Room", Language = "sql" });
+        var createResponse = await SecureJsonAsync(client, "/admin/rooms", new
+        {
+            Name = "Room",
+            Language = "sql"
+        });
         var payload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -455,7 +463,11 @@ public sealed class SealCodeApiTests
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         _ = await LoginAsAdminAsync(client);
 
-        var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Invalid language", Language = language });
+        var response = await SecureJsonAsync(client, "/admin/rooms", new
+        {
+            Name = "Invalid language",
+            Language = language
+        });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var rooms = await client.GetFromJsonAsync<RoomSummary[]>("/admin/rooms");
@@ -473,7 +485,11 @@ public sealed class SealCodeApiTests
 
         var response = await client.GetAsync("/admin/rooms");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        var createResponse = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Forged", Language = "sql" });
+        var createResponse = await SecureJsonAsync(client, "/admin/rooms", new
+        {
+            Name = "Forged",
+            Language = "sql"
+        });
         createResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -534,12 +550,18 @@ public sealed class SealCodeApiTests
     public async Task AdminMutationsRequireValidAntiforgeryToken()
     {
         using var factory = CreateFactory();
-        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(new()
+        {
+            AllowAutoRedirect = false
+        });
         using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "Admin", ["password"] = "pass1" });
         (await client.PostAsync("/admin/login", form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         _ = await LoginAsAdminAsync(client);
         client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
-        (await client.PostAsJsonAsync("/admin/rooms", new { Name = "blocked" })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/admin/rooms", new
+        {
+            Name = "blocked"
+        })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", "tampered");
         (await client.PostAsync("/admin/logout", null)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -549,7 +571,10 @@ public sealed class SealCodeApiTests
     public async Task LoginFloodIsControlled()
     {
         using var factory = CreateFactory();
-        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(new()
+        {
+            AllowAutoRedirect = false
+        });
         for (var attempt = 0; attempt < 10; attempt++)
         {
             using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "unknown", ["password"] = "incorrect" });
@@ -565,7 +590,10 @@ public sealed class SealCodeApiTests
         using var originalFactory = CreateFactory();
         using var factory = originalFactory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
             config.AddInMemoryCollection(new Dictionary<string, string?> { ["Limits:MaxJournalCount"] = "1" })));
-        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var client = factory.CreateClient(new()
+        {
+            AllowAutoRedirect = false
+        });
         var cookie = await LoginAsAdminAsync(client);
         var roomId = await CreateRoomAsync(client, cookie);
         await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
@@ -594,17 +622,28 @@ public sealed class SealCodeApiTests
         client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
         client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", response.GetProperty("Token").GetString());
     }
-    private static async Task<HttpResponseMessage> SecurePostAsync(HttpClient client, string url, HttpContent? content)
+
+    private static async Task<HttpResponseMessage> SecurePostAsync(
+        HttpClient client,
+        string url,
+        HttpContent? content)
     {
         await RefreshTokenAsync(client);
         return await client.PostAsync(url, content);
     }
-    private static async Task<HttpResponseMessage> SecureJsonAsync<T>(HttpClient client, string url, T content)
+
+    private static async Task<HttpResponseMessage> SecureJsonAsync<T>(
+        HttpClient client,
+        string url,
+        T content)
     {
         await RefreshTokenAsync(client);
         return await client.PostAsJsonAsync(url, content);
     }
-    private static async Task<HttpResponseMessage> SecureDeleteAsync(HttpClient client, string url)
+
+    private static async Task<HttpResponseMessage> SecureDeleteAsync(
+        HttpClient client,
+        string url)
     {
         await RefreshTokenAsync(client);
         return await client.DeleteAsync(url);
@@ -613,7 +652,10 @@ public sealed class SealCodeApiTests
     private static Task<Cookie> LoginAsAdminAsync(HttpClient client)
         => LoginAsync(client, "Admin", "pass1");
 
-    private static async Task<Cookie> LoginAsync(HttpClient client, string name, string password)
+    private static async Task<Cookie> LoginAsync(
+        HttpClient client,
+        string name,
+        string password)
     {
         using var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -636,14 +678,21 @@ public sealed class SealCodeApiTests
         client.DefaultRequestHeaders.Remove("Cookie");
         client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={cookie.Value}");
 
-        var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Room", Language = "sql" });
+        var response = await SecureJsonAsync(client, "/admin/rooms", new
+        {
+            Name = "Room",
+            Language = "sql"
+        });
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return payload.GetProperty("RoomId").GetString()!;
     }
 
-    private static async Task<HubConnection> CreateConnectionAsync(WebApplicationFactory<Program> factory, Uri baseAddress, Cookie cookie)
+    private static async Task<HubConnection> CreateConnectionAsync(
+        WebApplicationFactory<Program> factory,
+        Uri baseAddress,
+        Cookie cookie)
     {
         var cookieContainer = new CookieContainer();
         cookieContainer.Add(baseAddress, cookie);

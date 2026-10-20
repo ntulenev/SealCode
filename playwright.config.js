@@ -18,7 +18,9 @@ export default defineConfig({
     trace: 'retain-on-failure'
   },
   webServer: {
-    command: testHostCommand(baseURL, [{ Name: 'BrowserAdmin', Password: 'browser-pass', IsSuperAdmin: true }]),
+    command: testHostCommand(baseURL, [
+      { Name: 'BrowserAdmin', Password: 'browser-pass', IsSuperAdmin: true }
+    ]),
     url: `${baseURL}/health`,
     reuseExistingServer: false,
     timeout: 120_000,

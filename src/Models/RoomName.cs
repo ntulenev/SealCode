@@ -16,7 +16,10 @@ public readonly record struct RoomName
         ArgumentNullException.ThrowIfNull(value);
 
         if (value.Length > 1024)
+        {
             throw new ArgumentException("Room name input must be at most 1024 characters", nameof(value));
+        }
+
         var trimmed = value.Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
         {

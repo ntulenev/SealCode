@@ -4,9 +4,9 @@ using Abstractions;
 
 using Logic;
 
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 
 using Models;
@@ -36,7 +36,9 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>
     {
         options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
         foreach (var proxy in proxies)
+        {
             options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+        }
     }
 });
 builder.Services.AddAntiforgery(options =>
@@ -71,7 +73,7 @@ builder.Services.Configure<RouteOptions>(options => options.ConstraintMap["Short
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();
 builder.Services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
 builder.Services.AddSingleton<IRoomManager, RoomManager>();
-builder.Services.AddSingleton<RoomSessionService>();
+builder.Services.AddSingleton<IRoomSessionService, RoomSessionService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(sp =>
 {
@@ -110,7 +112,9 @@ if (!app.Environment.IsDevelopment())
 app.Use(async (context, next) =>
 {
     try
-    { await next(context).ConfigureAwait(false); }
+    {
+        await next(context).ConfigureAwait(false);
+    }
     catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException or BadHttpRequestException or Models.Exceptions.RoomLimitException)
     {
         var limit = ex is Models.Exceptions.RoomLimitException;
@@ -140,7 +144,10 @@ app.Use((context, next) => app.Services.GetRequiredService<AdminHttpSecurity>().
 app.MapGet("/admin/token", (HttpContext context, Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery) =>
 {
     context.Response.Headers.CacheControl = "no-store";
-    return Results.Json(new { Token = antiforgery.GetAndStoreTokens(context).RequestToken });
+    return Results.Json(new
+    {
+        Token = antiforgery.GetAndStoreTokens(context).RequestToken
+    });
 });
 
 app.MapGet("/", (IWebHostEnvironment env) =>

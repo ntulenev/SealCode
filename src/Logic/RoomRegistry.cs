@@ -3,11 +3,11 @@ using System.Collections.Immutable;
 using Abstractions;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 using Models;
 using Models.Configuration;
 using Models.Exceptions;
-using Microsoft.Extensions.Options;
 
 namespace Logic;
 
@@ -21,24 +21,35 @@ public sealed class RoomRegistry : IRoomRegistry
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="settings">Resource budgets.</param>
-    public RoomRegistry(ILogger<RoomRegistry> logger, IOptions<ApplicationConfiguration>? settings = null)
+    /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
+    public RoomRegistry(
+        ILogger<RoomRegistry> logger,
+        IOptions<ApplicationConfiguration> settings)
     {
         ArgumentNullException.ThrowIfNull(logger);
 
+        ArgumentNullException.ThrowIfNull(settings);
+
         _logger = logger;
-        _limits = settings?.Value.Limits ?? new RoomLimits();
+        _limits = settings.Value.Limits;
     }
 
     /// <inheritdoc />
     public bool TryGetRoom(RoomId roomId, out RoomState room) => _rooms.TryGetValue(roomId, out room!);
 
     /// <inheritdoc />
-    public RoomState CreateRoom(RoomName name, RoomLanguage language, AdminUser createdBy)
+    public RoomState CreateRoom(
+        RoomName name,
+        RoomLanguage language,
+        AdminUser createdBy)
     {
         lock (_capacityGuard)
         {
             if (_rooms.Count >= _limits.MaxRooms)
+            {
                 throw new RoomLimitException();
+            }
+
             var room = new RoomState(
                 RoomId.New(),
                 name,
@@ -62,7 +73,10 @@ public sealed class RoomRegistry : IRoomRegistry
     public IEnumerable<RoomState> GetRoomsSnapshot() => _rooms.Values;
 
     /// <inheritdoc />
-    public Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken)
+    public Task<bool> DeleteRoomAsync(
+        RoomId roomId,
+        RoomDeletionReason reason,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 

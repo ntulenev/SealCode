@@ -8,10 +8,18 @@ await build({
     'html.worker': 'node_modules/monaco-editor/esm/vs/language/html/html.worker.js',
     'ts.worker': 'node_modules/monaco-editor/esm/vs/language/typescript/ts.worker.js'
   },
-  bundle: true, format: 'esm', splitting: true, minify: true, sourcemap: false,
-  outdir: 'src/SealCode/wwwroot/assets', loader: { '.ttf': 'file' },
+  bundle: true,
+  format: 'esm',
+  splitting: true,
+  minify: true,
+  sourcemap: false,
+  outdir: 'src/SealCode/wwwroot/assets',
+  loader: { '.ttf': 'file' },
   metafile: true
-}).then(result => {
-  const yjsPaths = Object.keys(result.metafile.inputs).filter(path => path.endsWith('yjs.mjs'));
-  if (yjsPaths.length !== 1) throw new Error(`Expected one Yjs instance, found ${yjsPaths.length}`);
+}).then((result) => {
+  const yjsPaths = Object.keys(result.metafile.inputs).filter((path) =>
+    path.endsWith('yjs.mjs')
+  );
+  if (yjsPaths.length !== 1)
+    throw new Error(`Expected one Yjs instance, found ${yjsPaths.length}`);
 });

@@ -13,25 +13,41 @@ public sealed class ResourceBudgetTests
     [InlineData(1025, false)]
     public void JournalBoundaryDoesNotMutateOnRefusal(int bytes, bool accepted)
     {
-        var room = Create(new() { MaxJournalBytes = 1024 });
+        var room = Create(new()
+        {
+            MaxJournalBytes = 1024
+        });
         if (accepted)
+        {
             room.AppendYjsUpdate(new byte[bytes], DateTimeOffset.UtcNow);
+        }
         else
+        {
             Assert.Throws<RoomLimitException>(() => room.AppendYjsUpdate(new byte[bytes], DateTimeOffset.UtcNow));
+        }
+
         Assert.Equal(accepted ? 1 : 0, room.DocumentRevision.Value);
         Assert.Equal(accepted ? bytes : 0, room.JournalBytes);
         if (!accepted)
+        {
             Assert.Equal(DateTimeOffset.UnixEpoch, room.LastUpdatedUtc);
+        }
     }
 
     [Fact]
     public void ConcurrentAppendsCannotExceedBudgetAndCheckpointReleasesIt()
     {
-        var room = Create(new() { MaxJournalBytes = 1024, MaxJournalCount = 4 });
+        var room = Create(new()
+        {
+            MaxJournalBytes = 1024,
+            MaxJournalCount = 4
+        });
         Parallel.For(0, 32, _ =>
         {
             try
-            { room.AppendYjsUpdate(new byte[256], DateTimeOffset.UtcNow); }
+            {
+                room.AppendYjsUpdate(new byte[256], DateTimeOffset.UtcNow);
+            }
             catch (RoomLimitException) { }
         });
         Assert.Equal(4, room.DocumentRevision.Value);

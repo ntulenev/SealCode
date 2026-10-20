@@ -1,14 +1,45 @@
 /** Bounded transport queue. No DOM, Yjs singleton, or network globals. */
 export class UpdateQueue {
-  constructor({ send, merge, ready, onIdle, onError, onSuccess, setTimer = (fn, delay) => setTimeout(fn, delay), clearTimer = timer => clearTimeout(timer), maxBytes = 8 * 1024 * 1024, maxCount = 2048 }) {
-    Object.assign(this, { send, merge, ready, onIdle, onError, onSuccess, setTimer, clearTimer, maxBytes, maxCount });
-    this.pending = []; this.timer = null; this.inFlight = false; this.blocked = false; this.generation = 0; this.flight = [];
+  constructor({
+    send,
+    merge,
+    ready,
+    onIdle,
+    onError,
+    onSuccess,
+    setTimer = (fn, delay) => setTimeout(fn, delay),
+    clearTimer = (timer) => clearTimeout(timer),
+    maxBytes = 8 * 1024 * 1024,
+    maxCount = 2048
+  }) {
+    Object.assign(this, {
+      send,
+      merge,
+      ready,
+      onIdle,
+      onError,
+      onSuccess,
+      setTimer,
+      clearTimer,
+      maxBytes,
+      maxCount
+    });
+    this.pending = [];
+    this.timer = null;
+    this.inFlight = false;
+    this.blocked = false;
+    this.generation = 0;
+    this.flight = [];
   }
   enqueue(update) {
     if (this.blocked) return;
     if (update?.length) {
       const retained = [...this.pending, ...this.flight];
-      if (retained.length >= this.maxCount || retained.reduce((sum, item) => sum + item.length, 0) + update.length > this.maxBytes) {
+      if (
+        retained.length >= this.maxCount ||
+        retained.reduce((sum, item) => sum + item.length, 0) + update.length >
+          this.maxBytes
+      ) {
         this.blocked = true;
         this.onError(new Error('LimitExceeded: Local pending queue'), true);
         return;
@@ -19,7 +50,10 @@ export class UpdateQueue {
   }
   schedule(delay) {
     if (this.blocked || this.timer || this.inFlight || !this.pending.length) return;
-    this.timer = this.setTimer(() => { this.timer = null; return this.flush(); }, delay);
+    this.timer = this.setTimer(() => {
+      this.timer = null;
+      return this.flush();
+    }, delay);
   }
   async flush() {
     if (this.blocked || this.inFlight || !this.pending.length || !this.ready()) return;
@@ -40,7 +74,8 @@ export class UpdateQueue {
       this.onError(error, this.blocked);
     } finally {
       if (generation === this.generation) {
-        this.flight = []; this.inFlight = false;
+        this.flight = [];
+        this.inFlight = false;
         if (this.pending.length) this.schedule(retryDelay);
         else this.onIdle();
       }
@@ -49,15 +84,24 @@ export class UpdateQueue {
   reset() {
     this.generation++;
     if (this.timer) this.clearTimer(this.timer);
-    this.pending = []; this.flight = []; this.timer = null; this.inFlight = false; this.blocked = false;
+    this.pending = [];
+    this.flight = [];
+    this.timer = null;
+    this.inFlight = false;
+    this.blocked = false;
   }
 }
 
 /** A session-scoped recovery/checkpoint scheduler with an injectable clock. */
 export class SyncScheduler {
-  constructor({ setTimer = (fn, delay) => setTimeout(fn, delay), clearTimer = timer => clearTimeout(timer), now = () => performance.now() } = {}) {
+  constructor({
+    setTimer = (fn, delay) => setTimeout(fn, delay),
+    clearTimer = (timer) => clearTimeout(timer),
+    now = () => performance.now()
+  } = {}) {
     Object.assign(this, { setTimer, clearTimer, now });
-    this.jobs = new Map(); this.generation = 0;
+    this.jobs = new Map();
+    this.generation = 0;
   }
   schedule(key, delay, callback) {
     const due = this.now() + delay;
@@ -85,8 +129,36 @@ export class SyncScheduler {
 
 /** Probes all revisions and merges snapshots into the current document session. */
 export class SnapshotRecovery {
-  constructor({ scheduler, active, ready, capture, current, revisions, probe, snapshot, begin, apply, end, onSuccess, onError }) {
-    Object.assign(this, { scheduler, active, ready, capture, current, revisions, probe, snapshot, begin, apply, end, onSuccess, onError });
+  constructor({
+    scheduler,
+    active,
+    ready,
+    capture,
+    current,
+    revisions,
+    probe,
+    snapshot,
+    begin,
+    apply,
+    end,
+    onSuccess,
+    onError
+  }) {
+    Object.assign(this, {
+      scheduler,
+      active,
+      ready,
+      capture,
+      current,
+      revisions,
+      probe,
+      snapshot,
+      begin,
+      apply,
+      end,
+      onSuccess,
+      onError
+    });
     this.inFlight = false;
   }
   schedule(delay = 5000) {
@@ -94,7 +166,10 @@ export class SnapshotRecovery {
   }
   async run() {
     if (!this.active()) return;
-    if (this.inFlight || !this.ready()) { this.schedule(); return; }
+    if (this.inFlight || !this.ready()) {
+      this.schedule();
+      return;
+    }
     const context = this.capture();
     let token;
     this.inFlight = true;
@@ -102,8 +177,13 @@ export class SnapshotRecovery {
       const remote = await this.probe();
       if (!this.current(context) || !this.ready()) return;
       const local = this.revisions();
-      if (remote.DocumentRevision <= local.DocumentRevision && remote.MetadataRevision <= local.MetadataRevision && remote.PresenceRevision <= local.PresenceRevision) {
-        this.onSuccess(); return;
+      if (
+        remote.DocumentRevision <= local.DocumentRevision &&
+        remote.MetadataRevision <= local.MetadataRevision &&
+        remote.PresenceRevision <= local.PresenceRevision
+      ) {
+        this.onSuccess();
+        return;
       }
       token = this.begin();
       const result = await this.snapshot();
@@ -120,24 +200,56 @@ export class SnapshotRecovery {
       }
     }
   }
-  reset() { this.inFlight = false; this.scheduler.cancel('recovery'); }
+  reset() {
+    this.inFlight = false;
+    this.scheduler.cancel('recovery');
+  }
 }
 
 /** Checkpoint state is scoped to one document session and revision. */
 export class CheckpointWriter {
-  constructor({ scheduler, ready, capture, current, revision, payload, send, onSuccess, onError }) {
-    Object.assign(this, { scheduler, ready, capture, current, revision, payload, send, onSuccess, onError });
-    this.inFlight = false; this.timer = false; this.skippedRevision = -1;
+  constructor({
+    scheduler,
+    ready,
+    capture,
+    current,
+    revision,
+    payload,
+    send,
+    onSuccess,
+    onError
+  }) {
+    Object.assign(this, {
+      scheduler,
+      ready,
+      capture,
+      current,
+      revision,
+      payload,
+      send,
+      onSuccess,
+      onError
+    });
+    this.inFlight = false;
+    this.timer = false;
+    this.skippedRevision = -1;
   }
   schedule() {
-    if (!this.ready() || this.inFlight || this.timer || this.revision() === this.skippedRevision) return;
+    if (
+      !this.ready() ||
+      this.inFlight ||
+      this.timer ||
+      this.revision() === this.skippedRevision
+    )
+      return;
     this.timer = true;
     this.scheduler.schedule('checkpoint', 400, () => this.run());
   }
   async run() {
     this.timer = false;
     if (!this.ready()) return;
-    const context = this.capture(); const revision = this.revision();
+    const context = this.capture();
+    const revision = this.revision();
     let retry = false;
     this.inFlight = true;
     try {
@@ -157,7 +269,9 @@ export class CheckpointWriter {
     }
   }
   reset() {
-    this.inFlight = false; this.timer = false; this.skippedRevision = -1;
+    this.inFlight = false;
+    this.timer = false;
+    this.skippedRevision = -1;
     this.scheduler.cancel('checkpoint');
   }
 }

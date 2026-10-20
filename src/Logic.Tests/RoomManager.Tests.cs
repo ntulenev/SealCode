@@ -1,6 +1,8 @@
 using Abstractions;
 
 using FluentAssertions;
+
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using Moq;
@@ -17,7 +19,7 @@ public sealed class RoomManagerTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenRegistryIsNull()
     {
-        var action = () => new RoomManager(null!, CreateSettings(3));
+        var action = () => CreateManager(null!, CreateSettings(3));
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -28,7 +30,7 @@ public sealed class RoomManagerTests
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
 
-        var action = () => new RoomManager(registry.Object, null!);
+        var action = () => CreateManager(registry.Object, null!);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -40,7 +42,7 @@ public sealed class RoomManagerTests
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
         registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
             .Returns(false);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
         var missingRoomId = RoomId.New();
 
         var action = () => manager.RegisterUserInRoom(
@@ -60,7 +62,7 @@ public sealed class RoomManagerTests
         var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var found = manager.TryGetRoom(room.RoomId, out var actualRoom);
 
@@ -77,7 +79,7 @@ public sealed class RoomManagerTests
         var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
         var connectionId = new ConnectionId("conn-1");
         var displayName = new RoomUser("Alice");
 
@@ -97,7 +99,7 @@ public sealed class RoomManagerTests
         var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
-        var manager = new RoomManager(registry.Object, CreateSettings(0));
+        var manager = CreateManager(registry.Object, CreateSettings(0));
 
         manager.RegisterUserInRoom(room.RoomId, new ConnectionId("conn-1"), new RoomUser("Alice"));
 
@@ -120,7 +122,7 @@ public sealed class RoomManagerTests
         var otherRoom = CreateRoomState(RoomId.New(), "Alpha", "Root");
         registry.Setup(r => r.GetRoomsSnapshot())
             .Returns([adminRoom, otherRoom]);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var views = manager.GetRoomsSnapshot(new AdminUser("Admin"));
 
@@ -143,7 +145,7 @@ public sealed class RoomManagerTests
         var created = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.CreateRoom(name, language, admin))
             .Returns(created);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var result = manager.CreateRoom(name, language, admin);
 
@@ -158,7 +160,7 @@ public sealed class RoomManagerTests
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
         registry.Setup(r => r.TryGetRoom(It.IsAny<RoomId>(), out It.Ref<RoomState>.IsAny))
             .Returns(false);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(RoomId.New(), new AdminUser("Admin"), CancellationToken.None);
 
@@ -174,7 +176,7 @@ public sealed class RoomManagerTests
         var room = CreateRoomState(RoomId.New(), "Room", "Root");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(room.RoomId, new AdminUser("Admin"), CancellationToken.None);
 
@@ -196,7 +198,7 @@ public sealed class RoomManagerTests
                 It.Is<RoomDeletionReason>(reason => reason.Value == "Room deleted by admin"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(room.RoomId, new AdminUser("Admin"), CancellationToken.None);
 
@@ -217,12 +219,30 @@ public sealed class RoomManagerTests
                 It.IsAny<RoomDeletionReason>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        var manager = new RoomManager(registry.Object, CreateSettings(3));
+        var manager = CreateManager(registry.Object, CreateSettings(3));
 
         var result = await manager.DeleteRoomAsync(room.RoomId, new AdminUser("Admin"), CancellationToken.None);
 
         result.Should().Be(RoomDeletionResult.NotFound);
         registry.VerifyAll();
+    }
+
+    private static RoomManager CreateManager(
+        IRoomRegistry registry,
+        IOptions<ApplicationConfiguration> settings)
+    {
+        var notifier = new Mock<IRoomNotifier>();
+        notifier.Setup(value => value.RoomKilledAsync(
+                It.IsAny<RoomId>(),
+                It.IsAny<RoomDeletionReason>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        return new RoomManager(
+            registry,
+            settings,
+            notifier.Object,
+            new Mock<ILogger<RoomManager>>().Object);
     }
 
     private static RoomState CreateRoomState(RoomId id, string name, string createdBy)

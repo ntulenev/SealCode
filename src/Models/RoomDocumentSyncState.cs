@@ -13,16 +13,33 @@ public sealed record RoomDocumentSyncState(
     byte[] Checkpoint,
     RoomDocumentUpdate[] Updates)
 {
-    /// <summary>Gets the language from the same atomic snapshot.</summary>
+    /// <summary>
+    /// Gets the language from the same atomic snapshot.
+    /// </summary>
     public RoomLanguage Language { get; init; }
-    /// <summary>Gets the text from the same atomic snapshot.</summary>
+
+    /// <summary>
+    /// Gets the text from the same atomic snapshot.
+    /// </summary>
     public RoomText Text { get; init; }
-    /// <summary>Gets the room version.</summary>
+
+    /// <summary>
+    /// Gets the room version.
+    /// </summary>
     public RoomVersion Version { get; init; }
-    /// <summary>Gets the language revision.</summary>
+
+    /// <summary>
+    /// Gets the language revision.
+    /// </summary>
     public long MetadataRevision { get; init; }
-    /// <summary>Gets the membership revision.</summary>
+
+    /// <summary>
+    /// Gets the membership revision.
+    /// </summary>
     public long PresenceRevision { get; init; }
-    /// <summary>Gets a detached membership snapshot.</summary>
+
+    /// <summary>
+    /// Gets a detached membership snapshot.
+    /// </summary>
     public RoomUser[] Users { get; init; } = [];
 }

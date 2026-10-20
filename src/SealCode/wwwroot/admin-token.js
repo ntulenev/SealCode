@@ -4,11 +4,15 @@ export async function token() {
   return (await response.json()).Token;
 }
 for (const form of document.querySelectorAll('form[action^="/admin/"]')) {
-  form.addEventListener('submit', async event => {
+  form.addEventListener('submit', async (event) => {
     if (form.dataset.secured) return;
     event.preventDefault();
     const input = document.createElement('input');
-    input.type = 'hidden'; input.name = '__RequestVerificationToken'; input.value = await token();
-    form.appendChild(input); form.dataset.secured = 'true'; form.requestSubmit();
+    input.type = 'hidden';
+    input.name = '__RequestVerificationToken';
+    input.value = await token();
+    form.appendChild(input);
+    form.dataset.secured = 'true';
+    form.requestSubmit();
   });
 }

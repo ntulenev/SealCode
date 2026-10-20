@@ -3,10 +3,13 @@ using Abstractions;
 using FluentAssertions;
 
 using Microsoft.Extensions.Logging;
-
-using Moq;
+using Microsoft.Extensions.Options;
 
 using Models;
+using Models.Configuration;
+using Models.Exceptions;
+
+using Moq;
 
 namespace Logic.Tests;
 
@@ -16,7 +19,7 @@ public sealed class RoomRegistryTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenLoggerIsNull()
     {
-        var action = () => new RoomRegistry(null!);
+        var action = () => new RoomRegistry(null!, CreateSettings());
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -78,7 +81,6 @@ public sealed class RoomRegistryTests
         var reason = new RoomDeletionReason("cleanup");
         using var cts = new CancellationTokenSource();
 
-
         var result = await registry.DeleteRoomAsync(room.RoomId, reason, cts.Token);
 
         result.Should().BeTrue();
@@ -109,12 +111,15 @@ public sealed class RoomRegistryTests
             .Callback(() => request.Cancel()).ThrowsAsync(new IOException("delivery failed"));
         var registry = CreateRegistry();
         var room = registry.CreateRoom(new("Room"), new("csharp"), new("admin"));
-        var manager = new RoomManager(registry, Microsoft.Extensions.Options.Options.Create(new Models.Configuration.ApplicationConfiguration
-        { AdminUsers = [], Languages = ["csharp"], MaxUsersPerRoom = 5 }), notifier.Object);
+        var manager = new RoomManager(
+            registry,
+            CreateSettings(),
+            notifier.Object,
+            new Mock<ILogger<RoomManager>>().Object);
         Assert.Equal(RoomDeletionResult.Deleted, await manager.DeleteRoomAsync(room.RoomId, new("admin"), request.Token));
         Assert.False(registry.TryGetRoom(room.RoomId, out _));
-        Assert.Throws<Models.Exceptions.RoomNotFoundException>(() => room.AppendYjsUpdate([1], DateTimeOffset.UtcNow));
-        Assert.Throws<Models.Exceptions.RoomNotFoundException>(() => room.AddUser(new("connection"), new("Alice"), 5));
+        Assert.Throws<RoomNotFoundException>(() => room.AppendYjsUpdate([1], DateTimeOffset.UtcNow));
+        Assert.Throws<RoomNotFoundException>(() => room.AddUser(new("connection"), new("Alice"), 5));
         Assert.False(await registry.DeleteRoomAsync(room.RoomId, new("closed"), CancellationToken.None));
     }
 
@@ -122,6 +127,15 @@ public sealed class RoomRegistryTests
     {
         var logger = new Mock<ILogger<RoomRegistry>>().Object;
 
-        return new RoomRegistry(logger);
+        return new RoomRegistry(logger, CreateSettings());
     }
+
+    private static IOptions<ApplicationConfiguration> CreateSettings()
+        => Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers = [],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = 5
+        });
+
 }

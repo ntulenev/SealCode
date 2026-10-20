@@ -2,6 +2,8 @@ using Abstractions;
 
 using FluentAssertions;
 
+using Logic;
+
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
@@ -20,17 +22,17 @@ public sealed class RoomHubTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenRoomManagerIsNull()
     {
-        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
+        var sessions = new Mock<IRoomSessionService>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(null!, validator, logger);
+        var action = () => new RoomHub(null!, sessions, logger);
 
         action.Should().Throw<ArgumentNullException>();
     }
 
-    [Fact(DisplayName = "CtorShouldThrowWhenLanguageValidatorIsNull")]
+    [Fact(DisplayName = "CtorShouldThrowWhenSessionServiceIsNull")]
     [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenLanguageValidatorIsNull()
+    public void CtorShouldThrowWhenSessionServiceIsNull()
     {
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict).Object;
         var logger = new Mock<ILogger<RoomHub>>().Object;
@@ -45,9 +47,9 @@ public sealed class RoomHubTests
     public void CtorShouldThrowWhenLoggerIsNull()
     {
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict).Object;
-        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
+        var sessions = new Mock<IRoomSessionService>(MockBehavior.Strict).Object;
 
-        var action = () => new RoomHub(roomManager, validator, null!);
+        var action = () => new RoomHub(roomManager, sessions, null!);
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -83,13 +85,17 @@ public sealed class RoomHubTests
         registerUserCalls.Should().Be(1);
     }
 
-    [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenRoomUserIsEmpty")]
+    [Theory(DisplayName = "JoinRoomAsyncShouldRejectInvalidRoomUser")]
     [Trait("Category", "Unit")]
-    public async Task JoinRoomAsyncShouldThrowWhenRoomUserIsEmpty()
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task JoinRoomAsyncShouldRejectInvalidRoomUser(string? displayName)
     {
         using var hub = CreateHub();
 
-        Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, " ");
+        Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, displayName!);
 
         await action.Should().ThrowAsync<HubException>();
     }
@@ -327,9 +333,12 @@ public sealed class RoomHubTests
         room.CreateYjsSyncState().Updates.Should().HaveCount(2);
     }
 
-    [Fact(DisplayName = "SetLanguageAsyncShouldThrowWhenLanguageIsInvalid")]
+    [Theory(DisplayName = "SetLanguageAsyncShouldThrowWhenLanguageIsInvalid")]
     [Trait("Category", "Unit")]
-    public async Task SetLanguageAsyncShouldThrowWhenLanguageIsInvalid()
+    [InlineData("javascript")]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task SetLanguageAsyncShouldThrowWhenLanguageIsInvalid(string language)
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
@@ -341,7 +350,7 @@ public sealed class RoomHubTests
             .Returns(false);
         using var hub = CreateHub(roomManager.Object, validator.Object);
 
-        Func<Task> action = () => hub.SetLanguageAsync(DefaultRoomId, "javascript");
+        Func<Task> action = () => hub.SetLanguageAsync(DefaultRoomId, language);
 
         await action.Should().ThrowAsync<HubException>();
         tryGetRoomCounter.Count.Should().Be(1);
@@ -571,6 +580,18 @@ public sealed class RoomHubTests
         Assert.False(hub.Context.Items.ContainsKey("roomId"));
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(long.MinValue)]
+    public async Task CheckpointYjsAsyncShouldRejectInvalidDocumentRevision(long revision)
+    {
+        using var hub = CreateHub();
+
+        Func<Task> action = () => hub.CheckpointYjsAsync(DefaultRoomId, "AQ==", "", revision);
+
+        await action.Should().ThrowAsync<HubException>();
+    }
+
     private static bool MatchUserJoinedArgs(object?[] args, string user, string[] users)
     {
         if (args.Length != 3)
@@ -617,7 +638,10 @@ public sealed class RoomHubTests
         return string.Equals(args[3] as string, author, StringComparison.Ordinal);
     }
 
-    private static bool MatchLanguageUpdatedArgs(object?[] args, string language, int version)
+    private static bool MatchLanguageUpdatedArgs(
+        object?[] args,
+        string language,
+        int version)
     {
         if (args.Length != 3)
         {
@@ -632,7 +656,10 @@ public sealed class RoomHubTests
         return args[1] is int actualVersion && actualVersion == version;
     }
 
-    private static bool MatchCursorUpdatedArgs(object?[] args, string author, int position)
+    private static bool MatchCursorUpdatedArgs(
+        object?[] args,
+        string author,
+        int position)
     {
         if (args.Length != 2)
         {
@@ -647,7 +674,10 @@ public sealed class RoomHubTests
         return args[1] is int actualPosition && actualPosition == position;
     }
 
-    private static bool MatchUserSelectionArgs(object?[] args, string author, bool isMultiLine)
+    private static bool MatchUserSelectionArgs(
+        object?[] args,
+        string author,
+        bool isMultiLine)
     {
         if (args.Length != 2)
         {
@@ -707,7 +737,7 @@ public sealed class RoomHubTests
         context.SetupGet(c => c.ConnectionAborted).Returns(cancellationToken);
         context.SetupGet(c => c.Items).Returns(items);
 
-        var hub = new RoomHub(roomManager, languageValidator, logger)
+        var hub = new RoomHub(roomManager, new RoomSessionService(roomManager, languageValidator), logger)
         {
             Context = context.Object,
             Clients = clients,
@@ -717,7 +747,10 @@ public sealed class RoomHubTests
         return hub;
     }
 
-    private static CallCounter SetupTryGetRoom(string roomId, RoomState room, out Mock<IRoomManager> roomManager)
+    private static CallCounter SetupTryGetRoom(
+        string roomId,
+        RoomState room,
+        out Mock<IRoomManager> roomManager)
     {
         var counter = new CallCounter();
         roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
@@ -742,5 +775,4 @@ public sealed class RoomHubTests
             DateTimeOffset.UtcNow,
             new AdminUser("admin", true));
 }
-
 

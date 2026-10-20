@@ -27,9 +27,14 @@ public sealed record JoinRoomResult(
     string? YjsState,
     YjsDocumentUpdate[] YjsUpdates)
 {
-    /// <summary>Gets the independent language revision.</summary>
+    /// <summary>
+    /// Gets the independent language revision.
+    /// </summary>
     public long MetadataRevision { get; init; }
-    /// <summary>Gets the independent membership revision.</summary>
+
+    /// <summary>
+    /// Gets the independent membership revision.
+    /// </summary>
     public long PresenceRevision { get; init; }
 
     /// <summary>
@@ -56,6 +61,9 @@ public sealed record JoinRoomResult(
             [.. syncState.Updates.Select(update => new YjsDocumentUpdate(
                 update.Revision.Value,
                 Convert.ToBase64String(update.Payload)))])
-        { MetadataRevision = syncState.MetadataRevision, PresenceRevision = syncState.PresenceRevision };
+        {
+            MetadataRevision = syncState.MetadataRevision,
+            PresenceRevision = syncState.PresenceRevision
+        };
     }
 }

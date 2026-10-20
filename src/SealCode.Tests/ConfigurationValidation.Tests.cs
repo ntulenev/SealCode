@@ -9,8 +9,14 @@ namespace SealCode.Tests;
 
 public sealed class ConfigurationValidationTests
 {
-    private static ApplicationConfiguration Settings(AdminUserConfiguration[] admins, string[]? languages = null) => new()
-    { AdminUsers = admins, Languages = languages ?? ["csharp"], MaxUsersPerRoom = 3 };
+    private static ApplicationConfiguration Settings(
+        AdminUserConfiguration[] admins,
+        string[]? languages = null) => new()
+        {
+            AdminUsers = admins,
+            Languages = languages ?? ["csharp"],
+            MaxUsersPerRoom = 3
+        };
     private static ApplicationConfigurationValidator Validator(string environment = "Production")
     {
         var env = new Mock<IWebHostEnvironment>();
