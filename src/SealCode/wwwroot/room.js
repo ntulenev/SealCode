@@ -106,6 +106,7 @@ let synchronizationEpoch = 0;
 const bufferedYjsMessages = [];
 let roomClosed = false;
 let hasJoinedRoom = false;
+let lastSentSelectionMultiLine;
 let isRejoiningRoom = false;
 let rejoinRetryTimer = null;
 let rejoinRetryAttempt = 0;
@@ -985,7 +986,11 @@ function initMonaco() {
     const sel = editor.getSelection();
     if (!sel) return;
     const isMultiLine = sel.startLineNumber !== sel.endLineNumber;
+    markSelecting(displayName, isMultiLine);
+    if (lastSentSelectionMultiLine === isMultiLine) return;
+    lastSentSelectionMultiLine = isMultiLine;
     connection.invoke('UpdateSelection', roomId, isMultiLine).catch((err) => {
+      lastSentSelectionMultiLine = undefined;
       console.warn('Failed to send selection update.', err);
     });
   });
@@ -1035,6 +1040,7 @@ async function joinRoom() {
     currentVersion = Math.max(currentVersion, version);
     versionNumberEl.textContent = currentVersion;
     hasJoinedRoom = true;
+    lastSentSelectionMultiLine = undefined;
     scheduleYjsRecovery();
     rejoinRetryAttempt = 0;
     clearRejoinRetryTimer();
@@ -1224,6 +1230,7 @@ function isRoomNotFound(error) {
 
 function closeRoom(reason) {
   roomClosed = true;
+  lastSentSelectionMultiLine = undefined;
   synchronizationEpoch += 1;
   isSynchronizingYjs = false;
   hasJoinedRoom = false;

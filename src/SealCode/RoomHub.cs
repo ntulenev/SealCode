@@ -396,7 +396,7 @@ public sealed class RoomHub : Hub
         var author = user.Value;
 
         var cancellationToken = Context.ConnectionAborted;
-        await Clients.Group(parsedRoomId.Value).SendAsync("UserSelection", author, isMultiLine, cancellationToken).ConfigureAwait(false);
+        await Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId).SendAsync("UserSelection", author, isMultiLine, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

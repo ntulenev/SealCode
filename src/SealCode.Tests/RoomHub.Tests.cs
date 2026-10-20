@@ -480,7 +480,8 @@ public sealed class RoomHubTests
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
+        clients.Setup(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
             .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
