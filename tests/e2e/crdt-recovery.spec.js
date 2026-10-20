@@ -1,10 +1,17 @@
+import { csrf } from './admin-token.js';
 import { expect, test } from '@playwright/test';
 
 async function createRoom(request) {
-  expect((await request.post('/admin/login', {
-    form: { name: 'BrowserAdmin', password: 'browser-pass' }
-  })).ok()).toBeTruthy();
+  expect(
+    (
+      await request.post('/admin/login', {
+        headers: await csrf(request),
+        form: { name: 'BrowserAdmin', password: 'browser-pass' }
+      })
+    ).ok()
+  ).toBeTruthy();
   const response = await request.post('/admin/rooms', {
+    headers: await csrf(request),
     data: { name: `Recovery ${Date.now()}`, language: 'csharp' }
   });
   expect(response.ok()).toBeTruthy();
@@ -23,39 +30,52 @@ async function text(page) {
 }
 
 async function insert(page, value) {
-  await page.evaluate(value => monaco.editor.getModels()[0].applyEdits([
-    { range: new monaco.Range(1, 1, 1, 1), text: value }
-  ]), value);
+  await page.evaluate(
+    (value) =>
+      monaco.editor
+        .getModels()[0]
+        .applyEdits([{ range: new monaco.Range(1, 1, 1, 1), text: value }]),
+    value
+  );
 }
 
 for (const scenario of ['gap', 'last-update']) {
-  test(`recovers a missed ${scenario} without reconnecting or losing undo`, async ({ browser, request }) => {
+  test(`recovers a missed ${scenario} without reconnecting or losing undo`, async ({
+    browser,
+    request
+  }) => {
     const roomId = await createRoom(request);
     const context = await browser.newContext();
     const alice = await context.newPage();
     const bob = await context.newPage();
     let dropped = 0;
-    await alice.routeWebSocket('**/roomHub*', route => {
+    await alice.routeWebSocket('**/roomHub*', (route) => {
       const server = route.connectToServer();
-      server.onMessage(message => {
+      server.onMessage((message) => {
         if (typeof message !== 'string') return route.send(message);
-        const records = message.split('\x1e').filter(Boolean).filter(record => {
-          const frame = JSON.parse(record);
-          if (frame.target === 'YjsUpdated' && frame.arguments[1] === 1) {
-            dropped++;
-            return false;
-          }
-          return true;
-        });
+        const records = message
+          .split('\x1e')
+          .filter(Boolean)
+          .filter((record) => {
+            const frame = JSON.parse(record);
+            if (frame.target === 'YjsUpdated' && frame.arguments[1] === 1) {
+              dropped++;
+              return false;
+            }
+            return true;
+          });
         if (records.length) route.send(records.join('\x1e') + '\x1e');
       });
     });
     await join(alice, roomId, 'Alice');
     await join(bob, roomId, 'Bob');
     await insert(bob, 'B');
-    await expect.poll(() => bob.evaluate(() => window.__debugUndoState().documentRevision)).toBe(1);
+    await expect
+      .poll(() => bob.evaluate(() => window.__debugUndoState().documentRevision))
+      .toBe(1);
     if (scenario === 'gap') await insert(alice, 'A');
-    await expect.poll(async () => (await text(alice)).split('').sort().join(''))
+    await expect
+      .poll(async () => (await text(alice)).split('').sort().join(''))
       .toBe(scenario === 'gap' ? 'AB' : 'B');
     expect(await text(alice)).toBe(await text(bob));
     expect(dropped).toBe(1);
@@ -70,18 +90,26 @@ for (const scenario of ['gap', 'last-update']) {
 }
 
 for (const notification of ['received', 'missed']) {
-  test(`stops in-flight retries when room closure notification is ${notification}`, async ({ browser, request }) => {
+  test(`stops in-flight retries when room closure notification is ${notification}`, async ({
+    browser,
+    request
+  }) => {
     const roomId = await createRoom(request);
     const context = await browser.newContext();
     const page = await context.newPage();
     let releaseUpdate;
     let updateAttempts = 0;
-    await page.routeWebSocket('**/roomHub*', route => {
+    await page.routeWebSocket('**/roomHub*', (route) => {
       const server = route.connectToServer();
-      route.onMessage(message => {
-        const frames = typeof message === 'string'
-          ? message.split('\x1e').filter(Boolean).map(record => JSON.parse(record)) : [];
-        if (frames.some(frame => frame.target === 'UpdateYjs')) {
+      route.onMessage((message) => {
+        const frames =
+          typeof message === 'string'
+            ? message
+                .split('\x1e')
+                .filter(Boolean)
+                .map((record) => JSON.parse(record))
+            : [];
+        if (frames.some((frame) => frame.target === 'UpdateYjs')) {
           updateAttempts++;
           if (!releaseUpdate) {
             releaseUpdate = () => server.send(message);
@@ -90,17 +118,24 @@ for (const notification of ['received', 'missed']) {
         }
         server.send(message);
       });
-      server.onMessage(message => {
-        if (notification !== 'missed' || typeof message !== 'string') return route.send(message);
-        const records = message.split('\x1e').filter(Boolean)
-          .filter(record => JSON.parse(record).target !== 'RoomKilled');
+      server.onMessage((message) => {
+        if (notification !== 'missed' || typeof message !== 'string')
+          return route.send(message);
+        const records = message
+          .split('\x1e')
+          .filter(Boolean)
+          .filter((record) => JSON.parse(record).target !== 'RoomKilled');
         if (records.length) route.send(records.join('\x1e') + '\x1e');
       });
     });
     await join(page, roomId, 'Alice');
     await insert(page, 'Keep this text');
     await expect.poll(() => !!releaseUpdate).toBe(true);
-    expect((await request.delete(`/admin/rooms/${roomId}`)).ok()).toBeTruthy();
+    expect(
+      (
+        await request.delete(`/admin/rooms/${roomId}`, { headers: await csrf(request) })
+      ).ok()
+    ).toBeTruthy();
     if (notification === 'received') {
       await expect(page.locator('#joinOverlay')).not.toHaveClass(/hidden/);
     }
@@ -113,3 +148,50 @@ for (const notification of ['received', 'missed']) {
     await context.close();
   });
 }
+
+test('language events cannot roll back metadata and a missed final event is recovered', async ({
+  browser,
+  request
+}) => {
+  const roomId = await createRoom(request);
+  const context = await browser.newContext();
+  const alice = await context.newPage();
+  const bob = await context.newPage();
+  let held;
+  let seen = 0;
+  await alice.routeWebSocket('**/roomHub*', (route) => {
+    const server = route.connectToServer();
+    server.onMessage((message) => {
+      if (typeof message !== 'string') return route.send(message);
+      for (const record of message.split('\x1e').filter(Boolean)) {
+        const frame = JSON.parse(record);
+        if (frame.target === 'LanguageUpdated') {
+          seen++;
+          if (seen === 1) {
+            held = record;
+            continue;
+          }
+          if (seen === 3) continue;
+          route.send(record + '\x1e');
+          if (held) {
+            route.send(held + '\x1e');
+            held = null;
+          }
+        } else route.send(record + '\x1e');
+      }
+    });
+  });
+  await join(alice, roomId, 'Alice');
+  await join(bob, roomId, 'Bob');
+  await bob.locator('#languageSelect').selectOption('sql');
+  await expect.poll(() => seen).toBe(1);
+  await insert(bob, 'text raises room version independently');
+  await bob.locator('#languageSelect').selectOption('csharp');
+  await expect.poll(() => seen).toBe(2);
+  await expect(alice.locator('#languageSelect')).toHaveValue('csharp');
+  await bob.locator('#languageSelect').selectOption('sql');
+  await expect.poll(() => seen).toBe(3);
+  await expect(alice.locator('#languageSelect')).toHaveValue('sql', { timeout: 10000 });
+  expect(await text(alice)).toBe(await text(bob));
+  await context.close();
+});

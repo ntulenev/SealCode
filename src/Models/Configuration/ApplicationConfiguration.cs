@@ -8,6 +8,11 @@ namespace Models.Configuration;
 public sealed class ApplicationConfiguration
 {
     /// <summary>
+    /// Gets resource budgets.
+    /// </summary>
+    public RoomLimits Limits { get; init; } = new();
+
+    /// <summary>
     /// Gets or sets the admin users.
     /// </summary>
     [Required]
@@ -36,7 +41,7 @@ public sealed class ApplicationConfiguration
 /// <summary>
 /// Represents an admin user from configuration.
 /// </summary>
-public sealed class AdminUserConfiguration
+public sealed class AdminUserConfiguration : IValidatableObject
 {
     /// <summary>
     /// Gets or sets the admin display name.
@@ -48,12 +53,24 @@ public sealed class AdminUserConfiguration
     /// <summary>
     /// Gets or sets the admin password.
     /// </summary>
-    [Required]
-    [MinLength(4)]
-    public required string Password { get; init; }
+    public string? Password { get; init; }
+
+    /// <summary>
+    /// Gets the ASP.NET Core Identity password hash.
+    /// </summary>
+    public string? PasswordHash { get; init; }
 
     /// <summary>
     /// Gets or sets whether the admin can manage rooms created by other admins.
     /// </summary>
     public bool IsSuperAdmin { get; init; }
+
+    /// <inheritdoc />
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(PasswordHash) && (string.IsNullOrWhiteSpace(Password) || Password.Length < 4))
+        {
+            yield return new ValidationResult("A password hash is required.");
+        }
+    }
 }

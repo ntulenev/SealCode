@@ -3,8 +3,11 @@ using System.Collections.Immutable;
 using Abstractions;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 using Models;
+using Models.Configuration;
+using Models.Exceptions;
 
 namespace Logic;
 
@@ -17,63 +20,81 @@ public sealed class RoomRegistry : IRoomRegistry
     /// Initializes a new instance of the <see cref="RoomRegistry"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="notifier">The room notifier.</param>
-    public RoomRegistry(ILogger<RoomRegistry> logger, IRoomNotifier notifier)
+    /// <param name="settings">Resource budgets.</param>
+    /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
+    public RoomRegistry(
+        ILogger<RoomRegistry> logger,
+        IOptions<ApplicationConfiguration> settings)
     {
         ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(notifier);
+
+        ArgumentNullException.ThrowIfNull(settings);
 
         _logger = logger;
-        _notifier = notifier;
+        _limits = settings.Value.Limits;
     }
 
     /// <inheritdoc />
     public bool TryGetRoom(RoomId roomId, out RoomState room) => _rooms.TryGetValue(roomId, out room!);
 
     /// <inheritdoc />
-    public RoomState CreateRoom(RoomName name, RoomLanguage language, AdminUser createdBy)
+    public RoomState CreateRoom(
+        RoomName name,
+        RoomLanguage language,
+        AdminUser createdBy)
     {
-        var room = new RoomState(
-            RoomId.New(),
-            name,
-            language,
-            new RoomText(string.Empty),
-            new RoomVersion(1),
-            DateTimeOffset.UtcNow,
-            createdBy);
+        lock (_capacityGuard)
+        {
+            if (_rooms.Count >= _limits.MaxRooms)
+            {
+                throw new RoomLimitException();
+            }
 
-        _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
+            var room = new RoomState(
+                RoomId.New(),
+                name,
+                language,
+                new RoomText(string.Empty),
+                new RoomVersion(1),
+                DateTimeOffset.UtcNow,
+                createdBy, limits: _limits);
+
+            _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
 
 #pragma warning disable CA1873 // Avoid potentially expensive logging
-        _logger.LogInformation("Room created {RoomId} ({Name}) by {CreatedBy}", room.RoomId.Value, room.Name.Value, room.CreatedBy.Name);
+            _logger.LogInformation("Room created {RoomId} ({Name}) by {CreatedBy}", room.RoomId.Value, room.Name.Value, room.CreatedBy.Name);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
-        return room;
+            return room;
+        }
     }
 
     /// <inheritdoc />
     public IEnumerable<RoomState> GetRoomsSnapshot() => _rooms.Values;
 
     /// <inheritdoc />
-    public async Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken)
+    public Task<bool> DeleteRoomAsync(
+        RoomId roomId,
+        RoomDeletionReason reason,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!ImmutableInterlocked.TryRemove(ref _rooms, roomId, out var room))
         {
-            return false;
+            return Task.FromResult(false);
         }
 
 #pragma warning disable CA1873 // Avoid potentially expensive logging
         _logger.LogInformation("Room deleted {RoomId} ({Name})", room.RoomId.Value, room.Name.Value);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
-        await _notifier.RoomKilledAsync(roomId, reason, cancellationToken).ConfigureAwait(false);
-
-        return true;
+        room.Close();
+        return Task.FromResult(true);
     }
 
+    private readonly Lock _capacityGuard = new();
+    private readonly RoomLimits _limits;
     private ImmutableDictionary<RoomId, RoomState> _rooms = [];
     private readonly ILogger<RoomRegistry> _logger;
-    private readonly IRoomNotifier _notifier;
 }

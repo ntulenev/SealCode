@@ -9,7 +9,7 @@ public readonly record struct RoomUser
     /// Initializes a new instance of the <see cref="RoomUser"/> struct.
     /// </summary>
     /// <param name="value">The room user name value.</param>
-    /// <exception cref="ArgumentException">Thrown when the value is empty or whitespace.</exception>
+    /// <exception cref="ArgumentException">Thrown when the value is empty, whitespace, or longer than 64 characters.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
     public RoomUser(string value)
     {
@@ -19,6 +19,11 @@ public readonly record struct RoomUser
         if (string.IsNullOrWhiteSpace(trimmed))
         {
             throw new ArgumentException("Display name is required", nameof(value));
+        }
+
+        if (trimmed.Length > 64)
+        {
+            throw new ArgumentException("Display name must be at most 64 characters", nameof(value));
         }
 
         Value = trimmed;

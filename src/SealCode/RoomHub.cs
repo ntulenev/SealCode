@@ -20,20 +20,20 @@ public sealed class RoomHub : Hub
     /// Initializes a new instance of the <see cref="RoomHub"/> class.
     /// </summary>
     /// <param name="roomManager">The room manager.</param>
-    /// <param name="languageValidator">The language validator.</param>
+    /// <param name="sessions">The room participant service.</param>
     /// <param name="logger">The logger.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
     public RoomHub(
         IRoomManager roomManager,
-        ILanguageValidator languageValidator,
+        IRoomSessionService sessions,
         ILogger<RoomHub> logger)
     {
         ArgumentNullException.ThrowIfNull(roomManager);
-        ArgumentNullException.ThrowIfNull(languageValidator);
+        ArgumentNullException.ThrowIfNull(sessions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _roomManager = roomManager;
-        _languageValidator = languageValidator;
+        _sessions = sessions;
         _logger = logger;
     }
 
@@ -55,21 +55,22 @@ public sealed class RoomHub : Hub
             throw new HubException("Leave the current room before joining another room");
         }
 
-        displayName = (displayName ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(displayName))
-        {
-            throw new HubException("Display name required");
-        }
-
+        var wasMember = Context.Items.ContainsKey("roomId");
         var connectionId = new ConnectionId(Context.ConnectionId);
         RoomState room;
+        RoomUser roomUser;
 
         try
         {
+            roomUser = new RoomUser(displayName);
             room = _roomManager.RegisterUserInRoom(
                 parsedRoomId,
                 connectionId,
-                new RoomUser(displayName));
+                roomUser);
+        }
+        catch (ArgumentException)
+        {
+            throw new HubException("InvalidInput: Invalid display name");
         }
         catch (RoomNotFoundException ex)
         {
@@ -80,18 +81,46 @@ public sealed class RoomHub : Hub
             throw new HubException(ex.Message);
         }
 
+        displayName = roomUser.Value;
+
         Context.Items["roomId"] = parsedRoomId.Value;
         Context.Items["displayName"] = displayName;
 
         var cancellationToken = Context.ConnectionAborted;
 
-        await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (!wasMember)
+            {
+                _ = room.RemoveUser(connectionId, out _);
+                _ = Context.Items.Remove("roomId");
+                _ = Context.Items.Remove("displayName");
+            }
+            throw;
+        }
+
         // Subscribe before taking the snapshot so concurrent updates are either
         // included in it or delivered to the client's synchronization buffer.
         var joinResult = JoinRoomResult.From(room);
-        await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
-            .SendAsync("UserJoined", displayName, joinResult.Users, cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
+                .SendAsync(
+                    "UserJoined",
+                    displayName,
+                    joinResult.Users,
+                    joinResult.PresenceRevision,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "Presence notification failed for {RoomId}", parsedRoomId.Value);
+        }
 
         _logger.LogInformation("User joined {RoomId} ({Name}) as {RoomUser}", parsedRoomId.Value, room.Name.Value, displayName);
 
@@ -117,6 +146,11 @@ public sealed class RoomHub : Hub
 
         var room = GetRoomForParticipant(parsedRoomId, out var user);
 
+        if (updateBase64.Length > room.Limits.MaxEncodedUpdateBytes)
+        {
+            throw new HubException("LimitExceeded: Update size");
+        }
+
         byte[] update;
         try
         {
@@ -127,14 +161,9 @@ public sealed class RoomHub : Hub
             throw new HubException("Invalid Yjs payload");
         }
 
-        if (update.Length == 0)
-        {
-            throw new HubException("Update payload required");
-        }
-
         var author = user.Value;
 
-        var appendResult = room.AppendYjsUpdate(update, DateTimeOffset.UtcNow);
+        var appendResult = _sessions.Append(parsedRoomId, new(Context.ConnectionId), update);
 
         // Once appended, the update belongs to the room even if its author disconnects.
         var cancellationToken = CancellationToken.None;
@@ -158,6 +187,18 @@ public sealed class RoomHub : Hub
     [HubMethodName("GetDocumentRevision")]
     public long GetDocumentRevision(string roomId)
         => GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).DocumentRevision.Value;
+
+    /// <summary>
+    /// Returns all revisions from one atomic snapshot.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <returns>The current document, metadata, and presence revisions.</returns>
+    /// <exception cref="HubException">Thrown when the room or participant is not found.</exception>
+    [HubMethodName("GetRoomRevisions")]
+    public RoomRevisions GetRoomRevisions(string roomId)
+    {
+        return GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).GetRevisions();
+    }
 
     /// <summary>
     /// Returns an atomic document snapshot without repeating room registration.
@@ -186,7 +227,12 @@ public sealed class RoomHub : Hub
         long basedOnRevision)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
-        if (basedOnRevision < 0)
+        RoomDocumentRevision revision;
+        try
+        {
+            revision = new RoomDocumentRevision(basedOnRevision);
+        }
+        catch (ArgumentException)
         {
             throw new HubException("Invalid document revision");
         }
@@ -198,6 +244,12 @@ public sealed class RoomHub : Hub
 
         var room = GetRoomForParticipant(parsedRoomId, out _);
 
+        if (stateBase64.Length > room.Limits.MaxEncodedCheckpointBytes
+            || (textSnapshot?.Length ?? 0) > room.Limits.MaxSnapshotCharacters)
+        {
+            throw new HubException("LimitExceeded: Checkpoint size");
+        }
+
         byte[] state;
         try
         {
@@ -208,16 +260,12 @@ public sealed class RoomHub : Hub
             throw new HubException("Invalid Yjs payload");
         }
 
-        if (state.Length == 0)
-        {
-            throw new HubException("State payload required");
-        }
-
-        var accepted = room.TryCreateYjsCheckpoint(
-            new RoomDocumentRevision(basedOnRevision),
+        var accepted = _sessions.Checkpoint(
+            parsedRoomId,
+            new ConnectionId(Context.ConnectionId),
+            revision,
             state,
-            new RoomText(textSnapshot ?? string.Empty),
-            DateTimeOffset.UtcNow);
+            new RoomText(textSnapshot ?? string.Empty));
 
         if (!accepted)
         {
@@ -243,28 +291,30 @@ public sealed class RoomHub : Hub
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
 
-        if (string.IsNullOrWhiteSpace(language))
-        {
-            throw new HubException("Language required");
-        }
-
         var room = GetRoomForParticipant(parsedRoomId, out _);
 
         int newVersion;
+        long metadataRevision;
         RoomLanguage normalized;
         try
         {
             normalized = new RoomLanguage(language);
-            newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow, _languageValidator).Value;
+            var changed = _sessions.ChangeLanguage(room, new(Context.ConnectionId), normalized);
+            newVersion = changed.RoomVersion.Value;
+            metadataRevision = changed.MetadataRevision;
         }
         catch (ArgumentException)
         {
             throw new HubException("Invalid language");
         }
 
-        var cancellationToken = Context.ConnectionAborted;
         await Clients.Group(parsedRoomId.Value)
-            .SendAsync("LanguageUpdated", normalized.Value, newVersion, cancellationToken)
+            .SendAsync(
+                "LanguageUpdated",
+                normalized.Value,
+                newVersion,
+                metadataRevision,
+                CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -365,7 +415,7 @@ public sealed class RoomHub : Hub
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
 
-        await RemoveFromRoomAsync(parsedRoomId.Value, new ConnectionId(Context.ConnectionId), notify: true, Context.ConnectionAborted).ConfigureAwait(false);
+        await RemoveFromRoomAsync(parsedRoomId.Value, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -378,13 +428,16 @@ public sealed class RoomHub : Hub
         if (Context.Items.TryGetValue("roomId", out var roomIdObj) && roomIdObj is string roomId)
         {
             // ConnectionAborted is already canceled during disconnect; use a non-canceled token for cleanup/notifications.
-            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true, CancellationToken.None).ConfigureAwait(false);
+            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
         }
 
         await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
     }
 
-    private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify, CancellationToken cancellationToken)
+    private async Task RemoveFromRoomAsync(
+        string roomId,
+        ConnectionId connectionId,
+        bool notify)
     {
         if (!RoomId.TryParse(roomId, out var parsedRoomId))
         {
@@ -407,43 +460,50 @@ public sealed class RoomHub : Hub
         string? displayName = null;
         string[] usersSnapshot = [];
 
-        if (room.RemoveUser(connectionId, out var user))
+        var result = room.Leave(connectionId);
+        if (result.Removed)
         {
-            displayName = user.Value;
-            usersSnapshot = [.. room.CreateUsersSnapshot().Select(x => x.Value)];
+            displayName = result.User.Value;
+            usersSnapshot = [.. result.Users.Select(x => x.Value)];
         }
 
-        await Groups.RemoveFromGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Groups.RemoveFromGroupAsync(connectionId.Value, parsedRoomId.Value, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Keep cleanup context so disconnect can retry group removal.
+            Context.Items["roomId"] = parsedRoomId.Value;
+            throw;
+        }
 
         if (notify && displayName is not null)
         {
-            await Clients.Group(parsedRoomId.Value).SendAsync("UserLeft", displayName, usersSnapshot, cancellationToken).ConfigureAwait(false);
+            await Clients.Group(parsedRoomId.Value)
+                .SendAsync(
+                    "UserLeft",
+                    displayName,
+                    usersSnapshot,
+                    result.PresenceRevision,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
         }
     }
 
     private RoomState GetRoomForParticipant(RoomId roomId, out RoomUser user)
     {
-        if (!_roomManager.TryGetRoom(roomId, out var room))
+        try
         {
-            throw new HubException("Room not found");
+            return _sessions.GetParticipant(roomId, new(Context.ConnectionId), out user);
         }
-
-        if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out user))
-        {
-            throw new HubException("Join the room before changing it");
-        }
-
-        return room;
+        catch (RoomNotFoundException ex) { throw new HubException(ex.Message); }
+        catch (UnauthorizedAccessException ex) { throw new HubException(ex.Message); }
     }
 
     private static RoomId ParseRoomIdOrThrow(string roomId)
     {
-        if (string.IsNullOrWhiteSpace(roomId))
-        {
-            throw new HubException("Room id required");
-        }
-
         if (!RoomId.TryParse(roomId, out var parsedRoomId))
         {
             throw new HubException("Invalid room id");
@@ -453,7 +513,7 @@ public sealed class RoomHub : Hub
     }
 
     private readonly IRoomManager _roomManager;
-    private readonly ILanguageValidator _languageValidator;
+    private readonly IRoomSessionService _sessions;
     private readonly ILogger<RoomHub> _logger;
 }
 

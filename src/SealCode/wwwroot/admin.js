@@ -1,4 +1,5 @@
-﻿const roomsEl = document.getElementById('rooms');
+import { token } from './admin-token.js';
+const roomsEl = document.getElementById('rooms');
 const createBtn = document.getElementById('createRoom');
 const nameInput = document.getElementById('roomName');
 const langInput = document.getElementById('roomLanguage');
@@ -6,8 +7,9 @@ const resultEl = document.getElementById('createResult');
 
 function setLanguageOptions(selectEl, languages, selected) {
   const cleaned = Array.isArray(languages)
-    ? languages.map((language) => (typeof language === 'string' ? language.trim() : ''))
-      .filter((language) => language)
+    ? languages
+        .map((language) => (typeof language === 'string' ? language.trim() : ''))
+        .filter((language) => language)
     : [];
   const unique = [...new Set(cleaned)];
 
@@ -112,9 +114,13 @@ function renderRooms(rooms) {
     } else {
       del.addEventListener('click', async () => {
         if (!confirm('Delete this room?')) return;
-        const res = await fetch(`/admin/rooms/${room.RoomId}`, { method: 'DELETE' });
+        const res = await fetch(`/admin/rooms/${room.RoomId}`, {
+          method: 'DELETE',
+          headers: { 'X-CSRF-TOKEN': await token() }
+        });
         if (res.status === 403) {
-          resultEl.textContent = 'Only super admins can delete rooms created by other users.';
+          resultEl.textContent =
+            'Only super admins can delete rooms created by other users.';
           return;
         }
         if (!res.ok) {
@@ -145,7 +151,7 @@ createBtn.addEventListener('click', async () => {
 
   const res = await fetch('/admin/rooms', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': await token() },
     body: JSON.stringify({ name, language })
   });
 

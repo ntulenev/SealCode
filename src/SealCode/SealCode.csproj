@@ -32,4 +32,10 @@
 		<ProjectReference Include="..\Models\Models.csproj" />
 		<ProjectReference Include="..\Transport\Transport.csproj" />
 	</ItemGroup>
+  <Target Name="BuildClientAssets" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipClientBuild)' != 'true'">
+    <Exec Command="npm run build:client" WorkingDirectory="$(MSBuildProjectDirectory)/../.." />
+    <ItemGroup>
+      <Content Include="wwwroot/assets/**/*" Exclude="@(Content)" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -3,10 +3,13 @@ using Abstractions;
 using FluentAssertions;
 
 using Microsoft.Extensions.Logging;
-
-using Moq;
+using Microsoft.Extensions.Options;
 
 using Models;
+using Models.Configuration;
+using Models.Exceptions;
+
+using Moq;
 
 namespace Logic.Tests;
 
@@ -16,20 +19,7 @@ public sealed class RoomRegistryTests
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenLoggerIsNull()
     {
-        var notifier = new Mock<IRoomNotifier>(MockBehavior.Strict).Object;
-
-        var action = () => new RoomRegistry(null!, notifier);
-
-        action.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact(DisplayName = "CtorShouldThrowWhenNotifierIsNull")]
-    [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenNotifierIsNull()
-    {
-        var logger = new Mock<ILogger<RoomRegistry>>(MockBehavior.Strict).Object;
-
-        var action = () => new RoomRegistry(logger, null!);
+        var action = () => new RoomRegistry(null!, CreateSettings());
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -72,47 +62,29 @@ public sealed class RoomRegistryTests
     [Trait("Category", "Unit")]
     public async Task DeleteRoomAsyncShouldReturnFalseWhenRoomIsMissing()
     {
-        var notifier = new Mock<IRoomNotifier>(MockBehavior.Strict);
-        var registry = CreateRegistry(notifier.Object);
+        var registry = CreateRegistry();
         var missingRoomId = RoomId.New();
-        var notifierCalls = 0;
-        using var cts = new CancellationTokenSource();
 
-        notifier.Setup(n => n.RoomKilledAsync(
-                It.IsAny<RoomId>(),
-                It.IsAny<RoomDeletionReason>(),
-                It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => notifierCalls++)
-            .Returns(Task.CompletedTask);
+        using var cts = new CancellationTokenSource();
 
         var result = await registry.DeleteRoomAsync(missingRoomId, new RoomDeletionReason("cleanup"), cts.Token);
 
         result.Should().BeFalse();
-        notifierCalls.Should().Be(0);
     }
 
-    [Fact(DisplayName = "DeleteRoomAsyncShouldRemoveRoomAndNotify")]
+    [Fact(DisplayName = "DeleteRoomAsyncShouldRemoveRoom")]
     [Trait("Category", "Unit")]
-    public async Task DeleteRoomAsyncShouldRemoveRoomAndNotify()
+    public async Task DeleteRoomAsyncShouldRemoveRoom()
     {
-        var notifier = new Mock<IRoomNotifier>(MockBehavior.Strict);
-        var registry = CreateRegistry(notifier.Object);
+        var registry = CreateRegistry();
         var room = registry.CreateRoom(new RoomName("Room"), new RoomLanguage("csharp"), new AdminUser("admin"));
         var reason = new RoomDeletionReason("cleanup");
         using var cts = new CancellationTokenSource();
-        var notifierCalls = 0;
-
-        notifier.Setup(n => n.RoomKilledAsync(
-                It.Is<RoomId>(id => id == room.RoomId),
-                It.Is<RoomDeletionReason>(r => r == reason),
-                It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => notifierCalls++)
-            .Returns(Task.CompletedTask);
 
         var result = await registry.DeleteRoomAsync(room.RoomId, reason, cts.Token);
 
         result.Should().BeTrue();
-        notifierCalls.Should().Be(1);
+
         registry.TryGetRoom(room.RoomId, out _).Should().BeFalse();
     }
 
@@ -130,11 +102,40 @@ public sealed class RoomRegistryTests
         await action.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    private static RoomRegistry CreateRegistry(IRoomNotifier? notifier = null)
+    [Fact]
+    public async Task NotificationFailureAfterCommitStillReturnsSuccessAndClosesOldReference()
+    {
+        var notifier = new Mock<IRoomNotifier>();
+        using var request = new CancellationTokenSource();
+        notifier.Setup(n => n.RoomKilledAsync(It.IsAny<RoomId>(), It.IsAny<RoomDeletionReason>(), It.IsAny<CancellationToken>()))
+            .Callback(() => request.Cancel()).ThrowsAsync(new IOException("delivery failed"));
+        var registry = CreateRegistry();
+        var room = registry.CreateRoom(new("Room"), new("csharp"), new("admin"));
+        var manager = new RoomManager(
+            registry,
+            CreateSettings(),
+            notifier.Object,
+            new Mock<ILogger<RoomManager>>().Object);
+        Assert.Equal(RoomDeletionResult.Deleted, await manager.DeleteRoomAsync(room.RoomId, new("admin"), request.Token));
+        Assert.False(registry.TryGetRoom(room.RoomId, out _));
+        Assert.Throws<RoomNotFoundException>(() => room.AppendYjsUpdate([1], DateTimeOffset.UtcNow));
+        Assert.Throws<RoomNotFoundException>(() => room.AddUser(new("connection"), new("Alice"), 5));
+        Assert.False(await registry.DeleteRoomAsync(room.RoomId, new("closed"), CancellationToken.None));
+    }
+
+    private static RoomRegistry CreateRegistry()
     {
         var logger = new Mock<ILogger<RoomRegistry>>().Object;
-        var roomNotifier = notifier ?? new Mock<IRoomNotifier>(MockBehavior.Strict).Object;
 
-        return new RoomRegistry(logger, roomNotifier);
+        return new RoomRegistry(logger, CreateSettings());
     }
+
+    private static IOptions<ApplicationConfiguration> CreateSettings()
+        => Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers = [],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = 5
+        });
+
 }

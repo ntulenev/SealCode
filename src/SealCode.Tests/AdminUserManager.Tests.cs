@@ -4,17 +4,17 @@ using System.Text;
 
 using FluentAssertions;
 
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
-
-using Moq;
+using Microsoft.Extensions.Options;
 
 using Models;
 using Models.Configuration;
+
+using Moq;
 
 using SealCode.Security;
 
@@ -142,9 +142,11 @@ public sealed class AdminUserManagerTests
         context.Response.Headers.TryGetValue("Set-Cookie", out _).Should().BeFalse();
     }
 
-    [Fact(DisplayName = "TrySetCurrentUserShouldAppendCookieWhenValid")]
+    [Theory(DisplayName = "TrySetCurrentUserShouldAppendCookieWhenValid")]
+    [InlineData("Admin")]
+    [InlineData(" Admin ")]
     [Trait("Category", "Unit")]
-    public async Task TrySetCurrentUserShouldAppendCookieWhenValid()
+    public async Task TrySetCurrentUserShouldAppendCookieWhenValid(string configuredName)
     {
         var context = new DefaultHttpContext();
         var authentication = new Mock<IAuthenticationService>(MockBehavior.Strict);
@@ -155,7 +157,13 @@ public sealed class AdminUserManagerTests
             .Returns(Task.CompletedTask).Verifiable();
         using var services = new ServiceCollection().AddSingleton(authentication.Object).BuildServiceProvider();
         context.RequestServices = services;
-        var manager = CreateManager(context);
+        var settings = CreateSettings();
+        settings.Value.AdminUsers[0] = new()
+        {
+            Name = configuredName,
+            Password = "pass1"
+        };
+        var manager = new AdminUserManager(settings, context);
         SetForm(context, "name=Admin&password=pass1");
 
         var result = await manager.TrySetCurrentUserAsync(CancellationToken.None);
@@ -206,7 +214,7 @@ public sealed class AdminUserManagerTests
 
     private static void SetAuthenticatedUser(DefaultHttpContext context, string name)
         => context.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, name)], CookieAuthenticationDefaults.AuthenticationScheme));
+            [new Claim(ClaimTypes.Name, name), new Claim("credential", AdminUserManager.CredentialStamp(CreateSettings().Value.AdminUsers.FirstOrDefault(user => user.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) ?? new() { Name = name }))], CookieAuthenticationDefaults.AuthenticationScheme));
 
     private static IOptions<ApplicationConfiguration> CreateSettings() => Options.Create(new ApplicationConfiguration
     {

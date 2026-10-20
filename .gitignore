@@ -420,3 +420,12 @@ FodyWeavers.xsd
 # Playwright test artifacts
 test-results/
 playwright-report/
+
+# Reproducible client bundles
+src/SealCode/wwwroot/assets/
+
+.audit-dependencies.json
+.tools/
+coverage/
+
+.audit-results/
