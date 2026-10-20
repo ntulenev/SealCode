@@ -16,7 +16,7 @@ SealCode is a self-hosted collaborative code editor with real-time rooms. The ba
 SealCode uses Yjs (CRDT) to merge concurrent edits. Each client produces incremental updates that the server broadcasts to the room.
 
 **Quick Start**
-1. Install Node.js 20+ and .NET 10. Restore and build local browser assets:
+1. Install Node.js 20+ and .NET 10. Configure admin password hashes as described below, then restore and build local browser assets:
 
 ```bash
 npm ci
@@ -44,6 +44,8 @@ Open the room link in a browser and enter a display name.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 - `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
+
+The checked-in `appsettings.json` contains empty `PasswordHash` placeholders. Before starting the app, generate a hash for each admin with `dotnet run --project tools/password-hash` and set its `PasswordHash` locally or through environment variables (for example, `AdminUsers__0__PasswordHash`). Paste the generated hash, not the plain-text password. Empty hashes fail configuration validation. Do not commit your credentials.
 
 **Undo and redo**
 - `Ctrl+Z` / `Cmd+Z` undoes the current user's latest grouped text operation.
