@@ -1249,11 +1249,20 @@ connection.on('RoomKilled', closeRoom);
 languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
   if (!languageSelect.value) return;
+  const restoreRoomLanguage = () => {
+    if (roomView.currentLanguage === undefined) return;
+    languageSelect.value = roomView.currentLanguage;
+    setLanguage(roomView.currentLanguage);
+  };
+  if (connection.state !== signalR.HubConnectionState.Connected) {
+    restoreRoomLanguage();
+    return;
+  }
   setLanguage(languageSelect.value);
-  if (connection.state !== signalR.HubConnectionState.Connected) return;
   try {
     await connection.invoke('SetLanguage', roomId, languageSelect.value);
   } catch (err) {
+    restoreRoomLanguage();
     console.warn('Failed to update language.', err);
   }
 });
