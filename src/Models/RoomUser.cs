@@ -21,6 +21,8 @@ public readonly record struct RoomUser
             throw new ArgumentException("Display name is required", nameof(value));
         }
 
+        if (trimmed.Length > 64)
+            throw new ArgumentException("Display name must be at most 64 characters", nameof(value));
         Value = trimmed;
     }
 

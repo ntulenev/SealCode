@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 
 using Models.Exceptions;
+using Models.Configuration;
+using System.Diagnostics.Metrics;
 
 namespace Models;
 
@@ -20,6 +22,7 @@ public sealed class RoomState
     /// <param name="lastUpdatedUtc">The last updated timestamp in UTC.</param>
     /// <param name="createdBy">The admin that created the room.</param>
     /// <param name="yjsState">The serialized Yjs document state (full update).</param>
+    /// <param name="limits">Resource budgets.</param>
     public RoomState(
         RoomId roomId,
         RoomName name,
@@ -28,8 +31,10 @@ public sealed class RoomState
         RoomVersion version,
         DateTimeOffset lastUpdatedUtc,
         AdminUser createdBy,
-        byte[]? yjsState = null)
+        byte[]? yjsState = null,
+        RoomLimits? limits = null)
     {
+        _limits = limits ?? new RoomLimits();
         RoomId = roomId;
         Name = name;
         Language = language;
@@ -70,7 +75,13 @@ public sealed class RoomState
     /// <summary>
     /// Gets the serialized Yjs document state (full update).
     /// </summary>
-    public byte[] YjsState { get; private set; }
+    public byte[] YjsState { get => [.. _yjsState]; private set => _yjsState = value; }
+    private byte[] _yjsState = [];
+
+    /// <summary>Gets the retained journal size.</summary>
+    public long JournalBytes { get { lock (_versionGuard) return _journalBytes; } }
+    /// <summary>Gets the retained update count.</summary>
+    public int JournalCount { get { lock (_versionGuard) return _yjsUpdates.Count; } }
 
     /// <summary>
     /// Gets the latest CRDT document revision.
@@ -232,8 +243,18 @@ public sealed class RoomState
 
         lock (_versionGuard)
         {
+            if (4L * ((update.Length + 2) / 3) > _limits.MaxEncodedUpdateBytes
+                || _journalBytes + update.Length > _limits.MaxJournalBytes
+                || _yjsUpdates.Count >= _limits.MaxJournalCount)
+            {
+                _rejectedUpdates.Add(1);
+                throw new RoomLimitException();
+            }
             DocumentRevision = DocumentRevision.Next();
-            _yjsUpdates = _yjsUpdates.Add(new RoomDocumentUpdate(DocumentRevision, update));
+            _yjsUpdates.Add(new RoomDocumentUpdate(DocumentRevision, update));
+            _journalBytes += update.Length;
+            _journalSize.Add(update.Length);
+            _journalEntries.Add(1);
             Version = Version.Next();
             LastUpdatedUtc = updatedUtc;
             return new RoomDocumentAppendResult(DocumentRevision, Version);
@@ -267,9 +288,15 @@ public sealed class RoomState
                 return false;
             }
 
+            if (4L * ((state.Length + 2) / 3) > _limits.MaxEncodedCheckpointBytes
+                || text.Value.Length > _limits.MaxSnapshotCharacters)
+                throw new RoomLimitException();
             YjsState = [.. state];
             YjsCheckpointRevision = basedOnRevision;
-            _yjsUpdates = [];
+            _journalSize.Add(-_journalBytes);
+            _journalEntries.Add(-_yjsUpdates.Count);
+            _yjsUpdates.Clear();
+            _journalBytes = 0;
             Text = text;
             LastUpdatedUtc = updatedUtc;
             return true;
@@ -295,6 +322,14 @@ public sealed class RoomState
     private readonly Lock _addGuard = new();
     private readonly Lock _versionGuard = new();
     private ImmutableDictionary<ConnectionId, RoomUser> _connectedUsers = [];
-    private ImmutableArray<RoomDocumentUpdate> _yjsUpdates = [];
+    private readonly List<RoomDocumentUpdate> _yjsUpdates = [];
+    /// <summary>Gets the room resource budgets.</summary>
+    public RoomLimits Limits => _limits;
+    private readonly RoomLimits _limits;
+    private long _journalBytes;
+    private static readonly Meter _resourceMeter = new("SealCode.Rooms");
+    private static readonly Counter<long> _rejectedUpdates = _resourceMeter.CreateCounter<long>("room.updates.rejected");
+    private static readonly UpDownCounter<long> _journalSize = _resourceMeter.CreateUpDownCounter<long>("room.journal.bytes");
+    private static readonly UpDownCounter<long> _journalEntries = _resourceMeter.CreateUpDownCounter<long>("room.journal.count");
 }
 

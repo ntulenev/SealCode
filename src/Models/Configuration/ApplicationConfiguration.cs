@@ -7,6 +7,8 @@ namespace Models.Configuration;
 /// </summary>
 public sealed class ApplicationConfiguration
 {
+    /// <summary>Gets resource budgets.</summary>
+    public RoomLimits Limits { get; init; } = new();
     /// <summary>
     /// Gets or sets the admin users.
     /// </summary>

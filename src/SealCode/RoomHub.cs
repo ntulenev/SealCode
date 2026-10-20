@@ -56,6 +56,8 @@ public sealed class RoomHub : Hub
         }
 
         displayName = (displayName ?? string.Empty).Trim();
+        if (displayName.Length > 64)
+            throw new HubException("LimitExceeded: Display name must be at most 64 characters");
         if (string.IsNullOrWhiteSpace(displayName))
         {
             throw new HubException("Display name required");
@@ -117,6 +119,8 @@ public sealed class RoomHub : Hub
 
         var room = GetRoomForParticipant(parsedRoomId, out var user);
 
+        if (updateBase64.Length > room.Limits.MaxEncodedUpdateBytes)
+            throw new HubException("LimitExceeded: Update size");
         byte[] update;
         try
         {
@@ -198,6 +202,9 @@ public sealed class RoomHub : Hub
 
         var room = GetRoomForParticipant(parsedRoomId, out _);
 
+        if (stateBase64.Length > room.Limits.MaxEncodedCheckpointBytes
+            || (textSnapshot?.Length ?? 0) > room.Limits.MaxSnapshotCharacters)
+            throw new HubException("LimitExceeded: Checkpoint size");
         byte[] state;
         try
         {

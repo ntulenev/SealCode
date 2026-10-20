@@ -5,6 +5,7 @@ using Abstractions;
 using Logic;
 
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 
@@ -26,10 +27,12 @@ builder.Services.AddOptions<ApplicationConfiguration>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddSingleton<RoomResourceFilter>();
 builder.Services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
 
 builder.Services.AddSignalR(options =>
     {
+        options.AddFilter<RoomResourceFilter>();
         options.MaximumReceiveMessageSize = maxYjsMessageBytes;
         options.KeepAliveInterval = TimeSpan.FromSeconds(5);
         options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
@@ -147,7 +150,8 @@ app.MapGet("/features", (IOptions<ApplicationConfiguration> settings)
     => Results.Json(new
     {
         settings.Value.CollaborativeUndoEnabled,
-        MaxYjsMessageBytes = maxYjsMessageBytes
+        MaxYjsMessageBytes = maxYjsMessageBytes,
+        settings.Value.Limits
     }));
 
 app.MapPost("/admin/rooms",

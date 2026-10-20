@@ -5,6 +5,9 @@ using Abstractions;
 using Microsoft.Extensions.Logging;
 
 using Models;
+using Models.Configuration;
+using Models.Exceptions;
+using Microsoft.Extensions.Options;
 
 namespace Logic;
 
@@ -18,13 +21,15 @@ public sealed class RoomRegistry : IRoomRegistry
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="notifier">The room notifier.</param>
-    public RoomRegistry(ILogger<RoomRegistry> logger, IRoomNotifier notifier)
+    /// <param name="settings">Resource budgets.</param>
+    public RoomRegistry(ILogger<RoomRegistry> logger, IRoomNotifier notifier, IOptions<ApplicationConfiguration>? settings = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(notifier);
 
         _logger = logger;
         _notifier = notifier;
+        _limits = settings?.Value.Limits ?? new RoomLimits();
     }
 
     /// <inheritdoc />
@@ -33,22 +38,27 @@ public sealed class RoomRegistry : IRoomRegistry
     /// <inheritdoc />
     public RoomState CreateRoom(RoomName name, RoomLanguage language, AdminUser createdBy)
     {
-        var room = new RoomState(
-            RoomId.New(),
-            name,
-            language,
-            new RoomText(string.Empty),
-            new RoomVersion(1),
-            DateTimeOffset.UtcNow,
-            createdBy);
+        lock (_capacityGuard)
+        {
+            if (_rooms.Count >= _limits.MaxRooms)
+                throw new RoomLimitException();
+            var room = new RoomState(
+                RoomId.New(),
+                name,
+                language,
+                new RoomText(string.Empty),
+                new RoomVersion(1),
+                DateTimeOffset.UtcNow,
+                createdBy, limits: _limits);
 
-        _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
+            _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
 
 #pragma warning disable CA1873 // Avoid potentially expensive logging
-        _logger.LogInformation("Room created {RoomId} ({Name}) by {CreatedBy}", room.RoomId.Value, room.Name.Value, room.CreatedBy.Name);
+            _logger.LogInformation("Room created {RoomId} ({Name}) by {CreatedBy}", room.RoomId.Value, room.Name.Value, room.CreatedBy.Name);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
-        return room;
+            return room;
+        }
     }
 
     /// <inheritdoc />
@@ -73,6 +83,8 @@ public sealed class RoomRegistry : IRoomRegistry
         return true;
     }
 
+    private readonly Lock _capacityGuard = new();
+    private readonly RoomLimits _limits;
     private ImmutableDictionary<RoomId, RoomState> _rooms = [];
     private readonly ILogger<RoomRegistry> _logger;
     private readonly IRoomNotifier _notifier;

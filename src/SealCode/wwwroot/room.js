@@ -53,6 +53,8 @@ let monacoBinding = null;
 let undoHistory = null;
 let pendingYjsStateTimer = null;
 let pendingYjsUpdates = [];
+let sendingBlocked = false;
+const maxPendingBytes = 8 * 1024 * 1024;
 let yjsSendInFlight = false;
 let yjsSession = 0;
 let checkpointTimer = null;
@@ -534,7 +536,17 @@ function setLanguageReadOnly(isReadOnly) {
 
 function scheduleYjsUpdateSend(update) {
   if (roomClosed || !ydoc) return;
-  if (update?.length > 0) pendingYjsUpdates.push(update);
+  if (sendingBlocked) return;
+  if (update?.length > 0) {
+    if (pendingYjsUpdates.reduce((sum, item) => sum + item.length, 0) + update.length > maxPendingBytes
+        || pendingYjsUpdates.length >= 2048) {
+      sendingBlocked = true;
+      setEditorReadOnly(true);
+      showSyncError('queue-limit', 'Unsent changes reached the local limit. Copy your text before reloading.');
+      return;
+    }
+    pendingYjsUpdates.push(update);
+  }
   if (pendingYjsUpdates.length === 0 || pendingYjsStateTimer || yjsSendInFlight) return;
   pendingYjsStateTimer = setTimeout(async () => {
     pendingYjsStateTimer = null;
@@ -563,6 +575,13 @@ function scheduleYjsUpdateSend(update) {
         return;
       }
       pendingYjsUpdates.unshift(...updates);
+      if (String(err).includes('LimitExceeded')) {
+        sendingBlocked = true;
+        setEditorReadOnly(true);
+        showSyncError('server-limit', 'The room limit was reached. Copy your text before reloading; some changes have not synced.');
+        return;
+      }
+      if (String(err).includes('RateLimited')) await new Promise(resolve => setTimeout(resolve, 1100));
       console.error('Failed to send Yjs update.', err);
       showSyncError('transport', 'Changes could not be sent. Retrying; keep this page open.');
     } finally {
@@ -776,7 +795,8 @@ async function sendYjsCheckpoint() {
       closeRoom('Room not found.');
       return;
     }
-    retry = true;
+    retry = !String(err).includes('LimitExceeded');
+    if (!retry) oversizedCheckpointRevision = basedOnRevision;
     console.warn('Failed to checkpoint Yjs state.', err);
   } finally {
     if (session === yjsSession && !roomClosed) {
@@ -794,6 +814,7 @@ function disposeYjs() {
   if (pendingYjsStateTimer) clearTimeout(pendingYjsStateTimer);
   pendingYjsStateTimer = null;
   pendingYjsUpdates = [];
+  sendingBlocked = false;
   yjsSendInFlight = false;
   recoveryInFlight = false;
   if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -1114,6 +1135,12 @@ function flushBufferedYjsMessages() {
 
 connection.on('YjsUpdated', (updateBase64, documentRevision, roomVersion, author) => {
   if (isSynchronizingYjs) {
+    if (bufferedYjsMessages.length >= 2048 || bufferedYjsMessages.reduce((sum, item) => sum + item.updateBase64.length, 0) + updateBase64.length > maxPendingBytes) {
+      // The authoritative journal is retained; discard only this delivery buffer and recover.
+      bufferedYjsMessages.length = 0;
+      scheduleYjsRecovery(250);
+      return;
+    }
     bufferedYjsMessages.push({ updateBase64, documentRevision, roomVersion, author });
     return;
   }
