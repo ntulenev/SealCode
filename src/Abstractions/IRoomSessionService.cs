@@ -68,7 +68,7 @@ public interface IRoomSessionService
     /// <exception cref="ArgumentException">Thrown when the language is not allowed.</exception>
     /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
     /// <exception cref="UnauthorizedAccessException">Thrown when the connection is not a participant.</exception>
-    (RoomVersion Version, long Revision) ChangeLanguage(
+    RoomLanguageChangeResult ChangeLanguage(
         RoomState room,
         ConnectionId connection,
         RoomLanguage language);

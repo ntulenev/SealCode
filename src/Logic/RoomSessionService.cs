@@ -67,7 +67,7 @@ public sealed class RoomSessionService : IRoomSessionService
     }
 
     /// <inheritdoc />
-    public (RoomVersion Version, long Revision) ChangeLanguage(
+    public RoomLanguageChangeResult ChangeLanguage(
         RoomState room,
         ConnectionId connection,
         RoomLanguage language)

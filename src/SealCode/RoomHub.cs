@@ -195,15 +195,9 @@ public sealed class RoomHub : Hub
     /// <returns>The current document, metadata, and presence revisions.</returns>
     /// <exception cref="HubException">Thrown when the room or participant is not found.</exception>
     [HubMethodName("GetRoomRevisions")]
-    public object GetRoomRevisions(string roomId)
+    public RoomRevisions GetRoomRevisions(string roomId)
     {
-        var (document, metadata, presence) = GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).GetRevisions();
-        return new
-        {
-            DocumentRevision = document,
-            MetadataRevision = metadata,
-            PresenceRevision = presence
-        };
+        return GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).GetRevisions();
     }
 
     /// <summary>
@@ -306,8 +300,8 @@ public sealed class RoomHub : Hub
         {
             normalized = new RoomLanguage(language);
             var changed = _sessions.ChangeLanguage(room, new(Context.ConnectionId), normalized);
-            newVersion = changed.Version.Value;
-            metadataRevision = changed.Revision;
+            newVersion = changed.RoomVersion.Value;
+            metadataRevision = changed.MetadataRevision;
         }
         catch (ArgumentException)
         {
@@ -466,11 +460,11 @@ public sealed class RoomHub : Hub
         string? displayName = null;
         string[] usersSnapshot = [];
 
-        var (removed, leftUser, leftUsers, leftRevision) = room.Leave(connectionId);
-        if (removed)
+        var result = room.Leave(connectionId);
+        if (result.Removed)
         {
-            displayName = leftUser.Value;
-            usersSnapshot = [.. leftUsers.Select(x => x.Value)];
+            displayName = result.User.Value;
+            usersSnapshot = [.. result.Users.Select(x => x.Value)];
         }
 
         try
@@ -491,7 +485,7 @@ public sealed class RoomHub : Hub
                     "UserLeft",
                     displayName,
                     usersSnapshot,
-                    leftRevision,
+                    result.PresenceRevision,
                     CancellationToken.None)
                 .ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);

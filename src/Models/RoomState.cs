@@ -404,14 +404,14 @@ public sealed class RoomState
     /// <exception cref="ArgumentNullException">Thrown when the validator is null.</exception>
     /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
     /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
-    public (RoomVersion Version, long Revision) ChangeLanguage(
+    public RoomLanguageChangeResult ChangeLanguage(
         RoomLanguage language,
         DateTimeOffset now,
         ILanguageValidator validator)
     {
         lock (_versionGuard)
         {
-            return (UpdateLanguage(language, now, validator), MetadataRevision);
+            return new RoomLanguageChangeResult(UpdateLanguage(language, now, validator), MetadataRevision);
         }
     }
 
@@ -494,7 +494,7 @@ public sealed class RoomState
     /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the validator is null.</exception>
     /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
-    public (RoomVersion Version, long Revision) LanguageForParticipant(
+    public RoomLanguageChangeResult LanguageForParticipant(
         ConnectionId connection,
         RoomLanguage language,
         DateTimeOffset now,
@@ -512,12 +512,12 @@ public sealed class RoomState
     /// </summary>
     /// <returns>The current document, language, and membership revisions.</returns>
     /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
-    public (long Document, long Metadata, long Presence) GetRevisions()
+    public RoomRevisions GetRevisions()
     {
         lock (_versionGuard)
         {
             EnsureOpen();
-            return (DocumentRevision.Value, MetadataRevision, PresenceRevision);
+            return new RoomRevisions(DocumentRevision.Value, MetadataRevision, PresenceRevision);
         }
     }
 
@@ -526,12 +526,12 @@ public sealed class RoomState
     /// </summary>
     /// <param name="connection">The participant connection identifier.</param>
     /// <returns>Whether a user was removed, the removed user, remaining users, and presence revision.</returns>
-    public (bool Removed, RoomUser User, RoomUser[] Users, long Revision) Leave(ConnectionId connection)
+    public RoomLeaveResult Leave(ConnectionId connection)
     {
         lock (_versionGuard)
         {
             var removed = RemoveUser(connection, out var user);
-            return (removed, user, CreateUsersSnapshot(), PresenceRevision);
+            return new RoomLeaveResult(removed, user, CreateUsersSnapshot(), PresenceRevision);
         }
     }
 
