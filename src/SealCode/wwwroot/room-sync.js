@@ -1,3 +1,12 @@
+/** Decides whether journal growth warrants a checkpoint from this participant. */
+export function shouldWriteCheckpoint({ documentRevision, checkpointRevision, bytesSinceCheckpoint,
+  isLatestAuthor, minRevisions = 64, minBytes = 256 * 1024, fallbackFactor = 2 }) {
+  if (documentRevision <= checkpointRevision) return false;
+  const factor = isLatestAuthor ? 1 : fallbackFactor;
+  return documentRevision - checkpointRevision >= minRevisions * factor ||
+    bytesSinceCheckpoint >= minBytes * factor;
+}
+
 /** Bounded transport queue. No DOM, Yjs singleton, or network globals. */
 export class UpdateQueue {
   constructor({
@@ -209,6 +218,7 @@ export class SnapshotRecovery {
 /** Checkpoint state is scoped to one document session and revision. */
 export class CheckpointWriter {
   constructor({
+    delay = 400,
     scheduler,
     ready,
     capture,
@@ -220,6 +230,7 @@ export class CheckpointWriter {
     onError
   }) {
     Object.assign(this, {
+      delay,
       scheduler,
       ready,
       capture,
@@ -243,7 +254,7 @@ export class CheckpointWriter {
     )
       return;
     this.timer = true;
-    this.scheduler.schedule('checkpoint', 400, () => this.run());
+    this.scheduler.schedule('checkpoint', this.delay, () => this.run());
   }
   async run() {
     this.timer = false;
@@ -254,7 +265,7 @@ export class CheckpointWriter {
     this.inFlight = true;
     try {
       const accepted = await this.send(this.payload(revision));
-      if (this.current(context) && accepted) this.onSuccess();
+      if (this.current(context) && accepted) this.onSuccess(revision);
     } catch (error) {
       if (!this.current(context)) return;
       const permanent = /LimitExceeded|too large/.test(String(error));

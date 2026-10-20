@@ -27,6 +27,7 @@ import {
   UpdateQueue,
   SyncScheduler,
   SnapshotRecovery,
+  shouldWriteCheckpoint,
   CheckpointWriter
 } from './room-sync.js';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
@@ -89,12 +90,23 @@ const maxPendingBytes = 8 * 1024 * 1024;
 let yjsSession = 0;
 let currentDocumentRevision = 0;
 let highestDocumentRevisionSeen = 0;
+let knownCheckpointRevision = 0;
+let latestRevisionAuthoredLocally = false;
+const checkpointUpdateBytes = new Map();
+function noteCheckpointRevision(revision) {
+  if (!Number.isSafeInteger(revision) || revision <= knownCheckpointRevision) return;
+  knownCheckpointRevision = revision;
+  for (const key of checkpointUpdateBytes.keys()) {
+    if (key <= revision) checkpointUpdateBytes.delete(key);
+  }
+}
 const pendingDocumentRevisions = new Set();
 let isSynchronizingYjs = false;
 let synchronizationEpoch = 0;
 const bufferedYjsMessages = [];
 let roomClosed = false;
 let hasJoinedRoom = false;
+let lastSentSelectionMultiLine;
 let isRejoiningRoom = false;
 let rejoinRetryTimer = null;
 let rejoinRetryAttempt = 0;
@@ -209,6 +221,7 @@ const recoveryController = new SnapshotRecovery({
   }
 });
 const checkpointWriter = new CheckpointWriter({
+  delay: 1000,
   scheduler: syncScheduler,
   ready: () =>
     !roomClosed &&
@@ -221,6 +234,13 @@ const checkpointWriter = new CheckpointWriter({
     !updateSender.pending.length &&
     !updateSender.timer &&
     !updateSender.inFlight &&
+    !updateSender.blocked &&
+    shouldWriteCheckpoint({
+      documentRevision: currentDocumentRevision,
+      checkpointRevision: knownCheckpointRevision,
+      bytesSinceCheckpoint: [...checkpointUpdateBytes.values()].reduce((sum, bytes) => sum + bytes, 0),
+      isLatestAuthor: latestRevisionAuthoredLocally
+    }) &&
     connection.state === signalR.HubConnectionState.Connected,
   capture: captureSyncContext,
   current: isCurrentSyncContext,
@@ -237,7 +257,10 @@ const checkpointWriter = new CheckpointWriter({
     return args;
   },
   send: (args) => connection.invoke('CheckpointYjs', ...args),
-  onSuccess: () => clearSyncError('checkpoint-size'),
+  onSuccess: (revision) => {
+    noteCheckpointRevision(revision);
+    clearSyncError('checkpoint-size');
+  },
   onError: (error, permanent) => {
     if (isRoomNotFound(error)) return closeRoom('Room not found.');
     if (permanent)
@@ -752,6 +775,12 @@ function applyYjsSyncPayload(text, stateBase64, updates) {
 function resetDocumentRevisionState(documentRevision, checkpointRevision, updates) {
   const latestRevision = Number(documentRevision);
   const baseRevision = Number(checkpointRevision);
+  noteCheckpointRevision(baseRevision);
+  checkpointUpdateBytes.clear();
+  latestRevisionAuthoredLocally = false;
+  for (const item of updates) {
+    if (item.revision > knownCheckpointRevision) checkpointUpdateBytes.set(item.revision, item.update.length);
+  }
   currentDocumentRevision =
     Number.isSafeInteger(latestRevision) && latestRevision >= 0 ? latestRevision : 0;
   highestDocumentRevisionSeen = currentDocumentRevision;
@@ -804,6 +833,9 @@ function scheduleYjsCheckpoint() {
 }
 
 function disposeYjs() {
+  knownCheckpointRevision = 0;
+  latestRevisionAuthoredLocally = false;
+  checkpointUpdateBytes.clear();
   yjsSession += 1;
   if (updateSender.timer) clearTimeout(updateSender.timer);
   updateSender.timer = null;
@@ -954,7 +986,11 @@ function initMonaco() {
     const sel = editor.getSelection();
     if (!sel) return;
     const isMultiLine = sel.startLineNumber !== sel.endLineNumber;
+    markSelecting(displayName, isMultiLine);
+    if (lastSentSelectionMultiLine === isMultiLine) return;
+    lastSentSelectionMultiLine = isMultiLine;
     connection.invoke('UpdateSelection', roomId, isMultiLine).catch((err) => {
+      lastSentSelectionMultiLine = undefined;
       console.warn('Failed to send selection update.', err);
     });
   });
@@ -1004,6 +1040,7 @@ async function joinRoom() {
     currentVersion = Math.max(currentVersion, version);
     versionNumberEl.textContent = currentVersion;
     hasJoinedRoom = true;
+    lastSentSelectionMultiLine = undefined;
     scheduleYjsRecovery();
     rejoinRetryAttempt = 0;
     clearRejoinRetryTimer();
@@ -1110,6 +1147,11 @@ function handleYjsUpdated(updateBase64, documentRevision, roomVersion, author) {
   const update = uint8FromBase64(updateBase64);
   if (update.length === 0) return;
   applyYjsUpdate(update, remoteYjsOrigin);
+  const revision = Number(documentRevision);
+  if (Number.isSafeInteger(revision) && revision > 0) {
+    if (revision > highestDocumentRevisionSeen) latestRevisionAuthoredLocally = author === displayName;
+    if (revision > knownCheckpointRevision) checkpointUpdateBytes.set(revision, updateBase64.length);
+  }
   noteDocumentRevision(documentRevision);
   if (model && ytext && model.getValue() !== ytext.toString()) {
     console.error('Monaco and Yjs diverged after applying a room update.', {
@@ -1154,6 +1196,11 @@ connection.on('YjsUpdated', (updateBase64, documentRevision, roomVersion, author
   handleYjsUpdated(updateBase64, documentRevision, roomVersion, author);
 });
 
+connection.on('YjsCheckpointed', (revision) => {
+  if (!Number.isSafeInteger(revision) || revision <= 0) return;
+  noteCheckpointRevision(revision);
+});
+
 connection.on('LanguageUpdated', (language, version, revision) => {
   if (!roomView.updateLanguage(language, Number(revision))) return;
   languageSelect.value = language;
@@ -1183,6 +1230,7 @@ function isRoomNotFound(error) {
 
 function closeRoom(reason) {
   roomClosed = true;
+  lastSentSelectionMultiLine = undefined;
   synchronizationEpoch += 1;
   isSynchronizingYjs = false;
   hasJoinedRoom = false;
@@ -1201,11 +1249,20 @@ connection.on('RoomKilled', closeRoom);
 languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
   if (!languageSelect.value) return;
+  const restoreRoomLanguage = () => {
+    if (roomView.currentLanguage === undefined) return;
+    languageSelect.value = roomView.currentLanguage;
+    setLanguage(roomView.currentLanguage);
+  };
+  if (connection.state !== signalR.HubConnectionState.Connected) {
+    restoreRoomLanguage();
+    return;
+  }
   setLanguage(languageSelect.value);
-  if (connection.state !== signalR.HubConnectionState.Connected) return;
   try {
     await connection.invoke('SetLanguage', roomId, languageSelect.value);
   } catch (err) {
+    restoreRoomLanguage();
     console.warn('Failed to update language.', err);
   }
 });

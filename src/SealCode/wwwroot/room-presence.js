@@ -4,11 +4,13 @@ export class RevisionedRoomView {
     this.language = language;
     this.users = users;
     this.languageRevision = -1;
+    this.currentLanguage = undefined;
     this.presenceRevision = -1;
   }
   updateLanguage(language, revision) {
     if (!Number.isSafeInteger(revision) || revision < this.languageRevision) return false;
     this.languageRevision = revision;
+    this.currentLanguage = language;
     this.language(language);
     return true;
   }

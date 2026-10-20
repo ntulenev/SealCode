@@ -32,7 +32,7 @@ internal static class AdminEndpoints
             return await adminUserManager.TrySetCurrentUserAsync(cancellationToken).ConfigureAwait(false)
                 ? Results.Redirect("/admin")
                 : Results.Redirect("/admin/login?error=1");
-        });
+        }).AddEndpointFilter(app.Services.GetRequiredService<AdminHttpSecurity>().FilterLoginAsync);
 
         _ = app.MapPost("/admin/logout", async (IAdminUserManager adminUserManager) =>
         {

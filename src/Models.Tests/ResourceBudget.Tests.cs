@@ -5,6 +5,22 @@ namespace Models.Tests;
 
 public sealed class ResourceBudgetTests
 {
+    [Fact]
+    public void NewConnectionLimitDefaultsToThirty()
+    {
+        Assert.Equal(30, new RoomLimits().NewConnectionsPerSourcePerMinute);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10001)]
+    public void NewConnectionLimitRejectsOutOfRangeValues(int value)
+    {
+        var limits = new RoomLimits { NewConnectionsPerSourcePerMinute = value };
+        Assert.False(System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            limits, new(limits), [], validateAllProperties: true));
+    }
+
     private static RoomState Create(RoomLimits limits) => new(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch, new("admin"), limits: limits);
 
     [Theory]

@@ -295,7 +295,14 @@ public sealed class RoomHubTests
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
-        using var hub = CreateHub(roomManager.Object);
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        proxy.Setup(p => p.SendCoreAsync("YjsCheckpointed",
+            It.Is<object?[]>(args => args.Length == 1 && (long)args[0]! == 1L), CancellationToken.None))
+            .Returns(Task.CompletedTask).Verifiable();
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        clients.Setup(c => c.GroupExcept(DefaultRoomId, It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
+            .Returns(proxy.Object).Verifiable();
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object);
 
         var accepted = await hub.CheckpointYjsAsync(
             DefaultRoomId,
@@ -304,6 +311,8 @@ public sealed class RoomHubTests
             1);
 
         accepted.Should().BeTrue();
+        proxy.Verify();
+        clients.Verify();
         room.Text.Value.Should().Be("merged");
         room.YjsState.Should().Equal([3, 4]);
         room.YjsCheckpointRevision.Value.Should().Be(1);
@@ -320,15 +329,17 @@ public sealed class RoomHubTests
         room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
         room.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
-        using var hub = CreateHub(roomManager.Object);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object);
 
         var accepted = await hub.CheckpointYjsAsync(
             DefaultRoomId,
-            Convert.ToBase64String([3]),
+            "invalid base64!",
             "stale",
             1);
 
         accepted.Should().BeFalse();
+        clients.VerifyNoOtherCalls();
         room.Text.Value.Should().BeEmpty();
         room.CreateYjsSyncState().Updates.Should().HaveCount(2);
     }
@@ -469,7 +480,8 @@ public sealed class RoomHubTests
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
+        clients.Setup(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
             .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
