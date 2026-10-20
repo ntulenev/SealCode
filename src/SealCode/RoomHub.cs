@@ -220,7 +220,7 @@ public sealed class RoomHub : Hub
     /// <returns>True when the checkpoint was accepted; otherwise false.</returns>
     /// <exception cref="HubException">Thrown when inputs are invalid or the room is not found.</exception>
     [HubMethodName("CheckpointYjs")]
-    public Task<bool> CheckpointYjsAsync(
+    public async Task<bool> CheckpointYjsAsync(
         string roomId,
         string stateBase64,
         string textSnapshot,
@@ -250,6 +250,14 @@ public sealed class RoomHub : Hub
             throw new HubException("LimitExceeded: Checkpoint size");
         }
 
+        if (revision != room.DocumentRevision)
+        {
+            _logger.LogDebug(
+                "Ignored stale Yjs checkpoint for {RoomId}: based on {BasedOnRevision}, current {DocumentRevision}",
+                parsedRoomId.Value, basedOnRevision, room.DocumentRevision.Value);
+            return false;
+        }
+
         byte[] state;
         try
         {
@@ -276,7 +284,19 @@ public sealed class RoomHub : Hub
                 room.DocumentRevision.Value);
         }
 
-        return Task.FromResult(accepted);
+        if (accepted)
+        {
+            try
+            {
+                await Clients.GroupExcept(roomId, Context.ConnectionId)
+                    .SendAsync("YjsCheckpointed", basedOnRevision, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.LogWarning(ex, "Failed to broadcast Yjs checkpoint for {RoomId}", roomId);
+            }
+        }
+        return accepted;
     }
 
     /// <summary>

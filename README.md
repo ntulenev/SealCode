@@ -55,6 +55,14 @@ The checked-in `appsettings.json` contains empty `PasswordHash` placeholders. Be
   history, while leaving or reloading clears it.
 
 **Synchronization limits**
+
+Checkpoint writers wait 1 second and compact after 64 revisions or 256 KiB of
+Base64 journal updates. The latest author writes first; other participants use
+2x thresholds if the author leaves. These thresholds remain well below the
+2048-entry / 4 MiB decoded journal budgets. Accepted checkpoints announce
+`YjsCheckpointed(checkpointRevision)` to other participants; stale revisions
+are rejected before Base64 decoding, with the locked check remaining authoritative.
+
 - SignalR accepts messages up to 16 MiB. The client checks the complete UTF-8
   JSON message, including the full CRDT state and text in a checkpoint, before sending.
 - A checkpoint over the limit is skipped with a visible warning; incremental

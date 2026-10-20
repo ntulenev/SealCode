@@ -5,6 +5,7 @@ import {
   UpdateQueue,
   SyncScheduler,
   SnapshotRecovery,
+  shouldWriteCheckpoint,
   CheckpointWriter
 } from '../../src/SealCode/wwwroot/room-sync.js';
 
@@ -240,4 +241,31 @@ test('independent metadata revisions reject reversed language and presence event
   });
   assert.equal(languages.at(-1), 'javascript');
   assert.deepEqual(users.at(-1), []);
+});
+
+for (const [label, revisions, bytes, author, expected] of [
+  ['below thresholds', 63, 0, true, false],
+  ['author revision threshold', 64, 0, true, true],
+  ['author byte threshold', 1, 256 * 1024, true, true],
+  ['observer at author threshold', 64, 256 * 1024, false, false],
+  ['observer revision fallback', 128, 0, false, true],
+  ['observer byte fallback', 1, 512 * 1024, false, true],
+  ['same revision', 0, 512 * 1024, true, false],
+  ['older revision', -1, 512 * 1024, true, false]
+]) {
+  test(`checkpoint policy: ${label}`, () => {
+    assert.equal(shouldWriteCheckpoint({ documentRevision: 10 + revisions,
+      checkpointRevision: 10, bytesSinceCheckpoint: bytes, isLatestAuthor: author }), expected);
+  });
+}
+
+test('checkpoint writer uses its configured delay', () => {
+  let actualDelay;
+  const writer = new CheckpointWriter({
+    delay: 1000,
+    scheduler: { schedule: (key, delay) => { actualDelay = delay; } },
+    ready: () => true, revision: () => 64
+  });
+  writer.schedule();
+  assert.equal(actualDelay, 1000);
 });

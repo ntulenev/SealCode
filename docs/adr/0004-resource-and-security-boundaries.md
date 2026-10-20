@@ -89,3 +89,10 @@ it does not permit inline scripts/eval or remote CDN scripts. Browser tests cove
 worker execution and CSP violations. CI runs server and client tests, Chromium,
 production HTTPS, merged server coverage, separate JS coverage, and dependency
 audits. Traces/coverage contain disposable fixtures rather than user configuration.
+
+Checkpoint writers wait 1 second and compact after 64 revisions or 256 KiB of
+Base64 journal updates. The latest author writes first; other participants use
+2x thresholds if the author leaves. These thresholds remain well below the
+2048-entry / 4 MiB decoded journal budgets. Accepted checkpoints announce
+`YjsCheckpointed(checkpointRevision)` to other participants; stale revisions
+are rejected before Base64 decoding, with the locked check remaining authoritative.
