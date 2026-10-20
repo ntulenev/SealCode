@@ -75,7 +75,8 @@ public sealed class RoomState
     /// <summary>
     /// Gets the serialized Yjs document state (full update).
     /// </summary>
-    public byte[] YjsState {
+    public byte[] YjsState
+    {
         get => [.. _yjsState];
         private set => _yjsState = value;
     }
@@ -83,7 +84,8 @@ public sealed class RoomState
     /// <summary>
     /// Gets the retained journal size.
     /// </summary>
-    public long JournalBytes {
+    public long JournalBytes
+    {
         get
         {
             lock (_versionGuard)
@@ -96,7 +98,8 @@ public sealed class RoomState
     /// <summary>
     /// Gets the retained update count.
     /// </summary>
-    public int JournalCount {
+    public int JournalCount
+    {
         get
         {
             lock (_versionGuard)
