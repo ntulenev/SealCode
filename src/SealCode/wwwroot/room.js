@@ -910,6 +910,9 @@ connection.onreconnected(async () => {
   setStatus('connected');
 });
 connection.onreconnecting(() => {
+  recoveryController.reset();
+  checkpointWriter.reset();
+  syncScheduler.reset();
   clearRejoinRetryTimer();
   isRejoiningRoom = false;
   setStatus('reconnecting');
@@ -917,6 +920,9 @@ connection.onreconnecting(() => {
   setLanguageReadOnly(true);
 });
 connection.onclose(() => {
+  recoveryController.reset();
+  checkpointWriter.reset();
+  syncScheduler.reset();
   clearRejoinRetryTimer();
   isRejoiningRoom = false;
   setStatus('disconnected');
