@@ -1,6 +1,7 @@
 using Abstractions;
 
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 using Models;
 using Models.Configuration;
@@ -18,11 +19,15 @@ public sealed class RoomManager : IRoomManager
     /// </summary>
     /// <param name="registry">The room registry.</param>
     /// <param name="settings">The application settings.</param>
-    public RoomManager(IRoomRegistry registry, IOptions<ApplicationConfiguration> settings)
+    /// <param name="notifier">Room closure transport.</param>
+    /// <param name="logger">Operational diagnostics.</param>
+    public RoomManager(IRoomRegistry registry, IOptions<ApplicationConfiguration> settings, IRoomNotifier? notifier = null, ILogger<RoomManager>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(settings);
         _registry = registry;
+        _notifier = notifier;
+        _logger = logger;
         _maxUsersPerRoom = Math.Clamp(settings.Value.MaxUsersPerRoom, 1, 5);
     }
 
@@ -72,9 +77,21 @@ public sealed class RoomManager : IRoomManager
             roomId,
             new RoomDeletionReason("Room deleted by admin"),
             cancellationToken).ConfigureAwait(false);
+        if (deleted && _notifier is not null)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            { await _notifier.RoomKilledAsync(roomId, new("Room deleted by admin"), timeout.Token).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger?.LogWarning(ex, "Room closure notification failed for {RoomId}", roomId.Value);
+            }
+        }
         return deleted ? RoomDeletionResult.Deleted : RoomDeletionResult.NotFound;
     }
 
+    private readonly IRoomNotifier? _notifier;
+    private readonly ILogger<RoomManager>? _logger;
     private readonly IRoomRegistry _registry;
     private readonly int _maxUsersPerRoom;
 }

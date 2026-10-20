@@ -1,3 +1,4 @@
+import { token } from './admin-token.js';
 ﻿const roomsEl = document.getElementById('rooms');
 const createBtn = document.getElementById('createRoom');
 const nameInput = document.getElementById('roomName');
@@ -112,7 +113,7 @@ function renderRooms(rooms) {
     } else {
       del.addEventListener('click', async () => {
         if (!confirm('Delete this room?')) return;
-        const res = await fetch(`/admin/rooms/${room.RoomId}`, { method: 'DELETE' });
+        const res = await fetch(`/admin/rooms/${room.RoomId}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': await token() } });
         if (res.status === 403) {
           resultEl.textContent = 'Only super admins can delete rooms created by other users.';
           return;
@@ -145,7 +146,7 @@ createBtn.addEventListener('click', async () => {
 
   const res = await fetch('/admin/rooms', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': await token() },
     body: JSON.stringify({ name, language })
   });
 

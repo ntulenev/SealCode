@@ -105,7 +105,7 @@ public sealed class SealCodeApiTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Room", Language = "csharp" });
+        var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Room", Language = "csharp" });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -126,7 +126,7 @@ public sealed class SealCodeApiTests
             ["password"] = "pass1"
         });
 
-        var loginResponse = await client.PostAsync("/admin/login", loginContent);
+        var loginResponse = await SecurePostAsync(client, "/admin/login", loginContent);
 
         loginResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
         loginResponse.Headers.TryGetValues("Set-Cookie", out var setCookies).Should().BeTrue();
@@ -135,7 +135,7 @@ public sealed class SealCodeApiTests
 
         client.DefaultRequestHeaders.Add("Cookie", cookie);
 
-        var createResponse = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Room", Language = "sql" });
+        var createResponse = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Room", Language = "sql" });
         var payload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -220,7 +220,7 @@ public sealed class SealCodeApiTests
         await using var bob = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
 
         var bobJoined = new TaskCompletionSource<(string name, string[] users)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var bobJoinedSubscription = bob.On<string, string[]>("UserJoined", (name, users) =>
+        using var bobJoinedSubscription = bob.On<string, string[], long>("UserJoined", (name, users, revision) =>
             bobJoined.TrySetResult((name, users)));
 
         var bobJoin = await bob.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Bob");
@@ -270,7 +270,7 @@ public sealed class SealCodeApiTests
         }
 
         var languageUpdated = new TaskCompletionSource<(string language, int version)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, int>("LanguageUpdated", (language, version) =>
+        using (bob.On<string, int, long>("LanguageUpdated", (language, version, revision) =>
             languageUpdated.TrySetResult((language, version))))
         {
             await alice.InvokeAsync("SetLanguage", roomId, "sql");
@@ -308,7 +308,7 @@ public sealed class SealCodeApiTests
         }
 
         var leftUpdated = new TaskCompletionSource<(string author, string[] users)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, string[]>("UserLeft", (author, users) =>
+        using (bob.On<string, string[], long>("UserLeft", (author, users, revision) =>
             leftUpdated.TrySetResult((author, users))))
         {
             await alice.InvokeAsync("LeaveRoom", roomId);
@@ -345,14 +345,14 @@ public sealed class SealCodeApiTests
         client.DefaultRequestHeaders.Remove("Cookie");
         client.DefaultRequestHeaders.Add("Cookie", $"{adminCookie.Name}={adminCookie.Value}");
 
-        var forbiddenResponse = await client.DeleteAsync($"/admin/rooms/{roomId}");
+        var forbiddenResponse = await SecureDeleteAsync(client, $"/admin/rooms/{roomId}");
 
         forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         client.DefaultRequestHeaders.Remove("Cookie");
         client.DefaultRequestHeaders.Add("Cookie", $"{rootCookie.Name}={rootCookie.Value}");
 
-        var deleteResponse = await client.DeleteAsync($"/admin/rooms/{roomId}");
+        var deleteResponse = await SecureDeleteAsync(client, $"/admin/rooms/{roomId}");
 
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -380,7 +380,7 @@ public sealed class SealCodeApiTests
         await inspector.InvokeAsync("LeaveRoom", roomB);
 
         var left = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var leftSubscription = inspector.On<string, string[]>("UserLeft", (name, _) =>
+        using var leftSubscription = inspector.On<string, string[], long>("UserLeft", (name, _, revision) =>
         {
             if (name == "Alice")
             {
@@ -455,7 +455,7 @@ public sealed class SealCodeApiTests
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         _ = await LoginAsAdminAsync(client);
 
-        var response = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Invalid language", Language = language });
+        var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Invalid language", Language = language });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var rooms = await client.GetFromJsonAsync<RoomSummary[]>("/admin/rooms");
@@ -473,7 +473,7 @@ public sealed class SealCodeApiTests
 
         var response = await client.GetAsync("/admin/rooms");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        var createResponse = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Forged", Language = "sql" });
+        var createResponse = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Forged", Language = "sql" });
         createResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -525,9 +525,89 @@ public sealed class SealCodeApiTests
         _ = await LoginAsAdminAsync(client);
         (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        (await client.PostAsync("/admin/logout", null)).StatusCode.Should().Be(HttpStatusCode.Redirect);
+        (await SecurePostAsync(client, "/admin/logout", null)).StatusCode.Should().Be(HttpStatusCode.Redirect);
 
         (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task AdminMutationsRequireValidAntiforgeryToken()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "Admin", ["password"] = "pass1" });
+        (await client.PostAsync("/admin/login", form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _ = await LoginAsAdminAsync(client);
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        (await client.PostAsJsonAsync("/admin/rooms", new { Name = "blocked" })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", "tampered");
+        (await client.PostAsync("/admin/logout", null)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task LoginFloodIsControlled()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "unknown", ["password"] = "incorrect" });
+            (await SecurePostAsync(client, "/admin/login", form)).StatusCode.Should().Be(HttpStatusCode.Redirect);
+        }
+        using var last = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "UNKNOWN", ["password"] = "incorrect" });
+        (await SecurePostAsync(client, "/admin/login", last)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task HubJournalLimitIsStableAndCheckpointRestoresCapacity()
+    {
+        using var originalFactory = CreateFactory();
+        using var factory = originalFactory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
+            config.AddInMemoryCollection(new Dictionary<string, string?> { ["Limits:MaxJournalCount"] = "1" })));
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie);
+        await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+        await connection.InvokeAsync("UpdateYjs", roomId, "AQ==");
+        var refusal = await Assert.ThrowsAsync<Microsoft.AspNetCore.SignalR.HubException>(() => connection.InvokeAsync("UpdateYjs", roomId, "Ag=="));
+        Assert.Contains("LimitExceeded", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(1, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
+        Assert.True(await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 1L));
+        await connection.InvokeAsync("UpdateYjs", roomId, "Ag==");
+        Assert.Equal(2, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
+    }
+
+    private static async Task RefreshTokenAsync(HttpClient client)
+    {
+        var tokenResponse = await client.GetAsync("/admin/token");
+        var response = await tokenResponse.Content.ReadFromJsonAsync<JsonElement>();
+        if (tokenResponse.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            var existing = client.DefaultRequestHeaders.TryGetValues("Cookie", out var values) ? string.Join("; ", values) : "";
+            var retained = existing.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Where(value => !value.StartsWith(".AspNetCore.Antiforgery", StringComparison.Ordinal));
+            client.DefaultRequestHeaders.Remove("Cookie");
+            client.DefaultRequestHeaders.Add("Cookie", string.Join("; ", retained.Concat(cookies.Select(cookie => cookie.Split(';')[0]))));
+        }
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", response.GetProperty("Token").GetString());
+    }
+    private static async Task<HttpResponseMessage> SecurePostAsync(HttpClient client, string url, HttpContent? content)
+    {
+        await RefreshTokenAsync(client);
+        return await client.PostAsync(url, content);
+    }
+    private static async Task<HttpResponseMessage> SecureJsonAsync<T>(HttpClient client, string url, T content)
+    {
+        await RefreshTokenAsync(client);
+        return await client.PostAsJsonAsync(url, content);
+    }
+    private static async Task<HttpResponseMessage> SecureDeleteAsync(HttpClient client, string url)
+    {
+        await RefreshTokenAsync(client);
+        return await client.DeleteAsync(url);
     }
 
     private static Task<Cookie> LoginAsAdminAsync(HttpClient client)
@@ -541,7 +621,7 @@ public sealed class SealCodeApiTests
             ["password"] = password
         });
 
-        var loginResponse = await client.PostAsync("/admin/login", loginContent);
+        var loginResponse = await SecurePostAsync(client, "/admin/login", loginContent);
 
         loginResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
         loginResponse.Headers.TryGetValues("Set-Cookie", out var setCookies).Should().BeTrue();
@@ -556,7 +636,7 @@ public sealed class SealCodeApiTests
         client.DefaultRequestHeaders.Remove("Cookie");
         client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={cookie.Value}");
 
-        var response = await client.PostAsJsonAsync("/admin/rooms", new { Name = "Room", Language = "sql" });
+        var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Room", Language = "sql" });
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);

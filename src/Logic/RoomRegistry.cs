@@ -20,15 +20,12 @@ public sealed class RoomRegistry : IRoomRegistry
     /// Initializes a new instance of the <see cref="RoomRegistry"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="notifier">The room notifier.</param>
     /// <param name="settings">Resource budgets.</param>
-    public RoomRegistry(ILogger<RoomRegistry> logger, IRoomNotifier notifier, IOptions<ApplicationConfiguration>? settings = null)
+    public RoomRegistry(ILogger<RoomRegistry> logger, IOptions<ApplicationConfiguration>? settings = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(notifier);
 
         _logger = logger;
-        _notifier = notifier;
         _limits = settings?.Value.Limits ?? new RoomLimits();
     }
 
@@ -65,27 +62,25 @@ public sealed class RoomRegistry : IRoomRegistry
     public IEnumerable<RoomState> GetRoomsSnapshot() => _rooms.Values;
 
     /// <inheritdoc />
-    public async Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken)
+    public Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!ImmutableInterlocked.TryRemove(ref _rooms, roomId, out var room))
         {
-            return false;
+            return Task.FromResult(false);
         }
 
 #pragma warning disable CA1873 // Avoid potentially expensive logging
         _logger.LogInformation("Room deleted {RoomId} ({Name})", room.RoomId.Value, room.Name.Value);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
-        await _notifier.RoomKilledAsync(roomId, reason, cancellationToken).ConfigureAwait(false);
-
-        return true;
+        room.Close();
+        return Task.FromResult(true);
     }
 
     private readonly Lock _capacityGuard = new();
     private readonly RoomLimits _limits;
     private ImmutableDictionary<RoomId, RoomState> _rooms = [];
     private readonly ILogger<RoomRegistry> _logger;
-    private readonly IRoomNotifier _notifier;
 }

@@ -16,9 +16,10 @@ SealCode is a self-hosted collaborative code editor with real-time rooms. The ba
 SealCode uses Yjs (CRDT) to merge concurrent edits. Each client produces incremental updates that the server broadcasts to the room.
 
 **Quick Start**
-1. Run the server:
+1. Install Node.js 20+ and .NET 10. Restore and build local browser assets:
 
 ```bash
+npm ci
 dotnet run --project src/SealCode/SealCode.csproj
 ```
 
@@ -31,7 +32,7 @@ dotnet run --project src/SealCode/SealCode.csproj
 
 **Admin Workflow**
 1. Visit `/admin/login`.
-2. Sign in with a user from `src/SealCode/appsettings.json` (`AdminUsers`).
+2. Configure an `AdminUsers` record using `PasswordHash` (see below), then sign in.
 3. Create a room and share its link with participants.
 
 **Join a Room**
@@ -39,7 +40,7 @@ Open the room link in a browser and enter a display name.
 
 **Configuration**
 - `src/SealCode/appsettings.json`
-- `AdminUsers`: list of admin name/password pairs. Include `IsSuperAdmin` to allow deleting rooms created by other admins.
+- `AdminUsers`: unique admin names and Identity V3 `PasswordHash` values. Include `IsSuperAdmin` to allow deleting rooms created by other admins. Legacy `Password` is accepted only in Development.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 - `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
@@ -104,3 +105,66 @@ Where:
 | 🟢 Green | Typing | User is actively typing in an input or editor field. |
 | 🟠 Orange | Multi-selection | Multiple rows/items are selected. |
 | 🔴 Red | Copied | Text has been successfully copied to the clipboard. |
+
+**Production setup and migration**
+
+Generate an Identity password hash offline using `dotnet run --project tools/password-hash`.
+The console prompts without echo; do not put a password in command arguments,
+shell history, source control, or logs. Configure `AdminUsers__0__Name` and
+`AdminUsers__0__PasswordHash` through environment variables or a deployment secret
+provider, and remove the old `Password` key entirely. Keep hashes private too.
+Existing name-only/older tickets require signing in again. Changing a credential
+or removing an account invalidates authorization after the configuration takes
+effect. Sessions last eight hours without sliding extension.
+
+Run behind HTTPS. For a reverse proxy, set `TrustedProxies` to its exact IP
+addresses, forward the original host and scheme, and configure `AllowedHosts`
+for the deployment hostname. Unlisted proxies cannot supply trusted forwarded
+headers. Production enables HSTS/HTTPS redirection and Secure admin cookies.
+The browser WebSocket Origin must match this effective hostname/scheme. Persist
+ASP.NET Data Protection keys securely if sessions must survive a redeployment;
+room data still disappears. The application supports one process only; it has
+no database, multi-instance coordination or durable room storage. Anyone knowing
+a room link is a trusted participant under ADR 0003; server-side CRDT semantic
+verification (SC-08) remains conditional.
+
+Admin POST/DELETE requests require a token from `/admin/token` in `X-CSRF-TOKEN`
+(or `__RequestVerificationToken` for a form). Fetch a fresh token after login.
+The provided UI does this automatically. API input failures return ProblemDetails;
+Hub resource refusals contain stable `LimitExceeded`/`RateLimited` codes.
+Room names deliberately retain the existing trim/20-character-plus-ellipsis
+normalization; raw inputs over 1024 characters are rejected. Participant names
+are trimmed and limited to 64 characters.
+
+**Resource budgets**
+
+The `Limits` section accepts `MaxEncodedUpdateBytes` and
+`MaxEncodedCheckpointBytes` (4 MiB Base64 characters each), `MaxJournalBytes`
+(4 MiB decoded), `MaxJournalCount` (2048), `MaxSnapshotCharacters` (1,048,576),
+`MaxRooms` (32), `MaxConnections` (160), and `InvocationsPerSecond` (100).
+Defaults are implementation choices verified with 500,000-character documents.
+Combined limits must fit a worst-case 16 MiB synchronization response; invalid
+settings fail startup. The browser pending/delivery budgets are 8 MiB/2048 entries.
+A permanent refusal retains visible unsynced text and stops retries: copy it
+before reloading. A valid checkpoint frees journal capacity; accepted updates
+are never evicted for quota. Resource counters are available from the
+`SealCode.Rooms` and `SealCode.Hub` diagnostic meters without document content.
+
+**Local assets, publishing and verification**
+
+Build/Publish runs `npm run build:client`; run `npm ci` first on a clean checkout.
+Generated `wwwroot/assets` is ignored by Git and included in publication.
+Monaco/Yjs/SignalR and workers load locally with a single Yjs instance; no CDN
+is needed. CSP intentionally permits inline styles for Monaco, but scripts and
+workers must come from this origin. `SkipClientBuild=true` is for an already
+prepared client build only.
+
+CI is defined in `.github/workflows/verify.yml`. Browser tests use an isolated
+temporary content root with disposable settings, never local admin credentials.
+For the additional production check, create a development HTTPS certificate
+with `dotnet dev-certs https`, then run
+`npx playwright test --config playwright.https.config.js`. The browser test client
+ignores trust only for that local test certificate. Server coverage is merged
+with ReportGenerator by source lines/branches, rather than averaging project
+percentages; JS coverage is reported separately. See ADR 0004 for contracts
+and `docs/audit-implementation.md` for validation evidence.

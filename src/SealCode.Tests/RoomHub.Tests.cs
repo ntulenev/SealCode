@@ -117,7 +117,7 @@ public sealed class RoomHubTests
         proxy.Setup(p => p.SendCoreAsync(
                 "UserJoined",
                 It.Is<object?[]>(args => MatchUserJoinedArgs(args, "Alice", new[] { "Alice", "Bob" })),
-                It.Is<CancellationToken>(token => token == cts.Token)))
+                CancellationToken.None))
             .Callback(() => userJoinedCalls++)
             .Returns(Task.CompletedTask);
 
@@ -186,7 +186,7 @@ public sealed class RoomHubTests
         proxy.Setup(p => p.SendCoreAsync(
                 "UserJoined",
                 It.Is<object?[]>(args => MatchUserJoinedArgs(args, "Alice", Array.Empty<string>())),
-                cts.Token))
+                CancellationToken.None))
             .Returns(Task.CompletedTask);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         clients.Setup(c => c.GroupExcept(DefaultRoomId,
@@ -276,7 +276,7 @@ public sealed class RoomHubTests
         room.Version.Value.Should().Be(2);
         room.DocumentRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().ContainSingle();
-        tryGetRoomCounter.Count.Should().Be(1);
+        tryGetRoomCounter.Count.Should().Be(2);
         groupCalls.Should().Be(1);
         yjsUpdatedCalls.Should().Be(1);
     }
@@ -302,7 +302,7 @@ public sealed class RoomHubTests
         room.YjsState.Should().Equal([3, 4]);
         room.YjsCheckpointRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().BeEmpty();
-        tryGetRoomCounter.Count.Should().Be(1);
+        tryGetRoomCounter.Count.Should().Be(2);
     }
 
     [Fact(DisplayName = "CheckpointYjsAsyncShouldRejectStaleCheckpoint")]
@@ -368,7 +368,7 @@ public sealed class RoomHubTests
         proxy.Setup(p => p.SendCoreAsync(
                 "LanguageUpdated",
                 It.Is<object?[]>(args => MatchLanguageUpdatedArgs(args, "javascript", 2)),
-                It.Is<CancellationToken>(token => token == cts.Token)))
+                CancellationToken.None))
             .Callback(() => languageUpdatedCalls++)
             .Returns(Task.CompletedTask);
 
@@ -521,7 +521,7 @@ public sealed class RoomHubTests
         groups.Setup(g => g.RemoveFromGroupAsync(
                 It.Is<string>(conn => conn == "conn-1"),
                 It.Is<string>(group => group == DefaultRoomId),
-                It.Is<CancellationToken>(token => token == cts.Token)))
+                CancellationToken.None))
             .Callback(() => removeFromGroupCalls++)
             .Returns(Task.CompletedTask);
 
@@ -530,7 +530,7 @@ public sealed class RoomHubTests
         proxy.Setup(p => p.SendCoreAsync(
                 "UserLeft",
                 It.Is<object?[]>(args => MatchUserLeftArgs(args, "Alice", new[] { "Bob" })),
-                It.Is<CancellationToken>(token => token == cts.Token)))
+                CancellationToken.None))
             .Callback(() => userLeftCalls++)
             .Returns(Task.CompletedTask);
 
@@ -555,9 +555,25 @@ public sealed class RoomHubTests
         userLeftCalls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task FailedGroupSubscriptionRollsBackNewMembership()
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        var manager = new Mock<IRoomManager>();
+        manager.Setup(x => x.RegisterUserInRoom(It.IsAny<RoomId>(), It.IsAny<ConnectionId>(), It.IsAny<RoomUser>()))
+            .Callback<RoomId, ConnectionId, RoomUser>((_, connection, user) => room.AddUser(connection, user, 5)).Returns(room);
+        var groups = new Mock<IGroupManager>();
+        groups.Setup(x => x.AddToGroupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("subscription failure"));
+        using var hub = CreateHub(manager.Object, groups: groups.Object);
+        await Assert.ThrowsAsync<IOException>(() => hub.JoinRoomAsync(DefaultRoomId, "Alice"));
+        Assert.Equal(0, room.ConnectedUserCount);
+        Assert.False(hub.Context.Items.ContainsKey("roomId"));
+    }
+
     private static bool MatchUserJoinedArgs(object?[] args, string user, string[] users)
     {
-        if (args.Length != 2)
+        if (args.Length != 3)
         {
             return false;
         }
@@ -603,7 +619,7 @@ public sealed class RoomHubTests
 
     private static bool MatchLanguageUpdatedArgs(object?[] args, string language, int version)
     {
-        if (args.Length != 2)
+        if (args.Length != 3)
         {
             return false;
         }
@@ -658,7 +674,7 @@ public sealed class RoomHubTests
 
     private static bool MatchUserLeftArgs(object?[] args, string user, string[] users)
     {
-        if (args.Length != 2)
+        if (args.Length != 3)
         {
             return false;
         }

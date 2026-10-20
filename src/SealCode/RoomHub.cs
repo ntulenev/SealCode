@@ -1,5 +1,7 @@
 using Abstractions;
 
+using Logic;
+
 using Microsoft.AspNetCore.SignalR;
 
 using Models;
@@ -23,18 +25,19 @@ public sealed class RoomHub : Hub
     /// <param name="languageValidator">The language validator.</param>
     /// <param name="logger">The logger.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
+    /// <param name="sessions">Application scenarios.</param>
     public RoomHub(
         IRoomManager roomManager,
         ILanguageValidator languageValidator,
-        ILogger<RoomHub> logger)
+        ILogger<RoomHub> logger, RoomSessionService? sessions = null)
     {
         ArgumentNullException.ThrowIfNull(roomManager);
         ArgumentNullException.ThrowIfNull(languageValidator);
         ArgumentNullException.ThrowIfNull(logger);
 
         _roomManager = roomManager;
-        _languageValidator = languageValidator;
         _logger = logger;
+        _sessions = sessions ?? new RoomSessionService(roomManager, languageValidator);
     }
 
     /// <summary>
@@ -63,6 +66,7 @@ public sealed class RoomHub : Hub
             throw new HubException("Display name required");
         }
 
+        var wasMember = Context.Items.ContainsKey("roomId");
         var connectionId = new ConnectionId(Context.ConnectionId);
         RoomState room;
 
@@ -87,13 +91,33 @@ public sealed class RoomHub : Hub
 
         var cancellationToken = Context.ConnectionAborted;
 
-        await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (!wasMember)
+            {
+                _ = room.RemoveUser(connectionId, out _);
+                _ = Context.Items.Remove("roomId");
+                _ = Context.Items.Remove("displayName");
+            }
+            throw;
+        }
         // Subscribe before taking the snapshot so concurrent updates are either
         // included in it or delivered to the client's synchronization buffer.
         var joinResult = JoinRoomResult.From(room);
-        await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
-            .SendAsync("UserJoined", displayName, joinResult.Users, cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
+                .SendAsync("UserJoined", displayName, joinResult.Users, joinResult.PresenceRevision, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "Presence notification failed for {RoomId}", parsedRoomId.Value);
+        }
 
         _logger.LogInformation("User joined {RoomId} ({Name}) as {RoomUser}", parsedRoomId.Value, room.Name.Value, displayName);
 
@@ -138,7 +162,7 @@ public sealed class RoomHub : Hub
 
         var author = user.Value;
 
-        var appendResult = room.AppendYjsUpdate(update, DateTimeOffset.UtcNow);
+        var appendResult = _sessions.Append(parsedRoomId, new(Context.ConnectionId), update);
 
         // Once appended, the update belongs to the room even if its author disconnects.
         var cancellationToken = CancellationToken.None;
@@ -162,6 +186,14 @@ public sealed class RoomHub : Hub
     [HubMethodName("GetDocumentRevision")]
     public long GetDocumentRevision(string roomId)
         => GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).DocumentRevision.Value;
+
+    /// <summary>Returns all revisions from one atomic snapshot.</summary>
+    [HubMethodName("GetRoomRevisions")]
+    public object GetRoomRevisions(string roomId)
+    {
+        var (document, metadata, presence) = GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).GetRevisions();
+        return new { DocumentRevision = document, MetadataRevision = metadata, PresenceRevision = presence };
+    }
 
     /// <summary>
     /// Returns an atomic document snapshot without repeating room registration.
@@ -220,11 +252,7 @@ public sealed class RoomHub : Hub
             throw new HubException("State payload required");
         }
 
-        var accepted = room.TryCreateYjsCheckpoint(
-            new RoomDocumentRevision(basedOnRevision),
-            state,
-            new RoomText(textSnapshot ?? string.Empty),
-            DateTimeOffset.UtcNow);
+        var accepted = _sessions.Checkpoint(parsedRoomId, new(Context.ConnectionId), new(basedOnRevision), state, new(textSnapshot ?? string.Empty));
 
         if (!accepted)
         {
@@ -258,11 +286,14 @@ public sealed class RoomHub : Hub
         var room = GetRoomForParticipant(parsedRoomId, out _);
 
         int newVersion;
+        long metadataRevision;
         RoomLanguage normalized;
         try
         {
             normalized = new RoomLanguage(language);
-            newVersion = room.UpdateLanguage(new RoomLanguage(language), DateTimeOffset.UtcNow, _languageValidator).Value;
+            var changed = _sessions.ChangeLanguage(room, new(Context.ConnectionId), normalized);
+            newVersion = changed.Version.Value;
+            metadataRevision = changed.Revision;
         }
         catch (ArgumentException)
         {
@@ -271,7 +302,7 @@ public sealed class RoomHub : Hub
 
         var cancellationToken = Context.ConnectionAborted;
         await Clients.Group(parsedRoomId.Value)
-            .SendAsync("LanguageUpdated", normalized.Value, newVersion, cancellationToken)
+            .SendAsync("LanguageUpdated", normalized.Value, newVersion, metadataRevision, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -372,7 +403,7 @@ public sealed class RoomHub : Hub
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
 
-        await RemoveFromRoomAsync(parsedRoomId.Value, new ConnectionId(Context.ConnectionId), notify: true, Context.ConnectionAborted).ConfigureAwait(false);
+        await RemoveFromRoomAsync(parsedRoomId.Value, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -385,13 +416,13 @@ public sealed class RoomHub : Hub
         if (Context.Items.TryGetValue("roomId", out var roomIdObj) && roomIdObj is string roomId)
         {
             // ConnectionAborted is already canceled during disconnect; use a non-canceled token for cleanup/notifications.
-            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true, CancellationToken.None).ConfigureAwait(false);
+            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
         }
 
         await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
     }
 
-    private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify, CancellationToken cancellationToken)
+    private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify)
     {
         if (!RoomId.TryParse(roomId, out var parsedRoomId))
         {
@@ -414,34 +445,35 @@ public sealed class RoomHub : Hub
         string? displayName = null;
         string[] usersSnapshot = [];
 
-        if (room.RemoveUser(connectionId, out var user))
+        var (removed, leftUser, leftUsers, leftRevision) = room.Leave(connectionId);
+        if (removed)
         {
-            displayName = user.Value;
-            usersSnapshot = [.. room.CreateUsersSnapshot().Select(x => x.Value)];
+            displayName = leftUser.Value;
+            usersSnapshot = [.. leftUsers.Select(x => x.Value)];
         }
 
-        await Groups.RemoveFromGroupAsync(connectionId.Value, parsedRoomId.Value, cancellationToken).ConfigureAwait(false);
+        try
+        { await Groups.RemoveFromGroupAsync(connectionId.Value, parsedRoomId.Value, CancellationToken.None).ConfigureAwait(false); }
+        catch
+        {
+            // Keep cleanup context so disconnect can retry group removal.
+            Context.Items["roomId"] = parsedRoomId.Value;
+            throw;
+        }
 
         if (notify && displayName is not null)
         {
-            await Clients.Group(parsedRoomId.Value).SendAsync("UserLeft", displayName, usersSnapshot, cancellationToken).ConfigureAwait(false);
+            await Clients.Group(parsedRoomId.Value).SendAsync("UserLeft", displayName, usersSnapshot, leftRevision, CancellationToken.None).ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
         }
     }
 
     private RoomState GetRoomForParticipant(RoomId roomId, out RoomUser user)
     {
-        if (!_roomManager.TryGetRoom(roomId, out var room))
-        {
-            throw new HubException("Room not found");
-        }
-
-        if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out user))
-        {
-            throw new HubException("Join the room before changing it");
-        }
-
-        return room;
+        try
+        { return _sessions.GetParticipant(roomId, new(Context.ConnectionId), out user); }
+        catch (RoomNotFoundException ex) { throw new HubException(ex.Message); }
+        catch (UnauthorizedAccessException ex) { throw new HubException(ex.Message); }
     }
 
     private static RoomId ParseRoomIdOrThrow(string roomId)
@@ -460,7 +492,7 @@ public sealed class RoomHub : Hub
     }
 
     private readonly IRoomManager _roomManager;
-    private readonly ILanguageValidator _languageValidator;
+    private readonly RoomSessionService _sessions;
     private readonly ILogger<RoomHub> _logger;
 }
 

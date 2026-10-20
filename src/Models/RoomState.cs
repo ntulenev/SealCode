@@ -155,9 +155,16 @@ public sealed class RoomState
     /// <exception cref="AddRoomUserException">Thrown when the room is full or the name is already in use.</exception>
     public void AddUser(ConnectionId connectionId, RoomUser roomUser, int maxUsers)
     {
-        lock (_addGuard)
+        lock (_versionGuard)
         {
+            EnsureOpen();
             var alreadyInRoom = HasUser(connectionId);
+            if (alreadyInRoom)
+            {
+                if (_connectedUsers[connectionId] != roomUser)
+                    throw new AddRoomUserException("Leave the room before changing display name.");
+                return;
+            }
             if (!alreadyInRoom && _connectedUsers.Count >= maxUsers)
             {
                 throw new AddRoomUserException($"Room is full (max {maxUsers})");
@@ -169,6 +176,7 @@ public sealed class RoomState
             }
 
             AddOrUpdateUser(connectionId, roomUser);
+            PresenceRevision++;
         }
     }
 
@@ -196,7 +204,15 @@ public sealed class RoomState
     /// <param name="roomUser">The removed room user name.</param>
     /// <returns>True when removed; otherwise false.</returns>
     public bool RemoveUser(ConnectionId connectionId, out RoomUser roomUser)
-        => ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out roomUser);
+    {
+        lock (_versionGuard)
+        {
+            if (!ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out roomUser))
+                return false;
+            PresenceRevision++;
+            return true;
+        }
+    }
 
     /// <summary>
     /// Updates the room language and bumps the version.
@@ -218,7 +234,9 @@ public sealed class RoomState
 
         lock (_versionGuard)
         {
+            EnsureOpen();
             Language = language;
+            MetadataRevision++;
             Version = Version.Next();
             LastUpdatedUtc = updatedUtc;
             return Version;
@@ -243,6 +261,7 @@ public sealed class RoomState
 
         lock (_versionGuard)
         {
+            EnsureOpen();
             if (4L * ((update.Length + 2) / 3) > _limits.MaxEncodedUpdateBytes
                 || _journalBytes + update.Length > _limits.MaxJournalBytes
                 || _yjsUpdates.Count >= _limits.MaxJournalCount)
@@ -283,6 +302,7 @@ public sealed class RoomState
 
         lock (_versionGuard)
         {
+            EnsureOpen();
             if (basedOnRevision != DocumentRevision)
             {
                 return false;
@@ -311,15 +331,90 @@ public sealed class RoomState
     {
         lock (_versionGuard)
         {
+            EnsureOpen();
             return new RoomDocumentSyncState(
                 DocumentRevision,
                 YjsCheckpointRevision,
                 [.. YjsState],
-                [.. _yjsUpdates.Select(update => new RoomDocumentUpdate(update.Revision, update.Payload))]);
+                [.. _yjsUpdates])
+            {
+                Language = Language,
+                Text = Text,
+                Version = Version,
+                MetadataRevision = MetadataRevision,
+                PresenceRevision = PresenceRevision,
+                Users = CreateUsersSnapshot()
+            };
         }
     }
 
-    private readonly Lock _addGuard = new();
+    /// <summary>Gets the language revision, independent of document changes.</summary>
+    public long MetadataRevision { get; private set; }
+    /// <summary>Gets the membership revision.</summary>
+    public long PresenceRevision { get; private set; }
+    /// <summary>Changes language and captures its exact revision atomically.</summary>
+    public (RoomVersion Version, long Revision) ChangeLanguage(RoomLanguage language, DateTimeOffset now, ILanguageValidator validator)
+    {
+        lock (_versionGuard)
+            return (UpdateLanguage(language, now, validator), MetadataRevision);
+    }
+    /// <summary>Closes the aggregate; retained references cannot accept mutations.</summary>
+    public void Close()
+    {
+        lock (_versionGuard)
+        {
+            _closed = true;
+            _journalSize.Add(-_journalBytes);
+            _journalEntries.Add(-_yjsUpdates.Count);
+            _journalBytes = 0;
+            _yjsUpdates.Clear();
+        }
+    }
+    /// <summary>Appends while holding the membership/aggregate lock.</summary>
+    public RoomDocumentAppendResult AppendForParticipant(ConnectionId connection, byte[] update, DateTimeOffset now)
+    {
+        lock (_versionGuard)
+        { RequireParticipant(connection); return AppendYjsUpdate(update, now); }
+    }
+    /// <summary>Checkpoints while holding the membership/aggregate lock.</summary>
+    public bool CheckpointForParticipant(ConnectionId connection, RoomDocumentRevision revision, byte[] state, RoomText text, DateTimeOffset now)
+    {
+        lock (_versionGuard)
+        { RequireParticipant(connection); return TryCreateYjsCheckpoint(revision, state, text, now); }
+    }
+    /// <summary>Changes metadata while holding the membership/aggregate lock.</summary>
+    public (RoomVersion Version, long Revision) LanguageForParticipant(ConnectionId connection, RoomLanguage language, DateTimeOffset now, ILanguageValidator validator)
+    {
+        lock (_versionGuard)
+        { RequireParticipant(connection); return ChangeLanguage(language, now, validator); }
+    }
+    private void RequireParticipant(ConnectionId connection)
+    {
+        EnsureOpen();
+        if (!HasUser(connection))
+            throw new UnauthorizedAccessException("Join the room before changing it");
+    }
+    /// <summary>Returns revisions without copying document payloads.</summary>
+    public (long Document, long Metadata, long Presence) GetRevisions()
+    {
+        lock (_versionGuard)
+        { EnsureOpen(); return (DocumentRevision.Value, MetadataRevision, PresenceRevision); }
+    }
+    /// <summary>Removes membership and captures the matching presence event atomically.</summary>
+    public (bool Removed, RoomUser User, RoomUser[] Users, long Revision) Leave(ConnectionId connection)
+    {
+        lock (_versionGuard)
+        {
+            var removed = RemoveUser(connection, out var user);
+            return (removed, user, CreateUsersSnapshot(), PresenceRevision);
+        }
+    }
+    private void EnsureOpen()
+    {
+        if (_closed)
+            throw new RoomNotFoundException();
+    }
+    private bool _closed;
     private readonly Lock _versionGuard = new();
     private ImmutableDictionary<ConnectionId, RoomUser> _connectedUsers = [];
     private readonly List<RoomDocumentUpdate> _yjsUpdates = [];

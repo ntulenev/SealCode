@@ -1,10 +1,13 @@
+import { csrf } from './admin-token.js';
 import { expect, test } from '@playwright/test';
 
 async function createRoom(request) {
   expect((await request.post('/admin/login', {
+    headers: await csrf(request),
     form: { name: 'BrowserAdmin', password: 'browser-pass' }
   })).ok()).toBeTruthy();
   const response = await request.post('/admin/rooms', {
+    headers: await csrf(request),
     data: { name: `Recovery ${Date.now()}`, language: 'csharp' }
   });
   expect(response.ok()).toBeTruthy();
@@ -100,7 +103,7 @@ for (const notification of ['received', 'missed']) {
     await join(page, roomId, 'Alice');
     await insert(page, 'Keep this text');
     await expect.poll(() => !!releaseUpdate).toBe(true);
-    expect((await request.delete(`/admin/rooms/${roomId}`)).ok()).toBeTruthy();
+    expect((await request.delete(`/admin/rooms/${roomId}`, { headers: await csrf(request) })).ok()).toBeTruthy();
     if (notification === 'received') {
       await expect(page.locator('#joinOverlay')).not.toHaveClass(/hidden/);
     }
@@ -113,3 +116,42 @@ for (const notification of ['received', 'missed']) {
     await context.close();
   });
 }
+
+
+test('language events cannot roll back metadata and a missed final event is recovered', async ({ browser, request }) => {
+  const roomId = await createRoom(request);
+  const context = await browser.newContext();
+  const alice = await context.newPage();
+  const bob = await context.newPage();
+  let held;
+  let seen = 0;
+  await alice.routeWebSocket('**/roomHub*', route => {
+    const server = route.connectToServer();
+    server.onMessage(message => {
+      if (typeof message !== 'string') return route.send(message);
+      for (const record of message.split('\x1e').filter(Boolean)) {
+        const frame = JSON.parse(record);
+        if (frame.target === 'LanguageUpdated') {
+          seen++;
+          if (seen === 1) { held = record; continue; }
+          if (seen === 3) continue;
+          route.send(record + '\x1e');
+          if (held) { route.send(held + '\x1e'); held = null; }
+        } else route.send(record + '\x1e');
+      }
+    });
+  });
+  await join(alice, roomId, 'Alice');
+  await join(bob, roomId, 'Bob');
+  await bob.locator('#languageSelect').selectOption('sql');
+  await expect.poll(() => seen).toBe(1);
+  await insert(bob, 'text raises room version independently');
+  await bob.locator('#languageSelect').selectOption('csharp');
+  await expect.poll(() => seen).toBe(2);
+  await expect(alice.locator('#languageSelect')).toHaveValue('csharp');
+  await bob.locator('#languageSelect').selectOption('sql');
+  await expect.poll(() => seen).toBe(3);
+  await expect(alice.locator('#languageSelect')).toHaveValue('sql', { timeout: 10000 });
+  expect(await text(alice)).toBe(await text(bob));
+  await context.close();
+});

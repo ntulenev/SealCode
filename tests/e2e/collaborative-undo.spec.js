@@ -1,7 +1,9 @@
+import { csrf } from './admin-token.js';
 import { expect, test } from '@playwright/test';
 
 async function createRoom(request) {
   const loginResponse = await request.post('/admin/login', {
+    headers: await csrf(request),
     form: {
       name: 'BrowserAdmin',
       password: 'browser-pass'
@@ -10,6 +12,7 @@ async function createRoom(request) {
   expect(loginResponse.ok()).toBeTruthy();
 
   const createResponse = await request.post('/admin/rooms', {
+    headers: await csrf(request),
     data: {
       name: `Undo ${Date.now()}`,
       language: 'csharp'

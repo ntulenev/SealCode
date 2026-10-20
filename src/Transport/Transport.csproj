@@ -19,9 +19,7 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 	<ItemGroup>
-		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
 		<ProjectReference Include="..\Models\Models.csproj" />
-		<ProjectReference Include="..\Logic\Logic.csproj" />
 	</ItemGroup>
 	<PropertyGroup>
 		<NoWarn>CA1873,CA1308,CA1819</NoWarn>

@@ -1,9 +1,23 @@
-﻿import * as Y from 'https://esm.sh/yjs@13.6.29';
-import { MonacoBinding } from 'https://esm.sh/y-monaco@0.1.6';
-import { Awareness } from 'https://esm.sh/y-protocols@1.0.7/awareness';
+import { createMonacoAdapter } from './monaco-adapter.js';
+import { createRoomConnection } from './room-connection.js';
+import { RevisionedRoomView } from './room-presence.js';
+globalThis.MonacoEnvironment = {
+  getWorker(_module, label) {
+    const name = { json: 'json', css: 'css', scss: 'css', less: 'css', html: 'html', handlebars: 'html', razor: 'html', typescript: 'ts', javascript: 'ts' }[label] ?? 'editor';
+    return new Worker(`/assets/${name}.worker.js`, { type: 'module' });
+  }
+};
+import * as monaco from 'monaco-editor';
+import * as signalR from '@microsoft/signalr';
+﻿import * as Y from 'yjs';
+import { MonacoBinding } from 'y-monaco';
+import { Awareness } from 'y-protocols/awareness';
+import { UpdateQueue, SyncScheduler, SnapshotRecovery, CheckpointWriter } from './room-sync.js';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
 
+window.monaco = monaco;
+window.signalR = signalR;
 const remoteYjsOrigin = Object.freeze({ source: 'signalr' });
 const bootstrapYjsOrigin = Object.freeze({ source: 'bootstrap' });
 const maxUndoDepth = 100;
@@ -51,41 +65,99 @@ let ytext = null;
 let awareness = null;
 let monacoBinding = null;
 let undoHistory = null;
-let pendingYjsStateTimer = null;
-let pendingYjsUpdates = [];
-let sendingBlocked = false;
+
 const maxPendingBytes = 8 * 1024 * 1024;
-let yjsSendInFlight = false;
+
 let yjsSession = 0;
-let checkpointTimer = null;
-let checkpointInFlight = false;
-let recoveryTimer = null;
-let recoveryDue = 0;
-let recoveryInFlight = false;
 let currentDocumentRevision = 0;
 let highestDocumentRevisionSeen = 0;
-let oversizedCheckpointRevision = -1;
 const pendingDocumentRevisions = new Set();
 let isSynchronizingYjs = false;
 let synchronizationEpoch = 0;
 const bufferedYjsMessages = [];
 let roomClosed = false;
 let hasJoinedRoom = false;
-let startConnectionPromise = null;
 let isRejoiningRoom = false;
 let rejoinRetryTimer = null;
 let rejoinRetryAttempt = 0;
 const rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000];
 
-const connection = new signalR.HubConnectionBuilder()
-  .withUrl('/roomHub')
-  .withAutomaticReconnect({
-    nextRetryDelayInMilliseconds: () => (navigator.onLine ? 3000 : 2000)
-  })
-  .build();
+const connectionLifecycle = createRoomConnection(signalR, '/roomHub');
+const connection = connectionLifecycle.connection;
+const roomView = new RevisionedRoomView({
+  language: language => { ensureLanguageOption(language); languageSelect.value = language; setLanguage(language); },
+  users: users => renderUsers(users)
+});
 
-connection.serverTimeoutInMilliseconds = 15000;
-connection.keepAliveIntervalInMilliseconds = 5000;
+const syncScheduler = new SyncScheduler();
+const updateSender = new UpdateQueue({
+  merge: updates => Y.mergeUpdates(updates),
+  ready: () => !roomClosed && ydoc && !isSynchronizingYjs && connection.state === signalR.HubConnectionState.Connected,
+  send: update => {
+    const args = [roomId, base64FromUint8(update)];
+    if (!fitsYjsMessage('UpdateYjs', args, maxYjsMessageBytes)) throw new Error('LimitExceeded: An edit is too large to send');
+    return connection.invoke('UpdateYjs', ...args);
+  },
+  onSuccess: () => { clearSyncError('update-size'); clearSyncError('transport'); },
+  onIdle: () => scheduleYjsCheckpoint(),
+  onError: (error, permanent) => {
+    if (isRoomNotFound(error)) return closeRoom('Room not found.');
+    if (permanent) {
+      setEditorReadOnly(true);
+      showSyncError('update-size', 'An edit is too large or the room limit was reached. Copy your text before reloading; some changes have not synced.');
+    } else showSyncError('transport', 'Changes could not be sent. Retrying; keep this page open.');
+  }
+});
+
+function captureSyncContext() { return { document: ydoc, session: yjsSession, connectionId: connection.connectionId }; }
+function isCurrentSyncContext(context) {
+  return !roomClosed && ydoc === context.document && yjsSession === context.session && connection.connectionId === context.connectionId;
+}
+const recoveryController = new SnapshotRecovery({
+  scheduler: syncScheduler,
+  active: () => !roomClosed && hasJoinedRoom && !!ydoc,
+  ready: () => !isSynchronizingYjs && connection.state === signalR.HubConnectionState.Connected,
+  capture: captureSyncContext, current: isCurrentSyncContext,
+  revisions: () => ({ DocumentRevision: currentDocumentRevision, MetadataRevision: roomView.languageRevision, PresenceRevision: roomView.presenceRevision }),
+  probe: () => connection.invoke('GetRoomRevisions', roomId),
+  snapshot: () => connection.invoke('SyncYjs', roomId),
+  begin: () => { isSynchronizingYjs = true; return ++synchronizationEpoch; },
+  apply: result => {
+    if (!mergeYjsSyncState(result.YjsState ?? result.yjsState, result.YjsUpdates ?? result.yjsUpdates ?? [], result.DocumentRevision ?? result.documentRevision, result.CheckpointRevision ?? result.checkpointRevision)) throw new Error('Failed to recover the room document');
+    currentVersion = Math.max(currentVersion, Number(result.Version ?? result.version) || 0);
+    versionNumberEl.textContent = currentVersion;
+    applyRoomMetadata(result);
+  },
+  end: epoch => {
+    if (epoch !== synchronizationEpoch) return;
+    isSynchronizingYjs = false; flushBufferedYjsMessages(); scheduleYjsUpdateSend(); scheduleYjsCheckpoint();
+  },
+  onSuccess: () => clearSyncError('recovery'),
+  onError: error => {
+    if (isRoomNotFound(error)) return closeRoom('Room not found.');
+    showSyncError('recovery', 'Some changes have not arrived. Retrying synchronization; keep this page open.');
+  }
+});
+const checkpointWriter = new CheckpointWriter({
+  scheduler: syncScheduler,
+  ready: () => !roomClosed && hasJoinedRoom && !!ydoc && !!ytext && currentDocumentRevision > 0
+    && currentDocumentRevision === highestDocumentRevisionSeen && !isSynchronizingYjs
+    && !updateSender.pending.length && !updateSender.timer && !updateSender.inFlight
+    && connection.state === signalR.HubConnectionState.Connected,
+  capture: captureSyncContext, current: isCurrentSyncContext, revision: () => currentDocumentRevision,
+  payload: revision => {
+    const args = [roomId, base64FromUint8(Y.encodeStateAsUpdate(ydoc)), ytext.toString(), revision];
+    if (!fitsYjsMessage('CheckpointYjs', args, maxYjsMessageBytes)) throw new Error('LimitExceeded: Checkpoint size');
+    return args;
+  },
+  send: args => connection.invoke('CheckpointYjs', ...args),
+  onSuccess: () => clearSyncError('checkpoint-size'),
+  onError: (error, permanent) => {
+    if (isRoomNotFound(error)) return closeRoom('Room not found.');
+    if (permanent) showSyncError('checkpoint-size', 'The document is too large to save a snapshot. Edits still sync; reduce its size to restore snapshots.');
+  }
+});
+
 
 window.__debugYjsSend = () => {
   if (!ydoc) return false;
@@ -134,24 +206,7 @@ function clearRejoinRetryTimer() {
   rejoinRetryTimer = null;
 }
 
-async function ensureConnectionStarted() {
-  if (connection.state !== signalR.HubConnectionState.Disconnected) {
-    return true;
-  }
-  if (startConnectionPromise) {
-    return startConnectionPromise;
-  }
-  startConnectionPromise = connection.start()
-    .then(() => true)
-    .catch((err) => {
-      console.warn('Failed to start connection.', err);
-      return false;
-    })
-    .finally(() => {
-      startConnectionPromise = null;
-    });
-  return startConnectionPromise;
-}
+async function ensureConnectionStarted() { return connectionLifecycle.start(); }
 
 function getRejoinDelayMs() {
   const index = Math.min(rejoinRetryAttempt, rejoinRetryDelaysMs.length - 1);
@@ -526,7 +581,7 @@ function setLanguage(language) {
 
 function setEditorReadOnly(isReadOnly) {
   if (!editor) return;
-  editor.updateOptions({ readOnly: isReadOnly });
+  editor.updateOptions({ readOnly: isReadOnly || updateSender.blocked });
 }
 
 function setLanguageReadOnly(isReadOnly) {
@@ -536,62 +591,7 @@ function setLanguageReadOnly(isReadOnly) {
 
 function scheduleYjsUpdateSend(update) {
   if (roomClosed || !ydoc) return;
-  if (sendingBlocked) return;
-  if (update?.length > 0) {
-    if (pendingYjsUpdates.reduce((sum, item) => sum + item.length, 0) + update.length > maxPendingBytes
-        || pendingYjsUpdates.length >= 2048) {
-      sendingBlocked = true;
-      setEditorReadOnly(true);
-      showSyncError('queue-limit', 'Unsent changes reached the local limit. Copy your text before reloading.');
-      return;
-    }
-    pendingYjsUpdates.push(update);
-  }
-  if (pendingYjsUpdates.length === 0 || pendingYjsStateTimer || yjsSendInFlight) return;
-  pendingYjsStateTimer = setTimeout(async () => {
-    pendingYjsStateTimer = null;
-    if (roomClosed || !ydoc || isSynchronizingYjs
-        || connection.state !== signalR.HubConnectionState.Connected) return;
-
-    const session = yjsSession;
-    const updates = pendingYjsUpdates.splice(0, pendingYjsUpdates.length);
-    const merged = updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
-    const args = [roomId, base64FromUint8(merged)];
-    if (!fitsYjsMessage('UpdateYjs', args, maxYjsMessageBytes)) {
-      pendingYjsUpdates.unshift(...updates);
-      showSyncError('update-size', 'An edit is too large to send. Copy your text before reloading; some changes have not synced.');
-      return;
-    }
-    yjsSendInFlight = true;
-    try {
-      await connection.invoke('UpdateYjs', ...args);
-      if (session !== yjsSession || roomClosed) return;
-      clearSyncError('update-size');
-      clearSyncError('transport');
-    } catch (err) {
-      if (session !== yjsSession || roomClosed) return;
-      if (isRoomNotFound(err)) {
-        closeRoom('Room not found.');
-        return;
-      }
-      pendingYjsUpdates.unshift(...updates);
-      if (String(err).includes('LimitExceeded')) {
-        sendingBlocked = true;
-        setEditorReadOnly(true);
-        showSyncError('server-limit', 'The room limit was reached. Copy your text before reloading; some changes have not synced.');
-        return;
-      }
-      if (String(err).includes('RateLimited')) await new Promise(resolve => setTimeout(resolve, 1100));
-      console.error('Failed to send Yjs update.', err);
-      showSyncError('transport', 'Changes could not be sent. Retrying; keep this page open.');
-    } finally {
-      if (session === yjsSession && !roomClosed) {
-        yjsSendInFlight = false;
-        if (pendingYjsUpdates.length > 0) scheduleYjsUpdateSend();
-        else scheduleYjsCheckpoint();
-      }
-    }
-  }, 60);
+  updateSender.enqueue(update);
 }
 
 function normalizeYjsUpdates(updates) {
@@ -691,140 +691,18 @@ function noteDocumentRevision(revision) {
   return advanced;
 }
 
-function scheduleYjsRecovery(delay = 5000) {
-  if (roomClosed || !hasJoinedRoom || !ydoc) return;
-  const due = performance.now() + delay;
-  if (recoveryTimer && recoveryDue <= due) return;
-  if (recoveryTimer) clearTimeout(recoveryTimer);
-  recoveryDue = due;
-  recoveryTimer = setTimeout(recoverYjs, delay);
-}
-
-async function recoverYjs() {
-  recoveryTimer = null;
-  if (roomClosed || !hasJoinedRoom || !ydoc) return;
-  if (recoveryInFlight || isSynchronizingYjs
-      || connection.state !== signalR.HubConnectionState.Connected) {
-    scheduleYjsRecovery();
-    return;
-  }
-  const document = ydoc;
-  const session = yjsSession;
-  const connectionId = connection.connectionId;
-  let synchronizing = false;
-  let epoch = 0;
-  recoveryInFlight = true;
-  try {
-    const revision = await connection.invoke('GetDocumentRevision', roomId);
-    if (roomClosed || ydoc !== document || connection.connectionId !== connectionId) return;
-    if (isSynchronizingYjs) return;
-    if (Number(revision) <= currentDocumentRevision) {
-      clearSyncError('recovery');
-      return;
-    }
-    isSynchronizingYjs = true;
-    epoch = ++synchronizationEpoch;
-    synchronizing = true;
-    const result = await connection.invoke('SyncYjs', roomId);
-    if (roomClosed || ydoc !== document || connection.connectionId !== connectionId) return;
-    if (!mergeYjsSyncState(result.YjsState ?? result.yjsState,
-        result.YjsUpdates ?? result.yjsUpdates ?? [],
-        result.DocumentRevision ?? result.documentRevision,
-        result.CheckpointRevision ?? result.checkpointRevision)) {
-      throw new Error('Failed to recover the room document.');
-    }
-    currentVersion = Math.max(currentVersion, Number(result.Version ?? result.version) || 0);
-    versionNumberEl.textContent = currentVersion;
-    clearSyncError('recovery');
-  } catch (err) {
-    if (session === yjsSession && !roomClosed && isRoomNotFound(err)) {
-      closeRoom('Room not found.');
-    } else if (session === yjsSession && !roomClosed) {
-      console.warn('Failed to recover missing Yjs updates.', err);
-      showSyncError('recovery', 'Some changes have not arrived. Retrying synchronization; keep this page open.');
-    }
-  } finally {
-    if (session === yjsSession && !roomClosed) {
-      recoveryInFlight = false;
-      if (synchronizing && epoch === synchronizationEpoch) {
-        isSynchronizingYjs = false;
-        flushBufferedYjsMessages();
-        scheduleYjsUpdateSend();
-      }
-      scheduleYjsRecovery();
-    }
-  }
-}
-
-function scheduleYjsCheckpoint() {
-  if (roomClosed || !hasJoinedRoom) return;
-  if (!ydoc || !ytext || currentDocumentRevision <= 0) return;
-  if (oversizedCheckpointRevision === currentDocumentRevision) return;
-  if (currentDocumentRevision !== highestDocumentRevisionSeen) return;
-  if (pendingYjsUpdates.length > 0 || pendingYjsStateTimer || yjsSendInFlight) return;
-  if (checkpointTimer || checkpointInFlight) return;
-  checkpointTimer = setTimeout(sendYjsCheckpoint, 400);
-}
-
-async function sendYjsCheckpoint() {
-  checkpointTimer = null;
-  if (roomClosed || !hasJoinedRoom || !ydoc || !ytext) return;
-  if (connection.state !== signalR.HubConnectionState.Connected) return;
-  if (currentDocumentRevision !== highestDocumentRevisionSeen) return;
-  if (pendingYjsUpdates.length > 0 || pendingYjsStateTimer || yjsSendInFlight) return;
-
-  const basedOnRevision = currentDocumentRevision;
-  const session = yjsSession;
-  const stateBase64 = base64FromUint8(Y.encodeStateAsUpdate(ydoc));
-  const snapshot = ytext.toString();
-  const args = [roomId, stateBase64, snapshot, basedOnRevision];
-  if (!fitsYjsMessage('CheckpointYjs', args, maxYjsMessageBytes)) {
-    oversizedCheckpointRevision = basedOnRevision;
-    showSyncError('checkpoint-size', 'The document is too large to save a snapshot. Edits still sync; reduce its size to restore snapshots.');
-    return;
-  }
-  let retry = false;
-  checkpointInFlight = true;
-  try {
-    const accepted = await connection.invoke('CheckpointYjs', ...args);
-    if (session !== yjsSession || roomClosed) return;
-    if (accepted) clearSyncError('checkpoint-size');
-  } catch (err) {
-    if (session !== yjsSession || roomClosed) return;
-    if (isRoomNotFound(err)) {
-      closeRoom('Room not found.');
-      return;
-    }
-    retry = !String(err).includes('LimitExceeded');
-    if (!retry) oversizedCheckpointRevision = basedOnRevision;
-    console.warn('Failed to checkpoint Yjs state.', err);
-  } finally {
-    if (session === yjsSession && !roomClosed) {
-      checkpointInFlight = false;
-      if ((retry || currentDocumentRevision > basedOnRevision)
-          && currentDocumentRevision === highestDocumentRevisionSeen) {
-        scheduleYjsCheckpoint();
-      }
-    }
-  }
-}
+function scheduleYjsRecovery(delay = 5000) { recoveryController.schedule(delay); }
+function scheduleYjsCheckpoint() { checkpointWriter.schedule(); }
 
 function disposeYjs() {
   yjsSession += 1;
-  if (pendingYjsStateTimer) clearTimeout(pendingYjsStateTimer);
-  pendingYjsStateTimer = null;
-  pendingYjsUpdates = [];
-  sendingBlocked = false;
-  yjsSendInFlight = false;
-  recoveryInFlight = false;
-  if (recoveryTimer) clearTimeout(recoveryTimer);
-  recoveryTimer = null;
-  if (checkpointTimer) {
-    clearTimeout(checkpointTimer);
-    checkpointTimer = null;
-  }
-  checkpointInFlight = false;
-  oversizedCheckpointRevision = -1;
+  if (updateSender.timer) clearTimeout(updateSender.timer);
+  updateSender.timer = null;
+  updateSender.reset();
+  syncScheduler.reset();
+  updateSender.inFlight = false;
+  recoveryController.reset();
+  checkpointWriter.reset();
   undoHistory?.destroy();
   undoHistory = null;
   monacoBinding?.destroy();
@@ -906,23 +784,10 @@ function applyRemoteCursorAdjustment(changes) {
 }
 
 function initMonaco() {
-  const amdRequire = window.require;
-  amdRequire.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
-  amdRequire(['vs/editor/editor.main'], () => {
-    model = monaco.editor.createModel('', languageSelect?.value || 'plaintext');
-    model.undo = async () => { performCollaborativeUndo(); };
-    model.redo = async () => { performCollaborativeRedo(); };
-    editor = monaco.editor.create(editorHost, {
-      model,
-      theme: 'vs-dark',
-      minimap: { enabled: false },
-      automaticLayout: true,
-      fixedOverflowWidgets: true,
-      emptySelectionClipboard: false,
-      fontFamily: 'IBM Plex Mono, monospace',
-      fontSize: 14,
-      readOnly: true
-    });
+
+    ({ model, editor } = createMonacoAdapter(monaco, editorHost, {
+      language: languageSelect?.value, undo: performCollaborativeUndo, redo: performCollaborativeRedo
+    }));
 
     editor.onDidChangeModelContent((event) => {
       if (isApplyingRemoteUpdate) return;
@@ -977,7 +842,7 @@ function initMonaco() {
     });
 
     editorReadyResolve();
-  });
+
 }
 
 async function joinRoom() {
@@ -1002,9 +867,7 @@ async function joinRoom() {
     if (createdByEl) {
       createdByEl.textContent = createdBy || 'unknown';
     }
-    ensureLanguageOption(language);
-    languageSelect.value = language;
-    setLanguage(language);
+    applyRoomMetadata(result);
     if (ydoc && hasJoinedRoom) {
       if (!mergeYjsSyncState(yjsState, yjsUpdates, documentRevision, checkpointRevision)) {
         throw new Error('Failed to merge the room document after reconnect.');
@@ -1014,7 +877,6 @@ async function joinRoom() {
     }
     currentVersion = Math.max(currentVersion, version);
     versionNumberEl.textContent = currentVersion;
-    renderUsers(users);
     hasJoinedRoom = true;
     scheduleYjsRecovery();
     rejoinRetryAttempt = 0;
@@ -1088,13 +950,15 @@ window.addEventListener('online', () => {
     });
 });
 
-connection.on('UserJoined', (name, users) => {
+connection.on('UserJoined', (name, users, revision) => {
+  if (!roomView.updateUsers(users, Number(revision))) return;
   cursorPositions[name] ??= 0;
   renderUsers(users);
   renderRemoteCarets();
 });
 
-connection.on('UserLeft', (name, users) => {
+connection.on('UserLeft', (name, users, revision) => {
+  if (!roomView.updateUsers(users, Number(revision))) return;
   delete cursorPositions[name];
   caretClassMap.delete(name);
   delete caretColors[name];
@@ -1147,7 +1011,8 @@ connection.on('YjsUpdated', (updateBase64, documentRevision, roomVersion, author
   handleYjsUpdated(updateBase64, documentRevision, roomVersion, author);
 });
 
-connection.on('LanguageUpdated', (language, version) => {
+connection.on('LanguageUpdated', (language, version, revision) => {
+  if (!roomView.updateLanguage(language, Number(revision))) return;
   languageSelect.value = language;
   setLanguage(language);
   currentVersion = Math.max(currentVersion, Number(version) || 0);
@@ -1253,3 +1118,5 @@ loadLanguages().finally(() => {
   setLanguageReadOnly(true);
 });
 initMonaco();
+
+function applyRoomMetadata(result) { roomView.apply(result); }

@@ -72,6 +72,9 @@ internal sealed class RoomResourceFilter(IOptions<ApplicationConfiguration> sett
         }
         try
         { return await next(context).ConfigureAwait(false); }
+        catch (UnauthorizedAccessException ex) { throw new HubException(ex.Message); }
+        catch (ArgumentException) { throw new HubException("InvalidInput: Invalid room input"); }
+        catch (RoomNotFoundException ex) { throw new HubException(ex.Message); }
         catch (RoomLimitException ex) { throw new HubException(ex.Message); }
     }
 

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Models.Configuration;
 
 /// <summary>Finite per-process and per-room resource budgets. Sizes refer to Base64 characters on the wire.</summary>
-public sealed class RoomLimits
+public sealed class RoomLimits : IValidatableObject
 {
     /// <summary>Maximum encoded update size.</summary>
     [Range(1024, 12 * 1024 * 1024)]
@@ -29,4 +29,13 @@ public sealed class RoomLimits
     /// <summary>Maximum invocations per connection per second.</summary>
     [Range(10, 1000)]
     public int InvocationsPerSecond { get; init; } = 100;
+    /// <inheritdoc />
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        // Worst-case escaped text plus Base64 journal/checkpoint and entry framing.
+        var syncBudget = MaxEncodedCheckpointBytes + (4L * ((MaxJournalBytes + 2) / 3))
+            + (6L * MaxSnapshotCharacters) + (80L * MaxJournalCount) + 4096;
+        if (syncBudget > 16 * 1024 * 1024)
+            yield return new ValidationResult("Combined limits must fit a 16 MiB synchronization response.");
+    }
 }

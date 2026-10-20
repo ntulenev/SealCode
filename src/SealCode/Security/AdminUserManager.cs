@@ -1,4 +1,8 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+
+using Microsoft.AspNetCore.Identity;
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -42,8 +46,8 @@ internal sealed class AdminUserManager : IAdminUserManager
         }
 
         var user = _settings.AdminUsers.FirstOrDefault(user =>
-            string.Equals(user.Name, _context.User.Identity.Name, StringComparison.OrdinalIgnoreCase));
-        if (user is null)
+            string.Equals(user.Name.Trim(), _context.User.Identity.Name, StringComparison.OrdinalIgnoreCase));
+        if (user is null || _context.User.FindFirstValue("credential") != CredentialStamp(user))
         {
             return false;
         }
@@ -64,15 +68,20 @@ internal sealed class AdminUserManager : IAdminUserManager
         }
 
         var user = _settings.AdminUsers.FirstOrDefault(user =>
-            string.Equals(user.Name, name, StringComparison.OrdinalIgnoreCase)
-            && user.Password == password);
-        if (user is null)
-        {
+            string.Equals(user.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+        var hasher = new PasswordHasher<AdminUserConfiguration>();
+        var hash = user?.PasswordHash;
+        // Legacy settings are accepted only by Development startup validation.
+        if (user is not null && string.IsNullOrEmpty(hash) && user.Password is not null)
+            hash = hasher.HashPassword(user, user.Password);
+        var verificationUser = user ?? new AdminUserConfiguration { Name = "unknown" };
+        if (string.IsNullOrEmpty(hash))
+            hash = _dummyHash;
+        if (hasher.VerifyHashedPassword(verificationUser, hash, password) == PasswordVerificationResult.Failed || user is null)
             return false;
-        }
 
         var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, user.Name)],
+            [new Claim(ClaimTypes.Name, user.Name.Trim()), new Claim("credential", CredentialStamp(user))],
             CookieAuthenticationDefaults.AuthenticationScheme);
         await _context.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -85,6 +94,10 @@ internal sealed class AdminUserManager : IAdminUserManager
     public Task ClearCurrentAdminUserAsync()
         => _context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
+    internal static string CredentialStamp(AdminUserConfiguration user)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user.PasswordHash ?? user.Password ?? "")));
+
+    private static readonly string _dummyHash = new PasswordHasher<AdminUserConfiguration>().HashPassword(new() { Name = "unknown" }, Guid.NewGuid().ToString());
     private readonly ApplicationConfiguration _settings;
     private readonly HttpContext _context;
 }

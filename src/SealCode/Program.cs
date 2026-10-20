@@ -16,7 +16,6 @@ using SealCode;
 using SealCode.Routing;
 using SealCode.Security;
 
-using Transport.Models;
 using Transport.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +26,25 @@ builder.Services.AddOptions<ApplicationConfiguration>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddSingleton<IValidateOptions<ApplicationConfiguration>, ApplicationConfigurationValidator>();
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+{
+    var proxies = builder.Configuration.GetSection("TrustedProxies").Get<string[]>() ?? [];
+    options.KnownProxies.Clear();
+    options.KnownIPNetworks.Clear();
+    if (proxies.Length > 0)
+    {
+        options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+        foreach (var proxy in proxies)
+            options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+    }
+});
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+});
+builder.Services.AddSingleton<AdminHttpSecurity>();
 builder.Services.AddSingleton<RoomResourceFilter>();
 builder.Services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
 
@@ -53,6 +71,7 @@ builder.Services.Configure<RouteOptions>(options => options.ConstraintMap["Short
 builder.Services.AddSingleton<IRoomRegistry, RoomRegistry>();
 builder.Services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
 builder.Services.AddSingleton<IRoomManager, RoomManager>();
+builder.Services.AddSingleton<RoomSessionService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(sp =>
 {
@@ -65,6 +84,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     {
         options.Cookie.Name = "admin_auth";
         options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.SlidingExpiration = false;
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
     });
@@ -80,67 +101,52 @@ var applicationVersion = new
     InformationalVersion = informationalVersion
 };
 
+app.UseForwardedHeaders();
+if (!app.Environment.IsDevelopment())
+{
+    _ = app.UseHsts();
+    _ = app.UseHttpsRedirection();
+}
+app.Use(async (context, next) =>
+{
+    try
+    { await next(context).ConfigureAwait(false); }
+    catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException or BadHttpRequestException or Models.Exceptions.RoomLimitException)
+    {
+        var limit = ex is Models.Exceptions.RoomLimitException;
+        await Results.Problem(statusCode: limit ? 409 : 400, title: limit ? "LimitExceeded" : "InvalidInput")
+            .ExecuteAsync(context).ConfigureAwait(false);
+    }
+});
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+    context.Response.Headers.XContentTypeOptions = "nosniff";
+    if (context.Request.Path.StartsWithSegments("/roomHub", StringComparison.Ordinal)
+        && context.Request.Headers.Upgrade.ToString().Equals("websocket", StringComparison.OrdinalIgnoreCase)
+        && context.Request.Headers.TryGetValue("Origin", out var origin)
+        && (!Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri)
+            || uri.GetLeftPart(UriPartial.Authority) != $"{context.Request.Scheme}://{context.Request.Host}"))
+    {
+        context.Response.StatusCode = 403;
+        return;
+    }
+    await next(context).ConfigureAwait(false);
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
+app.Use((context, next) => app.Services.GetRequiredService<AdminHttpSecurity>().InvokeAsync(context, next));
+app.MapGet("/admin/token", (HttpContext context, Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Json(new { Token = antiforgery.GetAndStoreTokens(context).RequestToken });
+});
 
 app.MapGet("/", (IWebHostEnvironment env) =>
 {
     var path = Path.Combine(env.WebRootPath, "index.html");
     return Results.File(path, "text/html");
-});
-
-app.MapGet("/admin/login", (IWebHostEnvironment env) =>
-{
-    var path = Path.Combine(env.WebRootPath, "admin-login.html");
-    return Results.File(path, "text/html");
-});
-
-app.MapPost("/admin/login",
-            async (IAdminUserManager adminUserManager,
-                   CancellationToken cancellationToken) =>
-{
-    return await adminUserManager.TrySetCurrentUserAsync(cancellationToken).ConfigureAwait(false)
-        ? Results.Redirect("/admin")
-        : Results.Redirect("/admin/login?error=1");
-});
-
-app.MapPost("/admin/logout", async (IAdminUserManager adminUserManager) =>
-{
-    await adminUserManager.ClearCurrentAdminUserAsync().ConfigureAwait(false);
-    return Results.Redirect("/admin/login");
-});
-
-app.MapGet("/admin", (IWebHostEnvironment env, IAdminUserManager adminUserManager) =>
-{
-    if (!adminUserManager.IsAdmin())
-    {
-        return Results.Redirect("/admin/login");
-    }
-
-    var path = Path.Combine(env.WebRootPath, "admin.html");
-    return Results.File(path, "text/html");
-});
-
-app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUserManager) =>
-{
-    if (!adminUserManager.TryGetAdminUser(out var adminUser))
-    {
-        return Results.Unauthorized();
-    }
-
-    var rooms = roomManager.GetRoomsSnapshot(adminUser)
-        .Select(room => new RoomSummary(
-            room.RoomId.Value,
-            room.Name.Value,
-            room.Language.Value,
-            room.UsersCount,
-            room.LastUpdatedUtc,
-            room.CreatedBy.Name,
-            room.CanDelete))
-        .ToArray();
-
-    return Results.Json(rooms);
 });
 
 app.MapGet("/languages", (ILanguageValidator validator)
@@ -153,61 +159,6 @@ app.MapGet("/features", (IOptions<ApplicationConfiguration> settings)
         MaxYjsMessageBytes = maxYjsMessageBytes,
         settings.Value.Limits
     }));
-
-app.MapPost("/admin/rooms",
-            async (HttpContext context,
-                   IRoomManager roomManager,
-                   ILanguageValidator languageValidator,
-                   IAdminUserManager adminUserManager,
-                   CancellationToken cancellationToken) =>
-{
-    if (!adminUserManager.TryGetAdminUser(out var adminUser))
-    {
-        return Results.Unauthorized();
-    }
-
-    var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequest>(cancellationToken).ConfigureAwait(false);
-    if (payload is null || string.IsNullOrWhiteSpace(payload.Name))
-    {
-        return Results.BadRequest(new { error = "Name is required" });
-    }
-
-    var language = new RoomLanguage(payload.Language ?? "csharp");
-    if (!languageValidator.IsValid(language))
-    {
-        return Results.BadRequest(new { error = "Invalid language" });
-    }
-    var name = new RoomName(payload.Name);
-    var room = roomManager.CreateRoom(name, language, adminUser);
-    return Results.Json(new
-    {
-        RoomId = room.RoomId.Value,
-        Name = room.Name.Value,
-        Language = room.Language.Value,
-        CreatedBy = room.CreatedBy.Name
-    });
-});
-
-app.MapDelete("/admin/rooms/{roomId:ShortGuid}",
-            async (RoomId roomId,
-                   IRoomManager roomManager,
-                   IAdminUserManager adminUserManager,
-                   CancellationToken cancellationToken) =>
-{
-    if (!adminUserManager.TryGetAdminUser(out var adminUser))
-    {
-        return Results.Unauthorized();
-    }
-
-    var result = await roomManager.DeleteRoomAsync(roomId, adminUser, cancellationToken).ConfigureAwait(false);
-    return result switch
-    {
-        RoomDeletionResult.Deleted => Results.Ok(),
-        RoomDeletionResult.Forbidden => Results.StatusCode(StatusCodes.Status403Forbidden),
-        RoomDeletionResult.NotFound => Results.NotFound(),
-        _ => throw new NotImplementedException()
-    };
-});
 
 app.MapGet("/room/{roomId:ShortGuid}", (RoomId roomId, IRoomRegistry registry, IWebHostEnvironment env) =>
 {
@@ -227,6 +178,8 @@ app.MapGet("/version", (HttpContext context) =>
     context.Response.Headers.CacheControl = "no-store";
     return Results.Json(applicationVersion);
 });
+
+app.MapAdminEndpoints();
 
 app.MapHub<RoomHub>("/roomHub");
 

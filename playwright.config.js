@@ -1,9 +1,11 @@
+import { testHostCommand } from './tests/test-host.js';
 import { defineConfig } from '@playwright/test';
 
 const baseURL = 'http://127.0.0.1:5087';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  outputDir: 'test-results/browser',
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -16,18 +18,10 @@ export default defineConfig({
     trace: 'retain-on-failure'
   },
   webServer: {
-    command: `dotnet run --project src/SealCode/SealCode.csproj --no-launch-profile --no-build --urls ${baseURL}`,
+    command: testHostCommand(baseURL, [{ Name: 'BrowserAdmin', Password: 'browser-pass', IsSuperAdmin: true }]),
     url: `${baseURL}/health`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: {
-      ...process.env,
-      AdminUsers__0__Name: 'BrowserAdmin',
-      AdminUsers__0__Password: 'browser-pass',
-      AdminUsers__0__IsSuperAdmin: 'true',
-      Languages__0: 'csharp',
-      Languages__1: 'sql',
-      MaxUsersPerRoom: '5'
-    }
+    env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }
   }
 });
