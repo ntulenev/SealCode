@@ -24,6 +24,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         ArgumentNullException.ThrowIfNull(settings);
 
         _limits = settings.Value.Limits;
+        _sources = [.. Enumerable.Range(0, 256).Select(_ => Limiter(_limits.NewConnectionsPerSourcePerMinute, 60))];
         _connections = new SemaphoreSlim(_limits.MaxConnections);
     }
 
@@ -117,7 +118,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
     private readonly SemaphoreSlim _connections;
     private readonly RoomLimits _limits;
     // Fixed buckets bound anonymous-source limiter memory even under rotating addresses.
-    private readonly FixedWindowRateLimiter[] _sources = [.. Enumerable.Range(0, 256).Select(_ => Limiter(30, 60))];
+    private readonly FixedWindowRateLimiter[] _sources;
     private static readonly Meter _meter = new("SealCode.Hub");
     private static readonly Counter<long> _throttled = _meter.CreateCounter<long>("hub.throttled");
 }

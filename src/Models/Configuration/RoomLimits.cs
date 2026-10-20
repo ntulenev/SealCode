@@ -55,6 +55,12 @@ public sealed class RoomLimits : IValidatableObject
     [Range(10, 1000)]
     public int InvocationsPerSecond { get; init; } = 100;
 
+    /// <summary>
+    /// Gets the maximum new connections per source bucket per minute.
+    /// </summary>
+    [Range(1, 10000)]
+    public int NewConnectionsPerSourcePerMinute { get; init; } = 30;
+
     /// <inheritdoc />
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {

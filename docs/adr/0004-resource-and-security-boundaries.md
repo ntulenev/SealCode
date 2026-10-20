@@ -9,7 +9,10 @@ SC-08 is conditional and is not implemented by these changes.
 `Limits` has validated defaults: 4 MiB Base64 characters per update/checkpoint,
 4 MiB decoded journal payloads, 2048 journal entries, 1,048,576 UTF-16 snapshot
 characters, 32 rooms, 160 concurrent hub connections, 100 invocations/second
-per connection. Anonymous source buckets permit 30 new connections/minute.
+per connection. Anonymous source buckets permit 30 new connections/minute by
+`Limits:NewConnectionsPerSourcePerMinute` (validated range 1–10000). Increase this
+for deployments behind NAT/proxies and configure `TrustedProxies` appropriately,
+so reconnect bursts do not throttle an entire office.
 These are implementation defaults, not previously agreed product commitments.
 The 500,000-character fixture fits these defaults. Combined configurable limits
 must fit the worst-case escaped 16 MiB synchronization response, including

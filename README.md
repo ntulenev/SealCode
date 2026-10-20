@@ -151,7 +151,11 @@ are trimmed and limited to 64 characters.
 The `Limits` section accepts `MaxEncodedUpdateBytes` and
 `MaxEncodedCheckpointBytes` (4 MiB Base64 characters each), `MaxJournalBytes`
 (4 MiB decoded), `MaxJournalCount` (2048), `MaxSnapshotCharacters` (1,048,576),
-`MaxRooms` (32), `MaxConnections` (160), and `InvocationsPerSecond` (100).
+`MaxRooms` (32), `MaxConnections` (160), `NewConnectionsPerSourcePerMinute`
+(30, range 1–10000), and `InvocationsPerSecond` (100).
+Increase `Limits:NewConnectionsPerSourcePerMinute` for deployments behind shared
+NAT/proxies to accommodate reconnect bursts. Configure `TrustedProxies` so the
+source address reflects the intended client boundary.
 Defaults are implementation choices verified with 500,000-character documents.
 Combined limits must fit a worst-case 16 MiB synchronization response; invalid
 settings fail startup. The browser pending/delivery budgets are 8 MiB/2048 entries.
