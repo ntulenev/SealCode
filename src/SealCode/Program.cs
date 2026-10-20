@@ -140,7 +140,7 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
-app.Use((context, next) => app.Services.GetRequiredService<AdminHttpSecurity>().InvokeAsync(context, next));
+app.Use((context, next) => AdminHttpSecurity.InvokeAsync(context, next));
 app.MapGet("/admin/token", (HttpContext context, Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery) =>
 {
     context.Response.Headers.CacheControl = "no-store";

@@ -567,8 +567,11 @@ public sealed class SealCodeApiTests
         (await client.GetAsync("/admin/rooms")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact]
-    public async Task LoginFloodIsControlled()
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    [InlineData("/ADMIN/LOGIN")]
+    public async Task LoginFloodIsControlled(string path)
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient(new()
@@ -578,10 +581,19 @@ public sealed class SealCodeApiTests
         for (var attempt = 0; attempt < 10; attempt++)
         {
             using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "unknown", ["password"] = "incorrect" });
-            (await SecurePostAsync(client, "/admin/login", form)).StatusCode.Should().Be(HttpStatusCode.Redirect);
+            (await SecurePostAsync(client, path, form)).StatusCode.Should().Be(HttpStatusCode.Redirect);
         }
         using var last = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "UNKNOWN", ["password"] = "incorrect" });
-        (await SecurePostAsync(client, "/admin/login", last)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await SecurePostAsync(client, path, last)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task LoginTrailingSlashRejectsLongName()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = new string('a', 65), ["password"] = "incorrect" });
+        (await SecurePostAsync(client, "/admin/login/", form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -727,9 +739,11 @@ public sealed class SealCodeApiTests
                 {
                     ["AdminUsers:0:Name"] = "Admin",
                     ["AdminUsers:0:Password"] = "pass1",
+                    ["AdminUsers:0:PasswordHash"] = null,
                     ["AdminUsers:0:IsSuperAdmin"] = "false",
                     ["AdminUsers:1:Name"] = "Root",
                     ["AdminUsers:1:Password"] = "pass2",
+                    ["AdminUsers:1:PasswordHash"] = null,
                     ["AdminUsers:1:IsSuperAdmin"] = "true",
                     ["Languages:0"] = "csharp",
                     ["Languages:1"] = "sql",
