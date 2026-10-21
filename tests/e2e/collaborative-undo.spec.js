@@ -2,7 +2,6 @@ import { csrf } from './admin-token.js';
 import { expect, test } from './fixtures.js';
 
 async function createRoom(request) {
-
   const createResponse = await request.post('/admin/rooms', {
     headers: await csrf(request),
     data: {
@@ -135,4 +134,40 @@ test('a reconnect preserves local history and merges the server state', async ({
 
   await aliceContext.close();
   await bobContext.close();
+});
+
+test('offline read-only prevents undo until the participant rejoins', async ({
+  page,
+  context,
+  request
+}) => {
+  const roomId = await createRoom(request);
+  await joinRoom(page, roomId, 'Alice');
+  await focusEditor(page);
+  await page.keyboard.type('keep this text');
+  await expect
+    .poll(() => page.evaluate(() => window.__debugUndoState().undoDepth))
+    .toBeGreaterThan(0);
+  const before = await editorText(page);
+  await context.setOffline(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        monaco.editor.getEditors()[0].getOption(monaco.editor.EditorOption.readOnly)
+      )
+    )
+    .toBe(true);
+  await page.keyboard.press('Control+z');
+  expect(await editorText(page)).toBe(before);
+  await context.setOffline(false);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        monaco.editor.getEditors()[0].getOption(monaco.editor.EditorOption.readOnly)
+      )
+    )
+    .toBe(false);
+  await focusEditor(page);
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => editorText(page)).toBe('');
 });

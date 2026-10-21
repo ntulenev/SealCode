@@ -530,15 +530,23 @@ export function createRoomApplication({
     }
   }
 
+  function canEditDocument() {
+    return (
+      editor &&
+      !editor.getOption(monaco.editor.EditorOption.readOnly) &&
+      !updateSender.blocked &&
+      lifecycle.participating &&
+      connection.state === signalR.HubConnectionState.Connected
+    );
+  }
+
   function performCollaborativeUndo() {
-    if (!yjs.undoHistory || connection.state !== signalR.HubConnectionState.Connected)
-      return false;
+    if (!yjs.undoHistory || !canEditDocument()) return false;
     return yjs.undoHistory.undo() != null;
   }
 
   function performCollaborativeRedo() {
-    if (!yjs.undoHistory || connection.state !== signalR.HubConnectionState.Connected)
-      return false;
+    if (!yjs.undoHistory || !canEditDocument()) return false;
     return yjs.undoHistory.redo() != null;
   }
 
