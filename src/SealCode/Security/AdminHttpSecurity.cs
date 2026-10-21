@@ -33,7 +33,9 @@ internal sealed class AdminHttpSecurity : IDisposable
         await next(context).ConfigureAwait(false);
     }
 
-    /// <summary>Applies login limits to every route spelling matched by the endpoint.</summary>
+    /// <summary>
+    /// Applies login limits to every route spelling matched by the endpoint.
+    /// </summary>
     /// <param name="invocation">The endpoint invocation.</param>
     /// <param name="next">The next endpoint filter.</param>
     /// <returns>The endpoint result or a limit rejection.</returns>

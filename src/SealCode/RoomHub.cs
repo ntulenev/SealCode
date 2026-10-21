@@ -213,6 +213,11 @@ public sealed class RoomHub : Hub
     /// <summary>
     /// Stores a compact Yjs checkpoint when it represents the latest document revision.
     /// </summary>
+    /// <remarks>
+    /// Stale checkpoints are rejected before decoding the payload. Accepted checkpoints
+    /// broadcast YjsCheckpointed(checkpointRevision) to other participants. Broadcast
+    /// failures are logged as warnings and do not change the accepted result.
+    /// </remarks>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="stateBase64">The full Yjs document state (base64).</param>
     /// <param name="textSnapshot">The corresponding plain text snapshot.</param>
