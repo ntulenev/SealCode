@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
 using Models.Configuration;
-using Models.Exceptions;
 
 using SealCode.Hub;
 using SealCode.Hosting;
@@ -103,10 +102,10 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         {
             return await next(context).ConfigureAwait(false);
         }
-        catch (UnauthorizedAccessException) { throw HubErrors.Create(HubErrorCode.NotParticipant, ""); }
-        catch (ArgumentException) { throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid room input"); }
-        catch (RoomNotFoundException) { throw HubErrors.Create(HubErrorCode.RoomNotFound, ""); }
-        catch (RoomLimitException ex) { throw HubErrors.Create(HubErrorCode.LimitExceeded, ex.Message["LimitExceeded: ".Length..]); }
+        catch (Exception ex) when (HubErrors.Translate(ex) is not null)
+        {
+            throw HubErrors.Translate(ex)!;
+        }
     }
 
     /// <inheritdoc />

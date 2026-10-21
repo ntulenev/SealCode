@@ -81,21 +81,24 @@ internal static class HubErrors
         {
             return invoke();
         }
-        catch (RoomNotFoundException)
+        catch (Exception ex) when (Translate(ex) is not null)
         {
-            throw Create(HubErrorCode.RoomNotFound, "");
-        }
-        catch (UnauthorizedAccessException)
-        {
-            throw Create(HubErrorCode.NotParticipant, "");
-        }
-        catch (RoomLimitException ex)
-        {
-            throw Create(HubErrorCode.LimitExceeded, ex.Message["LimitExceeded: ".Length..]);
-        }
-        catch (ArgumentException ex)
-        {
-            throw Create(HubErrorCode.InvalidInput, ex.Message, legacyInput: true);
+            throw Translate(ex)!;
         }
     }
+
+    /// <summary>
+    /// Maps a known domain or input exception to its stable wire error.
+    /// </summary>
+    /// <param name="exception">The application failure.</param>
+    /// <returns>The protocol error, or null for an unexpected failure.</returns>
+    public static HubException? Translate(Exception exception) => exception switch
+    {
+        RoomNotFoundException => Create(HubErrorCode.RoomNotFound, ""),
+        UnauthorizedAccessException => Create(HubErrorCode.NotParticipant, ""),
+        RoomLimitException limit => Create(HubErrorCode.LimitExceeded, limit.Resource),
+        ArgumentNullException => Create(HubErrorCode.InvalidInput, "Invalid room input"),
+        ArgumentException input => Create(HubErrorCode.InvalidInput, input.Message, legacyInput: true),
+        _ => null
+    };
 }
