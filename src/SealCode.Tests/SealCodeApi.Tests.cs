@@ -367,6 +367,47 @@ public sealed class SealCodeApiTests
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task HealthShouldPreserveSecurityHeaders()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/health");
+
+        response.Headers.GetValues("Content-Security-Policy").Should().Equal("default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+        response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+    }
+
+    [Fact]
+    public async Task InvalidRoomJsonShouldReturnInvalidInputProblem()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+        using var content = new StringContent("{invalid", System.Text.Encoding.UTF8, "application/json");
+        using var response = await SecurePostAsync(client, "/admin/rooms", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Be("InvalidInput");
+    }
+
+    [Fact]
+    public async Task RoomCapacityShouldReturnLimitExceededProblem()
+    {
+        using var originalFactory = CreateFactory();
+        using var factory = originalFactory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
+            config.AddInMemoryCollection(new Dictionary<string, string?> { ["Limits:MaxRooms"] = "1" })));
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        _ = await CreateRoomAsync(client, cookie);
+        using var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Second", Language = "sql" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Be("LimitExceeded");
+    }
+
     private static SealCodeAppFactory CreateFactory() => new();
 
     [Fact]
