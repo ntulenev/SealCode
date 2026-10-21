@@ -251,7 +251,7 @@ export class YjsSession {
   applyRemoteCursorAdjustment(changes) {
     if (!changes || !changes.length || !this.model) return;
     const sorted = [...changes].sort(
-      (a, b) => (a.rangeOffset ?? 0) - (b.rangeOffset ?? 0)
+      (a, b) => (b.rangeOffset ?? 0) - (a.rangeOffset ?? 0)
     );
     for (const change of sorted) {
       const start =

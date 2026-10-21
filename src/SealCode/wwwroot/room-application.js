@@ -163,7 +163,7 @@ export function createRoomApplication({
           checkpointRevision
         );
       }
-      currentVersion = Math.max(currentVersion, version);
+      currentVersion = Math.max(currentVersion, Number(version) || 0);
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
@@ -466,7 +466,11 @@ export function createRoomApplication({
         throw new Error('Failed to load languages');
       }
       const languages = await res.json();
-      setLanguageOptions(languageSelect, languages, preferred);
+      setLanguageOptions(
+        languageSelect,
+        languages,
+        roomView.currentLanguage ?? preferred
+      );
     } catch {
       setLanguageOptions(languageSelect, [], preferred);
     }
@@ -731,39 +735,49 @@ export function createRoomApplication({
   );
 
   joinBtn.addEventListener('click', async () => {
+    if (joinBtn.disabled) return;
     displayName = displayNameInput.value.trim();
     if (!displayName) {
       joinError.textContent = 'Display name is required.';
       joinError.classList.remove('hidden');
       return;
     }
-    await Promise.all([editorReady, featuresReady]);
-    if (connection.state === signalR.HubConnectionState.Disconnected) {
-      const started = await ensureConnectionStarted();
-      if (!started) {
-        setStatus('disconnected');
-        joinError.textContent = 'Failed to connect. Try again.';
-        joinError.classList.remove('hidden');
-        return;
+    joinBtn.disabled = true;
+    displayNameInput.disabled = true;
+    try {
+      await Promise.all([editorReady, featuresReady, languagesReady]);
+      if (connection.state === signalR.HubConnectionState.Disconnected) {
+        const started = await ensureConnectionStarted();
+        if (!started) {
+          setStatus('disconnected');
+          joinError.textContent = 'Failed to connect. Try again.';
+          joinError.classList.remove('hidden');
+          return;
+        }
       }
-    }
-    setStatus('connected');
-    setLanguageReadOnly(true);
-    const joined = await lifecycle.joinRoom();
-    if (!joined && !lifecycle.joined) await connection.stop();
-    if (joined) {
-      setEditorReadOnly(false);
-      setLanguageReadOnly(false);
-    } else {
-      setEditorReadOnly(true);
+      setStatus('connected');
       setLanguageReadOnly(true);
+      const joined = await lifecycle.joinRoom();
+      if (!joined && !lifecycle.joined) await connection.stop();
+      if (joined) {
+        setEditorReadOnly(false);
+        setLanguageReadOnly(false);
+      } else {
+        setEditorReadOnly(true);
+        setLanguageReadOnly(true);
+      }
+    } finally {
+      if (!lifecycle.joined) {
+        joinBtn.disabled = false;
+        displayNameInput.disabled = false;
+      }
     }
   });
 
   setStatus('disconnected');
   const featuresReady = loadFeatures();
-  loadLanguages().finally(() => {
-    setLanguageReadOnly(true);
+  const languagesReady = loadLanguages().finally(() => {
+    if (!lifecycle.joined) setLanguageReadOnly(true);
   });
   initMonaco();
 
