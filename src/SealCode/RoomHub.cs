@@ -11,6 +11,8 @@ using SealCode.Hub;
 
 using SignalRHub = Microsoft.AspNetCore.SignalR.Hub;
 
+using Transport;
+
 namespace SealCode;
 
 /// <summary>
@@ -43,7 +45,7 @@ public sealed class RoomHub : SignalRHub
     /// <param name="roomId">The room identifier.</param>
     /// <param name="displayName">The user display name.</param>
     /// <returns>The join result including the initial room state.</returns>
-    [HubMethodName("JoinRoom")]
+    [HubMethodName(HubContract.Methods.JoinRoom)]
     public async Task<JoinRoomResult> JoinRoomAsync(string roomId, string displayName)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
@@ -95,7 +97,7 @@ public sealed class RoomHub : SignalRHub
         try
         {
             await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
-                .SendAsync("UserJoined", displayName, joinResult.Users, joinResult.PresenceRevision, CancellationToken.None)
+                .SendAsync(HubContract.Events.UserJoined, displayName, joinResult.Users, joinResult.PresenceRevision, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -111,7 +113,7 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="updateBase64">The incremental Yjs update (base64).</param>
-    [HubMethodName("UpdateYjs")]
+    [HubMethodName(HubContract.Methods.UpdateYjs)]
     public async Task UpdateYjsAsync(string roomId, string updateBase64)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
@@ -119,7 +121,7 @@ public sealed class RoomHub : SignalRHub
 
         // Once appended, the update belongs to the room even if its author disconnects.
         await Clients.Group(parsedRoomId.Value)
-            .SendAsync("YjsUpdated", updateBase64, appendResult.DocumentRevision.Value, appendResult.RoomVersion.Value, appendResult.Author.Value, CancellationToken.None)
+            .SendAsync(HubContract.Events.YjsUpdated, updateBase64, appendResult.DocumentRevision.Value, appendResult.RoomVersion.Value, appendResult.Author.Value, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -128,7 +130,7 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <returns>The latest accepted document revision.</returns>
-    [HubMethodName("GetDocumentRevision")]
+    [HubMethodName(HubContract.Methods.GetDocumentRevision)]
     public long GetDocumentRevision(string roomId)
         => GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).DocumentRevision.Value;
 
@@ -137,7 +139,7 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <returns>The current document, metadata, and presence revisions.</returns>
-    [HubMethodName("GetRoomRevisions")]
+    [HubMethodName(HubContract.Methods.GetRoomRevisions)]
     public RoomRevisions GetRoomRevisions(string roomId)
         => GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).GetRevisions();
 
@@ -146,7 +148,7 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <returns>The current checkpoint and update journal.</returns>
-    [HubMethodName("SyncYjs")]
+    [HubMethodName(HubContract.Methods.SyncYjs)]
     public JoinRoomResult SyncYjs(string roomId)
         => JoinRoomResult.From(GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _));
 
@@ -158,7 +160,7 @@ public sealed class RoomHub : SignalRHub
     /// <param name="textSnapshot">The corresponding plain text snapshot.</param>
     /// <param name="basedOnRevision">The latest document revision contained in the checkpoint.</param>
     /// <returns>True when the checkpoint was accepted; otherwise false.</returns>
-    [HubMethodName("CheckpointYjs")]
+    [HubMethodName(HubContract.Methods.CheckpointYjs)]
     public async Task<bool> CheckpointYjsAsync(
         string roomId,
         string stateBase64,
@@ -177,7 +179,7 @@ public sealed class RoomHub : SignalRHub
             try
             {
                 await Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId)
-                    .SendAsync("YjsCheckpointed", basedOnRevision, CancellationToken.None).ConfigureAwait(false);
+                    .SendAsync(HubContract.Events.YjsCheckpointed, basedOnRevision, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -192,7 +194,7 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="language">The language to set.</param>
-    [HubMethodName("SetLanguage")]
+    [HubMethodName(HubContract.Methods.SetLanguage)]
     public async Task SetLanguageAsync(string roomId, string language)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
@@ -212,7 +214,7 @@ public sealed class RoomHub : SignalRHub
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }
         await Clients.Group(parsedRoomId.Value)
-            .SendAsync("LanguageUpdated", normalized.Value, newVersion, metadataRevision, CancellationToken.None)
+            .SendAsync(HubContract.Events.LanguageUpdated, normalized.Value, newVersion, metadataRevision, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -221,7 +223,7 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="position">The cursor position.</param>
-    [HubMethodName("UpdateCursor")]
+    [HubMethodName(HubContract.Methods.UpdateCursor)]
     public async Task UpdateCursorAsync(string roomId, int position)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
@@ -230,7 +232,7 @@ public sealed class RoomHub : SignalRHub
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid cursor position", legacyInput: true);
         }
         await BroadcastPresenceAsync(parsedRoomId, (id, user) => Clients.GroupExcept(id, Context.ConnectionId)
-            .SendAsync("CursorUpdated", user.Value, position, Context.ConnectionAborted)).ConfigureAwait(false);
+            .SendAsync(HubContract.Events.CursorUpdated, user.Value, position, Context.ConnectionAborted)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -238,29 +240,29 @@ public sealed class RoomHub : SignalRHub
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="isMultiLine">True if selection spans multiple lines; otherwise false.</param>
-    [HubMethodName("UpdateSelection")]
+    [HubMethodName(HubContract.Methods.UpdateSelection)]
     public async Task UpdateSelectionAsync(string roomId, bool isMultiLine)
     {
         await BroadcastPresenceAsync(ParseRoomIdOrThrow(roomId), (id, user) => Clients.GroupExcept(id, Context.ConnectionId)
-            .SendAsync("UserSelection", user.Value, isMultiLine, Context.ConnectionAborted)).ConfigureAwait(false);
+            .SendAsync(HubContract.Events.UserSelection, user.Value, isMultiLine, Context.ConnectionAborted)).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Marks a copy-to-clipboard action for the current user.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
-    [HubMethodName("UpdateCopy")]
+    [HubMethodName(HubContract.Methods.UpdateCopy)]
     public async Task UpdateCopyAsync(string roomId)
     {
         await BroadcastPresenceAsync(ParseRoomIdOrThrow(roomId), (id, user) => Clients.Group(id)
-            .SendAsync("UserCopy", user.Value, Context.ConnectionAborted)).ConfigureAwait(false);
+            .SendAsync(HubContract.Events.UserCopy, user.Value, Context.ConnectionAborted)).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Leaves the specified room.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>
-    [HubMethodName("LeaveRoom")]
+    [HubMethodName(HubContract.Methods.LeaveRoom)]
     public async Task LeaveRoomAsync(string roomId)
         => await RemoveFromRoomAsync(ParseRoomIdOrThrow(roomId).Value, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
 
@@ -314,7 +316,7 @@ public sealed class RoomHub : SignalRHub
         if (notify && displayName is not null)
         {
             await Clients.Group(parsedRoomId.Value)
-                .SendAsync("UserLeft", displayName, usersSnapshot, result.PresenceRevision, CancellationToken.None)
+                .SendAsync(HubContract.Events.UserLeft, displayName, usersSnapshot, result.PresenceRevision, CancellationToken.None)
                 .ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
         }

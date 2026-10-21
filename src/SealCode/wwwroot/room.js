@@ -1,3 +1,5 @@
+import { HubMethods, HubEvents } from './hub-contract.js';
+
 import { HubErrorCode, classifyHubError, createHubError } from './hub-errors.js';
 
 import { createMonacoAdapter } from './monaco-adapter.js';
@@ -129,9 +131,9 @@ const updateSender = new UpdateQueue({
     connection.state === signalR.HubConnectionState.Connected,
   send: (update) => {
     const args = [roomId, base64FromUint8(update)];
-    if (!fitsYjsMessage('UpdateYjs', args, maxYjsMessageBytes))
+    if (!fitsYjsMessage(HubMethods.UpdateYjs, args, maxYjsMessageBytes))
       throw createHubError(HubErrorCode.LimitExceeded, 'An edit is too large to send');
-    return connection.invoke('UpdateYjs', ...args);
+    return connection.invoke(HubMethods.UpdateYjs, ...args);
   },
   onSuccess: () => {
     clearSyncError('update-size');
@@ -177,8 +179,8 @@ const recoveryController = new SnapshotRecovery({
     MetadataRevision: roomView.languageRevision,
     PresenceRevision: roomView.presenceRevision
   }),
-  probe: () => connection.invoke('GetRoomRevisions', roomId),
-  snapshot: () => connection.invoke('SyncYjs', roomId),
+  probe: () => connection.invoke(HubMethods.GetRoomRevisions, roomId),
+  snapshot: () => connection.invoke(HubMethods.SyncYjs, roomId),
   begin: () => {
     isSynchronizingYjs = true;
     return ++synchronizationEpoch;
@@ -250,11 +252,11 @@ const checkpointWriter = new CheckpointWriter({
       ytext.toString(),
       revision
     ];
-    if (!fitsYjsMessage('CheckpointYjs', args, maxYjsMessageBytes))
+    if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
       throw createHubError(HubErrorCode.LimitExceeded, 'Checkpoint size');
     return args;
   },
-  send: (args) => connection.invoke('CheckpointYjs', ...args),
+  send: (args) => connection.invoke(HubMethods.CheckpointYjs, ...args),
   onSuccess: (revision) => {
     checkpointJournal.noteCheckpoint(revision);
     clearSyncError('checkpoint-size');
@@ -612,7 +614,7 @@ function sendCursor() {
   cursorPositions[displayName] = offset;
   renderUsers(currentUsers);
   renderRemoteCarets();
-  connection.invoke('UpdateCursor', roomId, offset).catch(() => {});
+  connection.invoke(HubMethods.UpdateCursor, roomId, offset).catch(() => {});
 }
 
 function scheduleCursorSend() {
@@ -989,7 +991,7 @@ function initMonaco() {
     markSelecting(displayName, isMultiLine);
     if (lastSentSelectionMultiLine === isMultiLine) return;
     lastSentSelectionMultiLine = isMultiLine;
-    connection.invoke('UpdateSelection', roomId, isMultiLine).catch((err) => {
+    connection.invoke(HubMethods.UpdateSelection, roomId, isMultiLine).catch((err) => {
       lastSentSelectionMultiLine = undefined;
       console.warn('Failed to send selection update.', err);
     });
@@ -1004,7 +1006,7 @@ async function joinRoom() {
   isSynchronizingYjs = true;
   const epoch = ++synchronizationEpoch;
   try {
-    const result = await connection.invoke('JoinRoom', roomId, displayName);
+    const result = await connection.invoke(HubMethods.JoinRoom, roomId, displayName);
     if (roomClosed || epoch !== synchronizationEpoch) return false;
     const name = result.Name ?? result.name;
     const language = result.Language ?? result.language;
@@ -1119,14 +1121,14 @@ window.addEventListener('online', () => {
     });
 });
 
-connection.on('UserJoined', (name, users, revision) => {
+connection.on(HubEvents.UserJoined, (name, users, revision) => {
   if (!roomView.updateUsers(users, Number(revision))) return;
   cursorPositions[name] ??= 0;
   renderUsers(users);
   renderRemoteCarets();
 });
 
-connection.on('UserLeft', (name, users, revision) => {
+connection.on(HubEvents.UserLeft, (name, users, revision) => {
   if (!roomView.updateUsers(users, Number(revision))) return;
   delete cursorPositions[name];
   caretClassMap.delete(name);
@@ -1179,32 +1181,35 @@ function flushBufferedYjsMessages() {
   }
 }
 
-connection.on('YjsUpdated', (updateBase64, documentRevision, roomVersion, author) => {
-  if (isSynchronizingYjs) {
-    if (
-      bufferedYjsMessages.length >= 2048 ||
-      bufferedYjsMessages.reduce((sum, item) => sum + item.updateBase64.length, 0) +
-        updateBase64.length >
-        maxPendingBytes
-    ) {
-      // The authoritative journal is retained; discard only this delivery buffer and recover.
-      bufferedYjsMessages.length = 0;
-      scheduleYjsRecovery(250);
+connection.on(
+  HubEvents.YjsUpdated,
+  (updateBase64, documentRevision, roomVersion, author) => {
+    if (isSynchronizingYjs) {
+      if (
+        bufferedYjsMessages.length >= 2048 ||
+        bufferedYjsMessages.reduce((sum, item) => sum + item.updateBase64.length, 0) +
+          updateBase64.length >
+          maxPendingBytes
+      ) {
+        // The authoritative journal is retained; discard only this delivery buffer and recover.
+        bufferedYjsMessages.length = 0;
+        scheduleYjsRecovery(250);
+        return;
+      }
+      bufferedYjsMessages.push({ updateBase64, documentRevision, roomVersion, author });
       return;
     }
-    bufferedYjsMessages.push({ updateBase64, documentRevision, roomVersion, author });
-    return;
+    handleYjsUpdated(updateBase64, documentRevision, roomVersion, author);
   }
-  handleYjsUpdated(updateBase64, documentRevision, roomVersion, author);
-});
+);
 
-connection.on('YjsCheckpointed', (revision) => {
+connection.on(HubEvents.YjsCheckpointed, (revision) => {
   revision = Number(revision);
   if (!Number.isSafeInteger(revision) || revision <= 0) return;
   checkpointJournal.noteCheckpoint(revision);
 });
 
-connection.on('LanguageUpdated', (language, version, revision) => {
+connection.on(HubEvents.LanguageUpdated, (language, version, revision) => {
   if (!roomView.updateLanguage(language, Number(revision))) return;
   languageSelect.value = language;
   setLanguage(language);
@@ -1212,18 +1217,18 @@ connection.on('LanguageUpdated', (language, version, revision) => {
   versionNumberEl.textContent = currentVersion;
 });
 
-connection.on('CursorUpdated', (name, position) => {
+connection.on(HubEvents.CursorUpdated, (name, position) => {
   if (!name) return;
   cursorPositions[name] = position;
   renderUsers(currentUsers);
   renderRemoteCarets();
 });
 
-connection.on('UserSelection', (name, isMultiLine) => {
+connection.on(HubEvents.UserSelection, (name, isMultiLine) => {
   markSelecting(name, isMultiLine);
 });
 
-connection.on('UserCopy', (name) => {
+connection.on(HubEvents.UserCopy, (name) => {
   markCopying(name);
 });
 
@@ -1247,7 +1252,7 @@ function closeRoom(reason) {
   joinOverlay.classList.remove('hidden');
 }
 
-connection.on('RoomKilled', closeRoom);
+connection.on(HubEvents.RoomKilled, closeRoom);
 
 languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
@@ -1263,7 +1268,7 @@ languageSelect.addEventListener('change', async () => {
   }
   setLanguage(languageSelect.value);
   try {
-    await connection.invoke('SetLanguage', roomId, languageSelect.value);
+    await connection.invoke(HubMethods.SetLanguage, roomId, languageSelect.value);
   } catch (err) {
     restoreRoomLanguage();
     console.warn('Failed to update language.', err);
@@ -1286,7 +1291,7 @@ document.addEventListener(
     if (!displayName) return;
     if (connection.state !== signalR.HubConnectionState.Connected) return;
     markCopying(displayName);
-    connection.invoke('UpdateCopy', roomId).catch(() => {});
+    connection.invoke(HubMethods.UpdateCopy, roomId).catch(() => {});
   },
   true
 );
