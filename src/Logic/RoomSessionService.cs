@@ -15,12 +15,14 @@ public sealed class RoomSessionService : IRoomSessionService
     /// </summary>
     /// <param name="rooms">The room manager.</param>
     /// <param name="languages">The language validator.</param>
+    /// <param name="timeProvider">The clock for document and metadata mutations.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
-    public RoomSessionService(IRoomManager rooms, ILanguageValidator languages)
+    public RoomSessionService(IRoomManager rooms, ILanguageValidator languages, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(rooms);
         ArgumentNullException.ThrowIfNull(languages);
 
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _rooms = rooms;
         _languages = languages;
     }
@@ -61,8 +63,7 @@ public sealed class RoomSessionService : IRoomSessionService
             throw new RoomLimitException("Update size");
         }
         var update = Decode(updateBase64);
-        room = GetParticipant(roomId, connection, out _);
-        var result = room.Append(connection, update, DateTimeOffset.UtcNow);
+        var result = room.Append(connection, update, _timeProvider.GetUtcNow());
         return new RoomSessionAppendResult(result.DocumentRevision, result.RoomVersion, author);
     }
 
@@ -93,19 +94,18 @@ public sealed class RoomSessionService : IRoomSessionService
             return CheckpointOutcome.Stale;
         }
         var state = Decode(stateBase64);
-        room = GetParticipant(roomId, connection, out _);
-        return room.Checkpoint(connection, revision, state, new RoomText(textSnapshot ?? string.Empty), DateTimeOffset.UtcNow)
+        return room.Checkpoint(connection, revision, state, new RoomText(textSnapshot ?? string.Empty), _timeProvider.GetUtcNow())
             ? CheckpointOutcome.Accepted : CheckpointOutcome.Stale;
     }
 
     /// <inheritdoc />
     public RoomLanguageChangeResult ChangeLanguage(
-        RoomState room,
+        RoomId roomId,
         ConnectionId connection,
         RoomLanguage language)
     {
-        ArgumentNullException.ThrowIfNull(room);
-        return room.ChangeLanguage(connection, language, DateTimeOffset.UtcNow, _languages);
+        var room = GetParticipant(roomId, connection, out _);
+        return room.ChangeLanguage(connection, language, _timeProvider.GetUtcNow(), _languages);
     }
 
     private static byte[] Decode(string payload)
@@ -120,6 +120,7 @@ public sealed class RoomSessionService : IRoomSessionService
         }
     }
 
+    private readonly TimeProvider _timeProvider;
     private readonly IRoomManager _rooms;
     private readonly ILanguageValidator _languages;
 }

@@ -15,6 +15,19 @@ namespace Logic.Tests;
 
 public sealed class RoomRegistryTests
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1873", Justification = "The expression verifies a recorded log invocation.")]
+    [Fact]
+    public async Task DeletionLogsTheSuppliedReason()
+    {
+        var logger = new Mock<ILogger<RoomRegistry>>();
+        var registry = new RoomRegistry(logger.Object, CreateSettings());
+        var room = registry.CreateRoom(new("Room"), new("csharp"), new("admin"));
+        await registry.DeleteRoomAsync(room.RoomId, new("Review test reason"), CancellationToken.None);
+        logger.Verify(log => log.Log(LogLevel.Information, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("Review test reason", StringComparison.Ordinal)),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     [Fact(DisplayName = "CtorShouldThrowWhenLoggerIsNull")]
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenLoggerIsNull()

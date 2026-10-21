@@ -61,16 +61,15 @@ public interface IRoomSessionService
     /// <summary>
     /// Changes the language and captures its assigned metadata revision atomically.
     /// </summary>
-    /// <param name="room">The room to update.</param>
+    /// <param name="roomId">The room identifier.</param>
     /// <param name="connection">The participant connection identifier.</param>
     /// <param name="language">The new room language.</param>
     /// <returns>The room version and language metadata revision.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when the room is null.</exception>
     /// <exception cref="ArgumentException">Thrown when the language is not allowed.</exception>
     /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
     /// <exception cref="UnauthorizedAccessException">Thrown when the connection is not a participant.</exception>
     RoomLanguageChangeResult ChangeLanguage(
-        RoomState room,
+        RoomId roomId,
         ConnectionId connection,
         RoomLanguage language);
 }

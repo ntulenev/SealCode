@@ -185,14 +185,13 @@ public sealed class RoomHub : SignalRHub
     public async Task SetLanguageAsync(string roomId, string language)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
-        var room = GetRoomForParticipant(parsedRoomId, out _);
         int newVersion;
         long metadataRevision;
         RoomLanguage normalized;
         try
         {
             normalized = new RoomLanguage(language);
-            var changed = _sessions.ChangeLanguage(room, new(Context.ConnectionId), normalized);
+            var changed = HubErrors.Invoke(() => _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized));
             newVersion = changed.RoomVersion.Value;
             metadataRevision = changed.MetadataRevision;
         }

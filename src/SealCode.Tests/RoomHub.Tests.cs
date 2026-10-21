@@ -395,7 +395,7 @@ public sealed class RoomHubTests
         room.Version.Value.Should().Be(2);
         room.DocumentRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().ContainSingle();
-        tryGetRoomCounter.Count.Should().Be(2);
+        tryGetRoomCounter.Count.Should().Be(1);
         groupCalls.Should().Be(1);
         yjsUpdatedCalls.Should().Be(1);
     }
@@ -440,7 +440,7 @@ public sealed class RoomHubTests
         room.YjsState.Should().Equal([3, 4]);
         room.YjsCheckpointRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().BeEmpty();
-        tryGetRoomCounter.Count.Should().Be(2);
+        tryGetRoomCounter.Count.Should().Be(1);
     }
 
     [Fact]

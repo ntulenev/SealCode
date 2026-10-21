@@ -91,15 +91,15 @@ public sealed class RoomManagerTests
         registry.VerifyAll();
     }
 
-    [Fact(DisplayName = "RegisterUserInRoomShouldClampMaxUsersToAtLeastOne")]
+    [Fact(DisplayName = "RegisterUserInRoomShouldUseConfiguredMinimumCapacity")]
     [Trait("Category", "Unit")]
-    public void RegisterUserInRoomShouldClampMaxUsersToAtLeastOne()
+    public void RegisterUserInRoomShouldUseConfiguredMinimumCapacity()
     {
         var registry = new Mock<IRoomRegistry>(MockBehavior.Strict);
         var room = CreateRoomState(RoomId.New(), "Room", "Admin");
         registry.Setup(r => r.TryGetRoom(room.RoomId, out room))
             .Returns(true);
-        var manager = CreateManager(registry.Object, CreateSettings(0));
+        var manager = CreateManager(registry.Object, CreateSettings(1));
 
         manager.RegisterUserInRoom(room.RoomId, new ConnectionId("conn-1"), new RoomUser("Alice"));
 
