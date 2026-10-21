@@ -1,3 +1,4 @@
+import { RoomLifecycle, isRoomNotFound, registerHubHandlers } from './room-lifecycle.js';
 import { YjsSession } from './yjs-session.js';
 import { PresenceView } from './presence-ui.js';
 import { base64FromUint8, uint8FromBase64 } from './encoding.js';
@@ -86,13 +87,7 @@ const maxPendingBytes = 8 * 1024 * 1024;
 
 let checkpointEveryRevisions = 64;
 let checkpointEveryBase64Bytes = 256 * 1024;
-let roomClosed = false;
-let hasJoinedRoom = false;
 let lastSentSelectionMultiLine;
-let isRejoiningRoom = false;
-let rejoinRetryTimer = null;
-let rejoinRetryAttempt = 0;
-const rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000];
 
 const connectionLifecycle = createRoomConnection(signalR, '/roomHub');
 const connection = connectionLifecycle.connection;
@@ -134,11 +129,88 @@ const yjs = new YjsSession({
   }
 });
 
+const lifecycle = new RoomLifecycle({
+  connection,
+  roomId,
+  session: yjs,
+  getDisplayName: () => displayName,
+  start: () => ensureConnectionStarted(),
+  connectedState: signalR.HubConnectionState.Connected,
+  onJoinStart: () => joinError.classList.add('hidden'),
+  applyJoin: (result) => {
+    const name = result.Name ?? result.name;
+    const language = result.Language ?? result.language;
+    const text = result.Text ?? result.text;
+    const version = result.Version ?? result.version;
+    const users = result.Users ?? result.users;
+    const createdBy = result.CreatedBy ?? result.createdBy;
+    const yjsState = result.YjsState ?? result.yjsState;
+    const yjsUpdates = result.YjsUpdates ?? result.yjsUpdates ?? [];
+    const documentRevision = result.DocumentRevision ?? result.documentRevision ?? 0;
+    const checkpointRevision =
+      result.CheckpointRevision ?? result.checkpointRevision ?? 0;
+    roomNameEl.textContent = name;
+    if (createdByEl) {
+      createdByEl.textContent = createdBy || 'unknown';
+    }
+    applyRoomMetadata(result);
+    if (yjs.ydoc && lifecycle.joined) {
+      if (
+        !yjs.mergeYjsSyncState(yjsState, yjsUpdates, documentRevision, checkpointRevision)
+      ) {
+        throw new Error('Failed to merge the room document after reconnect.');
+      }
+    } else {
+      yjs.initializeYjs(
+        text || '',
+        yjsState,
+        yjsUpdates,
+        documentRevision,
+        checkpointRevision
+      );
+    }
+    currentVersion = Math.max(currentVersion, version);
+    versionNumberEl.textContent = currentVersion;
+  },
+  onJoinSuccess: () => {
+    lastSentSelectionMultiLine = undefined;
+    scheduleYjsRecovery();
+    joinOverlay.classList.add('hidden');
+    sendCursor();
+  },
+  onJoinError: (error) => {
+    joinError.textContent = error?.message || 'Failed to join room.';
+    joinError.classList.remove('hidden');
+  },
+  onSynchronizationEnd: () => {
+    yjs.flushBufferedYjsMessages();
+    scheduleYjsUpdateSend();
+    scheduleYjsCheckpoint();
+  },
+  onClose: (reason) => {
+    lastSentSelectionMultiLine = undefined;
+    yjs.disposeYjs();
+    joinError.textContent = reason || 'Room closed.';
+    joinError.classList.remove('hidden');
+    joinOverlay.classList.remove('hidden');
+  },
+  setStatus,
+  setReadOnly: (readOnly) => {
+    setEditorReadOnly(readOnly);
+    setLanguageReadOnly(readOnly);
+  },
+  resetTransport: () => {
+    recoveryController.reset();
+    checkpointWriter.reset();
+    syncScheduler.reset();
+  }
+});
+
 const syncScheduler = new SyncScheduler();
 const updateSender = new UpdateQueue({
   merge: (updates) => Y.mergeUpdates(updates),
   ready: () =>
-    !roomClosed &&
+    !lifecycle.closed &&
     yjs.ydoc &&
     !yjs.isSynchronizingYjs &&
     connection.state === signalR.HubConnectionState.Connected,
@@ -154,7 +226,7 @@ const updateSender = new UpdateQueue({
   },
   onIdle: () => scheduleYjsCheckpoint(),
   onError: (error, permanent) => {
-    if (isRoomNotFound(error)) return closeRoom('Room not found.');
+    if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
     if (permanent) {
       setEditorReadOnly(true);
       showSyncError(
@@ -178,7 +250,7 @@ function captureSyncContext() {
 }
 function isCurrentSyncContext(context) {
   return (
-    !roomClosed &&
+    !lifecycle.closed &&
     yjs.ydoc === context.document &&
     yjs.yjsSession === context.session &&
     connection.connectionId === context.connectionId
@@ -186,7 +258,7 @@ function isCurrentSyncContext(context) {
 }
 const recoveryController = new SnapshotRecovery({
   scheduler: syncScheduler,
-  active: () => !roomClosed && hasJoinedRoom && !!yjs.ydoc,
+  active: () => !lifecycle.closed && lifecycle.joined && !!yjs.ydoc,
   ready: () =>
     !yjs.isSynchronizingYjs && connection.state === signalR.HubConnectionState.Connected,
   capture: captureSyncContext,
@@ -228,7 +300,7 @@ const recoveryController = new SnapshotRecovery({
   },
   onSuccess: () => clearSyncError('recovery'),
   onError: (error) => {
-    if (isRoomNotFound(error)) return closeRoom('Room not found.');
+    if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
     showSyncError(
       'recovery',
       'Some changes have not arrived. Retrying synchronization; keep this page open.'
@@ -239,8 +311,8 @@ const checkpointWriter = new CheckpointWriter({
   delay: 1000,
   scheduler: syncScheduler,
   ready: () =>
-    !roomClosed &&
-    hasJoinedRoom &&
+    !lifecycle.closed &&
+    lifecycle.joined &&
     !!yjs.ydoc &&
     !!yjs.ytext &&
     yjs.currentDocumentRevision > 0 &&
@@ -279,7 +351,7 @@ const checkpointWriter = new CheckpointWriter({
     clearSyncError('checkpoint-size');
   },
   onError: (error, permanent) => {
-    if (isRoomNotFound(error)) return closeRoom('Room not found.');
+    if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
     if (permanent)
       showSyncError(
         'checkpoint-size',
@@ -304,11 +376,11 @@ window.__debugUndoState = () => ({
 });
 
 window.__debugReconnect = async () => {
-  if (!hasJoinedRoom || roomClosed) return false;
+  if (!lifecycle.joined || lifecycle.closed) return false;
   await connection.stop();
   const started = await ensureConnectionStarted();
   if (!started) return false;
-  await rejoinRoomWithRetry();
+  await lifecycle.rejoinRoomWithRetry();
   return (
     connection.state === signalR.HubConnectionState.Connected &&
     connectionStatusEl.textContent === 'connected'
@@ -331,60 +403,8 @@ function clearSyncError(kind) {
   syncError.classList.add('hidden');
 }
 
-function clearRejoinRetryTimer() {
-  if (!rejoinRetryTimer) return;
-  clearTimeout(rejoinRetryTimer);
-  rejoinRetryTimer = null;
-}
-
 async function ensureConnectionStarted() {
   return connectionLifecycle.start();
-}
-
-function getRejoinDelayMs() {
-  const index = Math.min(rejoinRetryAttempt, rejoinRetryDelaysMs.length - 1);
-  return rejoinRetryDelaysMs[index];
-}
-
-async function rejoinRoomWithRetry() {
-  if (!hasJoinedRoom || !displayName || roomClosed) return;
-  if (connection.state !== signalR.HubConnectionState.Connected) return;
-  if (isRejoiningRoom) return;
-
-  isRejoiningRoom = true;
-  clearRejoinRetryTimer();
-  setStatus('reconnecting');
-  setEditorReadOnly(true);
-  setLanguageReadOnly(true);
-
-  let joined = false;
-  try {
-    joined = await joinRoom();
-  } finally {
-    isRejoiningRoom = false;
-  }
-
-  if (joined) {
-    rejoinRetryAttempt = 0;
-    setStatus('connected');
-    setEditorReadOnly(false);
-    setLanguageReadOnly(false);
-    scheduleYjsUpdateSend();
-    return;
-  }
-
-  if (roomClosed || connection.state !== signalR.HubConnectionState.Connected) {
-    return;
-  }
-
-  const delayMs = getRejoinDelayMs();
-  rejoinRetryAttempt += 1;
-  rejoinRetryTimer = setTimeout(() => {
-    rejoinRetryTimer = null;
-    rejoinRoomWithRetry().catch((err) => {
-      console.warn('Failed to rejoin room.', err);
-    });
-  }, delayMs);
 }
 
 function setLanguageOptions(selectEl, languages, selected) {
@@ -537,7 +557,7 @@ function setLanguageReadOnly(isReadOnly) {
 }
 
 function scheduleYjsUpdateSend(update) {
-  if (roomClosed || !yjs.ydoc) return;
+  if (lifecycle.closed || !yjs.ydoc) return;
   updateSender.enqueue(update);
 }
 
@@ -616,198 +636,53 @@ function initMonaco() {
   editorReadyResolve();
 }
 
-async function joinRoom() {
-  if (roomClosed) return false;
-  joinError.classList.add('hidden');
-  yjs.isSynchronizingYjs = true;
-  const epoch = ++yjs.synchronizationEpoch;
-  try {
-    const result = await connection.invoke(HubMethods.JoinRoom, roomId, displayName);
-    if (roomClosed || epoch !== yjs.synchronizationEpoch) return false;
-    const name = result.Name ?? result.name;
-    const language = result.Language ?? result.language;
-    const text = result.Text ?? result.text;
-    const version = result.Version ?? result.version;
-    const users = result.Users ?? result.users;
-    const createdBy = result.CreatedBy ?? result.createdBy;
-    const yjsState = result.YjsState ?? result.yjsState;
-    const yjsUpdates = result.YjsUpdates ?? result.yjsUpdates ?? [];
-    const documentRevision = result.DocumentRevision ?? result.documentRevision ?? 0;
-    const checkpointRevision =
-      result.CheckpointRevision ?? result.checkpointRevision ?? 0;
-    roomNameEl.textContent = name;
-    if (createdByEl) {
-      createdByEl.textContent = createdBy || 'unknown';
-    }
-    applyRoomMetadata(result);
-    if (yjs.ydoc && hasJoinedRoom) {
-      if (
-        !yjs.mergeYjsSyncState(yjsState, yjsUpdates, documentRevision, checkpointRevision)
-      ) {
-        throw new Error('Failed to merge the room document after reconnect.');
-      }
-    } else {
-      yjs.initializeYjs(
-        text || '',
-        yjsState,
-        yjsUpdates,
-        documentRevision,
-        checkpointRevision
-      );
-    }
-    currentVersion = Math.max(currentVersion, version);
+lifecycle.registerConnectivity(window);
+
+registerHubHandlers(connection, {
+  UserJoined: (name, users, revision) => {
+    if (!roomView.updateUsers(users, Number(revision))) return;
+    presence.cursorPositions[name] ??= 0;
+    presence.renderUsers(users);
+    presence.renderRemoteCarets();
+  },
+  UserLeft: (name, users, revision) => {
+    if (!roomView.updateUsers(users, Number(revision))) return;
+    delete presence.cursorPositions[name];
+    presence.caretClassMap.delete(name);
+    delete presence.caretColors[name];
+    presence.activeEditors.delete(name);
+    presence.selectingUsers.delete(name);
+    presence.copyingUsers.delete(name);
+    presence.renderUsers(users);
+    presence.renderRemoteCarets();
+  },
+  YjsUpdated: (...args) => yjs.receiveUpdate(...args),
+  YjsCheckpointed: (revision) => {
+    revision = Number(revision);
+    if (!Number.isSafeInteger(revision) || revision <= 0) return;
+    yjs.checkpointJournal.noteCheckpoint(revision);
+  },
+  LanguageUpdated: (language, version, revision) => {
+    if (!roomView.updateLanguage(language, Number(revision))) return;
+    languageSelect.value = language;
+    setLanguage(language);
+    currentVersion = Math.max(currentVersion, Number(version) || 0);
     versionNumberEl.textContent = currentVersion;
-    hasJoinedRoom = true;
-    lastSentSelectionMultiLine = undefined;
-    scheduleYjsRecovery();
-    rejoinRetryAttempt = 0;
-    clearRejoinRetryTimer();
-    joinOverlay.classList.add('hidden');
-    sendCursor();
-    return true;
-  } catch (err) {
-    if (isRoomNotFound(err)) {
-      closeRoom('Room not found.');
-      return false;
-    }
-    joinError.textContent = err?.message || 'Failed to join room.';
-    joinError.classList.remove('hidden');
-    return false;
-  } finally {
-    if (epoch === yjs.synchronizationEpoch) {
-      yjs.isSynchronizingYjs = false;
-      yjs.flushBufferedYjsMessages();
-      scheduleYjsUpdateSend();
-      scheduleYjsCheckpoint();
-    }
-  }
-}
-
-connection.onreconnected(async () => {
-  if (hasJoinedRoom && displayName && !roomClosed) {
-    await rejoinRoomWithRetry();
-    return;
-  }
-  setStatus('connected');
+  },
+  CursorUpdated: (name, position) => {
+    if (!name) return;
+    presence.cursorPositions[name] = position;
+    presence.renderUsers(presence.currentUsers);
+    presence.renderRemoteCarets();
+  },
+  UserSelection: (name, isMultiLine) => {
+    presence.markSelecting(name, isMultiLine);
+  },
+  UserCopy: (name) => {
+    presence.markCopying(name);
+  },
+  RoomKilled: (reason) => lifecycle.closeRoom(reason)
 });
-connection.onreconnecting(() => {
-  recoveryController.reset();
-  checkpointWriter.reset();
-  syncScheduler.reset();
-  clearRejoinRetryTimer();
-  isRejoiningRoom = false;
-  setStatus('reconnecting');
-  setEditorReadOnly(true);
-  setLanguageReadOnly(true);
-});
-connection.onclose(() => {
-  recoveryController.reset();
-  checkpointWriter.reset();
-  syncScheduler.reset();
-  clearRejoinRetryTimer();
-  isRejoiningRoom = false;
-  setStatus('disconnected');
-  setEditorReadOnly(true);
-  setLanguageReadOnly(true);
-});
-
-window.addEventListener('offline', () => {
-  if (!hasJoinedRoom || roomClosed) return;
-  setStatus('reconnecting');
-  setEditorReadOnly(true);
-  setLanguageReadOnly(true);
-});
-
-window.addEventListener('online', () => {
-  if (!hasJoinedRoom || roomClosed) return;
-  if (connection.state === signalR.HubConnectionState.Connected) {
-    setStatus('connected');
-    setEditorReadOnly(false);
-    setLanguageReadOnly(false);
-    return;
-  }
-  setStatus('reconnecting');
-  ensureConnectionStarted()
-    .then((started) => {
-      if (!started) return;
-      return rejoinRoomWithRetry();
-    })
-    .catch((err) => {
-      console.warn('Failed to recover after going online.', err);
-    });
-});
-
-connection.on(HubEvents.UserJoined, (name, users, revision) => {
-  if (!roomView.updateUsers(users, Number(revision))) return;
-  presence.cursorPositions[name] ??= 0;
-  presence.renderUsers(users);
-  presence.renderRemoteCarets();
-});
-
-connection.on(HubEvents.UserLeft, (name, users, revision) => {
-  if (!roomView.updateUsers(users, Number(revision))) return;
-  delete presence.cursorPositions[name];
-  presence.caretClassMap.delete(name);
-  delete presence.caretColors[name];
-  presence.activeEditors.delete(name);
-  presence.selectingUsers.delete(name);
-  presence.copyingUsers.delete(name);
-  presence.renderUsers(users);
-  presence.renderRemoteCarets();
-});
-
-connection.on(HubEvents.YjsUpdated, (...args) => yjs.receiveUpdate(...args));
-
-connection.on(HubEvents.YjsCheckpointed, (revision) => {
-  revision = Number(revision);
-  if (!Number.isSafeInteger(revision) || revision <= 0) return;
-  yjs.checkpointJournal.noteCheckpoint(revision);
-});
-
-connection.on(HubEvents.LanguageUpdated, (language, version, revision) => {
-  if (!roomView.updateLanguage(language, Number(revision))) return;
-  languageSelect.value = language;
-  setLanguage(language);
-  currentVersion = Math.max(currentVersion, Number(version) || 0);
-  versionNumberEl.textContent = currentVersion;
-});
-
-connection.on(HubEvents.CursorUpdated, (name, position) => {
-  if (!name) return;
-  presence.cursorPositions[name] = position;
-  presence.renderUsers(presence.currentUsers);
-  presence.renderRemoteCarets();
-});
-
-connection.on(HubEvents.UserSelection, (name, isMultiLine) => {
-  presence.markSelecting(name, isMultiLine);
-});
-
-connection.on(HubEvents.UserCopy, (name) => {
-  presence.markCopying(name);
-});
-
-function isRoomNotFound(error) {
-  return classifyHubError(error) === HubErrorCode.RoomNotFound;
-}
-
-function closeRoom(reason) {
-  roomClosed = true;
-  lastSentSelectionMultiLine = undefined;
-  yjs.synchronizationEpoch += 1;
-  yjs.isSynchronizingYjs = false;
-  hasJoinedRoom = false;
-  yjs.bufferedYjsMessages.length = 0;
-  clearRejoinRetryTimer();
-  setEditorReadOnly(true);
-  setLanguageReadOnly(true);
-  yjs.disposeYjs();
-  joinError.textContent = reason || 'Room closed.';
-  joinError.classList.remove('hidden');
-  joinOverlay.classList.remove('hidden');
-}
-
-connection.on(HubEvents.RoomKilled, closeRoom);
 
 languageSelect.addEventListener('change', async () => {
   if (!displayName) return;
@@ -870,7 +745,7 @@ joinBtn.addEventListener('click', async () => {
   }
   setStatus('connected');
   setLanguageReadOnly(true);
-  const joined = await joinRoom();
+  const joined = await lifecycle.joinRoom();
   if (joined) {
     setEditorReadOnly(false);
     setLanguageReadOnly(false);
