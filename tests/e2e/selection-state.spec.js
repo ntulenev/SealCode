@@ -50,6 +50,7 @@ test('selection changes broadcast only transitions and mark both participants', 
     editor.setSelection(new monaco.Selection(1, 1, 3, 2));
     editor.setSelection(new monaco.Selection(1, 1, 2, 3));
   });
+  // page.clock breaks Monaco 0.47 keyboard timing (missing event duration).
   await page.waitForTimeout(250);
   expect(sent.filter(Boolean)).toHaveLength(1);
   await page.evaluate(() =>
@@ -62,6 +63,7 @@ test('selection changes broadcast only transitions and mark both participants', 
   const beforeTyping = sent.length;
   await page.locator('#monacoEditor').click();
   await page.keyboard.type('typing');
+  // page.clock breaks Monaco 0.47 keyboard timing (missing event duration).
   await page.waitForTimeout(250);
   expect(sent.length).toBe(beforeTyping);
   await observer.close();

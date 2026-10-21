@@ -11,6 +11,7 @@ async function createRoom(request) {
 }
 
 async function join(page, roomId, name) {
+  await page.clock.install();
   await page.goto(`/room/${roomId}`);
   await page.locator('#displayNameInput').fill(name);
   await page.locator('#joinBtn').click();
@@ -133,7 +134,7 @@ for (const notification of ['received', 'missed']) {
     }
     releaseUpdate();
     await expect(page.locator('#joinOverlay')).not.toHaveClass(/hidden/);
-    await page.waitForTimeout(1200);
+    await page.clock.runFor(1200);
     expect(updateAttempts).toBe(1);
     expect(await text(page)).toBe('Keep this text');
     expect(await page.evaluate(() => window.__debugYjsSend())).toBe(false);

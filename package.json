@@ -7,20 +7,21 @@
   },
   "scripts": {
     "test": "npm run test:client && npm run test:e2e",
-    "test:client": "node --test --experimental-test-coverage tests/client/*.test.js",
+    "test:client": "c8 --all --include=src/SealCode/wwwroot/*.js --check-coverage --lines=61 --branches=83 --functions=82 --reporter=text --reporter=lcov --reports-dir=coverage/client node --test --experimental-test-coverage --test-coverage-include=src/SealCode/wwwroot/*.js --test-coverage-lines=61 --test-coverage-branches=83 --test-coverage-functions=82 tests/client/*.test.js",
     "test:e2e": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
     "build:client": "node scripts/build-client.mjs",
     "typecheck": "tsc -p jsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@microsoft/signalr": "10.0.11",
     "@playwright/test": "1.62.0",
-    "yjs": "13.6.29",
+    "c8": "10.1.3",
     "esbuild": "0.28.2",
     "monaco-editor": "0.47.0",
-    "@microsoft/signalr": "10.0.11",
+    "typescript": "5.9.3",
     "y-monaco": "0.1.6",
     "y-protocols": "1.0.7",
-    "typescript": "5.9.3"
+    "yjs": "13.6.29"
   }
 }

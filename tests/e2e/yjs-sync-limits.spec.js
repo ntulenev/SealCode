@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { startIsolatedHost } from '../isolated-host.js';
 
 async function createAndJoin(page) {
+  await page.clock.install();
   const response = await page.request.post('/admin/rooms', {
     headers: await csrf(page.request),
     data: { name: 'Sync limit', language: 'csharp' }
@@ -100,7 +101,7 @@ test('oversized checkpoints are skipped without retries or lost incremental chan
 
   await expect(page.locator('#syncError')).toContainText('too large to save a snapshot');
   // Wait through more than two checkpoint timer intervals to catch a retry loop.
-  await page.waitForTimeout(1000);
+  await page.clock.runFor(1000);
   expect(checkpointMessages).toBe(0);
   await expect(page.locator('#connectionStatus')).toHaveText('connected');
   const state = await page.evaluate(
@@ -136,7 +137,7 @@ test('oversized edits remain local and visible without retrying the transport', 
   await insertText(page, 5000);
 
   await expect(page.locator('#syncError')).toContainText('some changes have not synced');
-  await page.waitForTimeout(1000);
+  await page.clock.runFor(1000);
   expect(updateMessages).toBe(0);
   expect(await page.evaluate(() => monaco.editor.getModels()[0].getValueLength())).toBe(
     5000
@@ -165,6 +166,7 @@ test('only the latest author checkpoints after the revision threshold', async ({
   countMessages(page, 0);
   const roomId = await createAndJoin(page);
   const observer = await context.newPage();
+  await observer.clock.install();
   countMessages(observer, 1);
   await observer.goto(`/room/${roomId}`);
   await observer.locator('#displayNameInput').fill('Bob');
@@ -182,7 +184,7 @@ test('only the latest author checkpoints after the revision threshold', async ({
       )
       .toBe(revision);
     if (revision === 20) {
-      await page.waitForTimeout(1200);
+      await page.clock.runFor(1200);
       expect(counts).toEqual([0, 0]);
     }
   }
@@ -215,6 +217,7 @@ function countCheckpoints(page) {
 
 async function joinObserver(context, roomId) {
   const observer = await context.newPage();
+  await observer.clock.install();
   const checkpointCount = countCheckpoints(observer);
   await observer.goto(`/room/${roomId}`);
   await observer.locator('#displayNameInput').fill('Bob');
@@ -287,7 +290,7 @@ test('observer accounts for checkpoint broadcasts across another fallback window
     .poll(async () => (await syncState(page, roomId)).CheckpointRevision)
     .toBe(64);
   await appendRevisions(page, page, roomId, 65, 64 + 127);
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   expect(authorCount()).toBeGreaterThan(0);
   expect(observerCount()).toBe(0);
   await observer.close();
@@ -355,7 +358,7 @@ test('passive observer checkpoints at the doubled threshold when the author leav
       .poll(async () => (await revisions(observer, roomId)).DocumentRevision)
       .toBe(revision);
     if (revision === 127) {
-      await observer.waitForTimeout(1500);
+      await observer.clock.runFor(1500);
       expect(observerCount()).toBe(0);
       expect((await syncState(observer, roomId)).CheckpointRevision).toBe(0);
     }
