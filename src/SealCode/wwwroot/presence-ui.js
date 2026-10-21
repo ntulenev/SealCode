@@ -37,6 +37,30 @@ export class PresenceView {
     return this.editor?.getModel();
   }
 
+  removeUser(name) {
+    delete this.cursorPositions[name];
+    delete this.caretColors[name];
+    this.caretClassMap.delete(name);
+    this.activeEditors.delete(name);
+    this.selectingUsers.delete(name);
+    this.copyingUsers.delete(name);
+  }
+
+  retainUsers(names) {
+    const retained = new Set(names);
+    const known = new Set([
+      ...Object.keys(this.cursorPositions),
+      ...Object.keys(this.caretColors),
+      ...this.caretClassMap.keys(),
+      ...this.activeEditors.keys(),
+      ...this.selectingUsers.keys(),
+      ...this.copyingUsers.keys()
+    ]);
+    for (const name of known) {
+      if (name !== this.displayName && !retained.has(name)) this.removeUser(name);
+    }
+  }
+
   renderUsers(users) {
     if (!Array.isArray(users)) {
       this.participantsList.innerHTML = '';

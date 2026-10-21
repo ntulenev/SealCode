@@ -82,7 +82,11 @@ export function createRoomApplication({
       languageSelect.value = language;
       setLanguage(language);
     },
-    users: (users) => presence.renderUsers(users)
+    users: (users) => {
+      presence.retainUsers(users);
+      presence.renderUsers(users);
+      presence.renderRemoteCarets();
+    }
   });
 
   const yjs = new YjsSession({
@@ -644,12 +648,7 @@ export function createRoomApplication({
     },
     UserLeft: (name, users, revision) => {
       if (!roomView.updateUsers(users, Number(revision))) return;
-      delete presence.cursorPositions[name];
-      presence.caretClassMap.delete(name);
-      delete presence.caretColors[name];
-      presence.activeEditors.delete(name);
-      presence.selectingUsers.delete(name);
-      presence.copyingUsers.delete(name);
+      presence.removeUser(name);
       presence.renderUsers(users);
       presence.renderRemoteCarets();
     },

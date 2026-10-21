@@ -119,3 +119,31 @@ test('remote carets clamp columns, keep stable styles and restore after hiding',
   presence.renderUsers(null);
   assert.equal(children.length, 0);
 });
+
+test('retaining users cleans every departed presence collection and preserves self', () => {
+  const presence = view();
+  presence.displayName = 'Alice';
+  for (const name of ['Alice', 'Bob', 'Carol']) {
+    presence.cursorPositions[name] = 20;
+    presence.caretColors[name] = 'red';
+    for (const map of [
+      presence.caretClassMap,
+      presence.activeEditors,
+      presence.selectingUsers,
+      presence.copyingUsers
+    ])
+      map.set(name, 1);
+  }
+  presence.retainUsers(['Carol']);
+  assert.deepEqual(Object.keys(presence.cursorPositions), ['Alice', 'Carol']);
+  assert.deepEqual(Object.keys(presence.caretColors), ['Alice', 'Carol']);
+  for (const map of [
+    presence.caretClassMap,
+    presence.activeEditors,
+    presence.selectingUsers,
+    presence.copyingUsers
+  ])
+    assert.deepEqual([...map.keys()], ['Alice', 'Carol']);
+  presence.removeUser('Carol');
+  assert.deepEqual(Object.keys(presence.cursorPositions), ['Alice']);
+});
