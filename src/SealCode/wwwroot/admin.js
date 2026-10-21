@@ -2,6 +2,7 @@ import { token } from './admin-token.js';
 import { setLanguageOptions } from './language-options.js';
 
 /** Creates the admin page with explicit browser dependencies. */
+/** @param {{document: Document, window: Window, fetch: typeof fetch, confirm: (message: string) => boolean, clipboard: Pick<Clipboard, "writeText">}} options */
 export function createAdminPage({ document, window, fetch, confirm, clipboard }) {
   const roomsEl = document.getElementById('rooms');
   const createBtn = document.getElementById('createRoom');
@@ -39,6 +40,7 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
     }
   }
 
+  /** @param {Array<Record<string, any>>} rooms */
   function renderRooms(rooms) {
     if (!rooms.length) {
       roomsEl.innerHTML = '<p class="muted">No rooms yet.</p>';
@@ -159,6 +161,7 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
     }
   });
 
+  /** @param {Response} response */
   function requestError(response) {
     return new Error(
       response.status === 401 || response.redirected
@@ -166,9 +169,10 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
         : 'Request failed. Try again.'
     );
   }
+  /** @param {unknown} error */
   function showError(error) {
     resultEl.textContent =
-      error?.message === 'Session expired. Sign in again.'
+      error instanceof Error && error.message === 'Session expired. Sign in again.'
         ? error.message
         : 'Request failed. Try again.';
   }

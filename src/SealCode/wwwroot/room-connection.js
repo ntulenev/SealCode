@@ -1,4 +1,7 @@
 /** Serializes connection startup and configures reconnect policy. */
+/** @param {typeof import('@microsoft/signalr')} signalR
+ * @param {string} url
+ * @param {() => boolean} [online] */
 export function createRoomConnection(signalR, url, online = () => navigator.onLine) {
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(url)
@@ -8,6 +11,7 @@ export function createRoomConnection(signalR, url, online = () => navigator.onLi
     .build();
   connection.serverTimeoutInMilliseconds = 15000;
   connection.keepAliveIntervalInMilliseconds = 5000;
+  /** @type {Promise<boolean> | null} */
   let starting = null;
   async function start() {
     if (connection.state !== signalR.HubConnectionState.Disconnected) return true;

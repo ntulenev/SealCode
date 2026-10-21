@@ -2,19 +2,27 @@ import { HubMethods, HubEvents } from './hub-contract.js';
 import { HubErrorCode, classifyHubError } from './hub-errors.js';
 
 /** Recognizes the legacy room deletion error inside a SignalR wrapper. */
+/**
+ * @param {unknown} error
+ */
 export function isRoomNotFound(error) {
   return classifyHubError(error) === HubErrorCode.RoomNotFound;
 }
 
 /** Registers the event names from the shared hub contract in one place. */
+/**
+ * @param {Pick<import('@microsoft/signalr').HubConnection, 'on'>} connection
+ * @param {Partial<Record<keyof typeof HubEvents, (...args: any[]) => void>>} handlers
+ */
 export function registerHubHandlers(connection, handlers) {
   for (const [event, handler] of Object.entries(handlers)) {
-    connection.on(HubEvents[event], handler);
+    connection.on(HubEvents[/** @type {keyof typeof HubEvents} */ (event)], handler);
   }
 }
 
 /** Owns joining, reconnect retries, connectivity and terminal room closure. */
 export class RoomLifecycle {
+  /** @param {import('./client-types.js').RoomLifecycleOptions} options */
   constructor({
     connection,
     roomId,
@@ -139,6 +147,9 @@ export class RoomLifecycle {
     }, delay);
   }
 
+  /**
+   * @param {string} reason
+   */
   closeRoom(reason) {
     if (this.closed) return;
     this.closed = true;
@@ -155,6 +166,9 @@ export class RoomLifecycle {
       .catch((error) => console.warn('Failed to stop connection.', error));
   }
 
+  /**
+   * @param {string} status
+   */
   pause(status) {
     this.participating = false;
     this.resetTransport();
@@ -164,6 +178,9 @@ export class RoomLifecycle {
     this.setReadOnly(true);
   }
 
+  /**
+   * @param {Pick<Window, 'addEventListener'>} events
+   */
   registerConnectivity(events) {
     this.connection.onreconnected(async () => {
       if (this.joined && this.getDisplayName() && !this.closed) {

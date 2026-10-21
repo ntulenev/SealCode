@@ -1,4 +1,5 @@
 /** Recognizes the shortcut without browser globals. */
+/** @param {Partial<KeyboardEvent>} event */
 export function isCopyShortcut(event) {
   if (!event) return false;
   const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
@@ -6,6 +7,7 @@ export function isCopyShortcut(event) {
 }
 
 /** Recognizes the shortcut without browser globals. */
+/** @param {Partial<KeyboardEvent>} event */
 export function isUndoShortcut(event) {
   if (!event) return false;
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
@@ -16,6 +18,7 @@ export function isUndoShortcut(event) {
 }
 
 /** Recognizes the shortcut without browser globals. */
+/** @param {Partial<KeyboardEvent>} event */
 export function isRedoShortcut(event) {
   if (!event) return false;
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
@@ -27,11 +30,13 @@ export function isRedoShortcut(event) {
 }
 
 /** Recognizes the shortcut without browser globals. */
+/** @param {Partial<KeyboardEvent>} event */
 export function isUndoRedoShortcut(event) {
   return isUndoShortcut(event) || isRedoShortcut(event);
 }
 
 /** Recognizes the shortcut without browser globals. */
+/** @param {Partial<KeyboardEvent>} event */
 export function isPasteShortcut(event) {
   if (!event) return false;
   const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';

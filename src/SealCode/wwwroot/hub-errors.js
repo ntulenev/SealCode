@@ -8,8 +8,12 @@ export const HubErrorCode = Object.freeze({
 });
 
 /** Classifies errors, including SignalR wrappers and legacy size refusals. */
+/** @param {unknown} error */
 export function classifyHubError(error) {
-  const text = String(error?.message ?? error ?? '');
+  const text = String(
+    (error && typeof error === 'object' && 'message' in error ? error.message : error) ??
+      ''
+  );
   // Keep the former size/rate matching rules used by the retry queues.
   if (/LimitExceeded|too large/.test(text)) return HubErrorCode.LimitExceeded;
   if (/RateLimited/.test(text)) return HubErrorCode.RateLimited;
@@ -20,6 +24,8 @@ export function classifyHubError(error) {
 }
 
 /** Creates a local error with the same format as a server refusal. */
+/** @param {string} code
+ * @param {string} message */
 export function createHubError(code, message) {
   if (code === HubErrorCode.RoomNotFound) return new Error('Room not found');
   if (code === HubErrorCode.NotParticipant)

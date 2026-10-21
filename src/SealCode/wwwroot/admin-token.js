@@ -10,6 +10,8 @@ export async function token(fetchToken = fetch) {
   return (await response.json()).Token;
 }
 /** Secures login and logout forms and reports request failures. */
+/** @param {Document} document
+ * @param {typeof fetch} [fetchToken] */
 export function registerAdminForms(document, fetchToken = fetch) {
   for (const form of /** @type {NodeListOf<HTMLFormElement>} */ (
     document.querySelectorAll('form[action^="/admin/"]')

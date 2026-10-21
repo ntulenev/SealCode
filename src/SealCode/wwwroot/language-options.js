@@ -1,4 +1,8 @@
 /** Populates a language selector using text nodes. */
+/** @param {Document} document
+ * @param {HTMLSelectElement} selectEl
+ * @param {unknown} languages
+ * @param {string} [selected] */
 export function setLanguageOptions(document, selectEl, languages, selected = undefined) {
   const cleaned = Array.isArray(languages)
     ? languages

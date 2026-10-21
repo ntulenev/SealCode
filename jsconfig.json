@@ -3,7 +3,7 @@
     "allowJs": true,
     "checkJs": true,
     "strict": false,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
     "target": "ES2022",

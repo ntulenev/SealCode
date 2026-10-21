@@ -97,7 +97,7 @@ test('remote carets clamp columns, keep stable styles and restore after hiding',
     appendChild: (element) => children.push(element)
   };
   const presence = new PresenceView({ editor, monaco, document, participantsList });
-  presence.displayName = 'Alice';
+  presence.getDisplayName = () => 'Alice';
   Object.assign(presence.cursorPositions, { Alice: 3, Bob: 100, Invalid: '?' });
   presence.markActiveEditor('Bob');
   presence.markSelecting('Bob', true);
@@ -122,7 +122,7 @@ test('remote carets clamp columns, keep stable styles and restore after hiding',
 
 test('retaining users cleans every departed presence collection and preserves self', () => {
   const presence = view();
-  presence.displayName = 'Alice';
+  presence.getDisplayName = () => 'Alice';
   for (const name of ['Alice', 'Bob', 'Carol']) {
     presence.cursorPositions[name] = 20;
     presence.caretColors[name] = 'red';

@@ -1,6 +1,9 @@
 import { HubErrorCode, classifyHubError, createHubError } from './hub-errors.js';
 
 /** Decides whether journal growth warrants a checkpoint from this participant. */
+/**
+ * @param {{documentRevision: number, checkpointRevision: number, bytesSinceCheckpoint: number, isLatestAuthor: boolean, minRevisions?: number, minBytes?: number, fallbackFactor?: number}} options
+ */
 export function shouldWriteCheckpoint({
   documentRevision,
   checkpointRevision,
@@ -20,6 +23,7 @@ export function shouldWriteCheckpoint({
 
 /** Bounded transport queue. No DOM, Yjs singleton, or network globals. */
 export class UpdateQueue {
+  /** @param {import('./client-types.js').UpdateQueueOptions} options */
   constructor({
     send,
     merge,
@@ -45,13 +49,18 @@ export class UpdateQueue {
     this.maxEncodedBytes = maxEncodedBytes;
     this.singleUpdates = false;
     this.maxCount = maxCount;
+    /** @type {Uint8Array[]} */
     this.pending = [];
     this.timer = null;
     this.inFlight = false;
     this.blocked = false;
     this.generation = 0;
+    /** @type {Uint8Array[]} */
     this.flight = [];
   }
+  /**
+   * @param {Uint8Array} update
+   */
   enqueue(update) {
     if (this.blocked) return;
     if (update?.length) {
@@ -72,6 +81,9 @@ export class UpdateQueue {
     }
     this.schedule(60);
   }
+  /**
+   * @param {number} delay
+   */
   schedule(delay) {
     if (this.blocked || this.timer || this.inFlight || !this.pending.length) return;
     this.timer = this.setTimer(() => {
@@ -135,6 +147,7 @@ export class UpdateQueue {
 
 /** A session-scoped recovery/checkpoint scheduler with an injectable clock. */
 export class SyncScheduler {
+  /** @param {import('./client-types.js').TimerOptions & {now?: () => number}} [options] */
   constructor({
     setTimer = (fn, delay) => setTimeout(fn, delay),
     clearTimer = (timer) => clearTimeout(timer),
@@ -146,6 +159,9 @@ export class SyncScheduler {
     this.jobs = new Map();
     this.generation = 0;
   }
+  /** @param {string} key
+   * @param {number} delay
+   * @param {() => unknown} callback */
   schedule(key, delay, callback) {
     const due = this.now() + delay;
     const existing = this.jobs.get(key);
@@ -158,6 +174,7 @@ export class SyncScheduler {
     }, delay);
     this.jobs.set(key, { due, timer });
   }
+  /** @param {string} key */
   cancel(key) {
     const job = this.jobs.get(key);
     if (job) this.clearTimer(job.timer);
@@ -172,6 +189,7 @@ export class SyncScheduler {
 
 /** Probes all revisions and merges snapshots into the current document session. */
 export class SnapshotRecovery {
+  /** @param {import('./client-types.js').SnapshotRecoveryOptions} options */
   constructor({
     scheduler,
     active,
@@ -249,6 +267,7 @@ export class SnapshotRecovery {
 
 /** Checkpoint state is scoped to one document session and revision. */
 export class CheckpointWriter {
+  /** @param {import('./client-types.js').CheckpointWriterOptions} options */
   constructor({
     delay = 400,
     retryAfterRevisions = 1,
@@ -334,6 +353,9 @@ export class CheckpointJournalTracker {
   get bytesSinceCheckpoint() {
     return this.totalBytes;
   }
+  /**
+   * @param {number} revision
+   */
   noteCheckpoint(revision) {
     if (!Number.isSafeInteger(revision) || revision <= this.knownRevision) return;
     this.knownRevision = revision;
@@ -344,6 +366,12 @@ export class CheckpointJournalTracker {
       }
     }
   }
+  /**
+   * @param {number} revision
+   * @param {number} base64Length
+   * @param {boolean} authoredLocally
+   * @param {number} highestSeenBefore
+   */
   noteUpdate(revision, base64Length, authoredLocally, highestSeenBefore) {
     if (!Number.isSafeInteger(revision) || revision <= 0) return;
     if (revision > highestSeenBefore) this.latestAuthor = authoredLocally;
@@ -352,6 +380,10 @@ export class CheckpointJournalTracker {
       this.updateBytes.set(revision, base64Length);
     }
   }
+  /**
+   * @param {number} checkpointRevision
+   * @param {Array<{revision: number, update: string}>} updates
+   */
   resetFromSync(checkpointRevision, updates) {
     this.noteCheckpoint(checkpointRevision);
     this.updateBytes.clear();
@@ -367,4 +399,51 @@ export class CheckpointJournalTracker {
     this.totalBytes = 0;
     this.updateBytes = new Map();
   }
+}
+
+/**
+ * @typedef {object} SyncState
+ * @property {boolean} closed
+ * @property {boolean} joined
+ * @property {boolean} participating
+ * @property {boolean} hasDocument
+ * @property {boolean} synchronizing
+ * @property {boolean} connected
+ * @property {boolean} [hasText]
+ * @property {number} [revision]
+ * @property {number} [highestRevision]
+ * @property {boolean} [pending]
+ * @property {boolean} [timer]
+ * @property {boolean} [inFlight]
+ * @property {boolean} [blocked]
+ * @property {boolean} [checkpointDue]
+ */
+/** @param {SyncState} state */
+export function canSendUpdates(state) {
+  return (
+    !state.closed &&
+    state.participating &&
+    state.hasDocument &&
+    !state.synchronizing &&
+    state.connected
+  );
+}
+/** @param {SyncState} state */
+export function canRecover(state) {
+  return !state.closed && state.joined && state.participating && state.hasDocument;
+}
+/** @param {SyncState} state */
+export function canWriteCheckpoint(state) {
+  return (
+    canSendUpdates(state) &&
+    state.joined &&
+    state.hasText &&
+    state.revision > 0 &&
+    state.revision === state.highestRevision &&
+    !state.pending &&
+    !state.timer &&
+    !state.inFlight &&
+    !state.blocked &&
+    state.checkpointDue
+  );
 }

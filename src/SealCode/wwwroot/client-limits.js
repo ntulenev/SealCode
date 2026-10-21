@@ -1,8 +1,13 @@
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES } from './yjs-message-size.js';
 
 /** Reads validated server limits in either JSON naming convention. */
+/** @param {Record<string, any>} [features]
+ * @returns {import('./client-types.js').ClientLimits} */
 export function readClientLimits(features = {}) {
   const limits = features.Limits ?? features.limits ?? {};
+  /** @param {Record<string, any>} source
+   * @param {string} name
+   * @param {number} fallback */
   const read = (source, name, fallback) => {
     const value = source[name] ?? source[name[0].toLowerCase() + name.slice(1)];
     return Number.isSafeInteger(value) && value > 0 ? value : fallback;

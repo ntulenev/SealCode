@@ -2,6 +2,9 @@ import { RevisionedRoomView } from '../../src/SealCode/wwwroot/room-presence.js'
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canSendUpdates,
+  canRecover,
+  canWriteCheckpoint,
   UpdateQueue,
   SyncScheduler,
   SnapshotRecovery,
@@ -416,6 +419,50 @@ test('checkpoint size refusal waits for the revision retry interval', async () =
   revision = 74;
   writer.schedule();
   assert.equal(schedules, 1);
+});
+
+test('sync predicates require every relevant readiness condition', () => {
+  const state = {
+    closed: false,
+    joined: true,
+    participating: true,
+    hasDocument: true,
+    synchronizing: false,
+    connected: true,
+    hasText: true,
+    revision: 2,
+    highestRevision: 2,
+    pending: false,
+    timer: false,
+    inFlight: false,
+    blocked: false,
+    checkpointDue: true
+  };
+  assert.equal(canSendUpdates(state), true);
+  assert.equal(canRecover(state), true);
+  assert.equal(canWriteCheckpoint(state), true);
+  for (const key of [
+    'closed',
+    'participating',
+    'hasDocument',
+    'synchronizing',
+    'connected'
+  ])
+    assert.equal(canSendUpdates({ ...state, [key]: !state[key] }), false, key);
+  for (const key of ['closed', 'joined', 'participating', 'hasDocument'])
+    assert.equal(canRecover({ ...state, [key]: !state[key] }), false, key);
+  for (const key of [
+    'joined',
+    'hasText',
+    'pending',
+    'timer',
+    'inFlight',
+    'blocked',
+    'checkpointDue'
+  ])
+    assert.equal(canWriteCheckpoint({ ...state, [key]: !state[key] }), false, key);
+  assert.equal(canWriteCheckpoint({ ...state, revision: 0 }), false);
+  assert.equal(canWriteCheckpoint({ ...state, highestRevision: 3 }), false);
 });
 
 test('an unexpectedly large merge halves the prefix without dropping its tail', async () => {

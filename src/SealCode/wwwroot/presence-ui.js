@@ -1,4 +1,5 @@
 /** Shortens a participant label while preserving the full name in its title. */
+/** @param {string} name */
 export function truncateName(name) {
   if (!name) return '';
   if (name.length <= 10) return name;
@@ -7,14 +8,18 @@ export function truncateName(name) {
 
 /** Renders room participants, remote carets and transient presence states. */
 export class PresenceView {
-  constructor({ editor, monaco, participantsList, document }) {
+  /** @param {import('./client-types.js').PresenceViewOptions} options */
+  constructor({ editor, monaco, participantsList, document, getDisplayName = () => '' }) {
     this.editor = editor;
     this.monaco = monaco;
     this.participantsList = participantsList;
     this.document = document;
-    this.displayName = '';
+    this.getDisplayName = getDisplayName;
+    /** @type {string[]} */
     this.currentUsers = [];
+    /** @type {Record<string, number>} */
     this.cursorPositions = {};
+    /** @type {Record<string, string>} */
     this.caretColors = {};
     this.caretPalette = [
       '#fbbf24',
@@ -33,10 +38,15 @@ export class PresenceView {
     this.caretClassCounter = 0;
   }
 
+  get displayName() {
+    return this.getDisplayName();
+  }
+
   get model() {
     return this.editor?.getModel();
   }
 
+  /** @param {string} name */
   removeUser(name) {
     delete this.cursorPositions[name];
     delete this.caretColors[name];
@@ -46,6 +56,7 @@ export class PresenceView {
     this.copyingUsers.delete(name);
   }
 
+  /** @param {string[]} names */
   retainUsers(names) {
     const retained = new Set(names);
     const known = new Set([
@@ -61,6 +72,7 @@ export class PresenceView {
     }
   }
 
+  /** @param {string[]} users */
   renderUsers(users) {
     if (!Array.isArray(users)) {
       this.participantsList.innerHTML = '';
@@ -92,12 +104,14 @@ export class PresenceView {
     }
   }
 
+  /** @param {number} offset */
   getLineColFromOffset(offset) {
     if (!this.model) return { line: 1, col: 1 };
     const pos = this.model.getPositionAt(Math.max(0, offset));
     return { line: pos.lineNumber, col: pos.column };
   }
 
+  /** @param {string} name */
   assignColor(name) {
     if (!this.caretColors[name]) {
       const idx = Object.keys(this.caretColors).length % this.caretPalette.length;
@@ -169,6 +183,7 @@ export class PresenceView {
     }, 800);
   }
 
+  /** @param {string} name */
   markActiveEditor(name) {
     if (!name) return;
     this.activeEditors.set(name, Date.now());
@@ -182,6 +197,8 @@ export class PresenceView {
     }, 1300);
   }
 
+  /** @param {string} name
+   * @param {boolean} isSelecting */
   markSelecting(name, isSelecting) {
     if (!name) return;
     if (isSelecting) {
@@ -192,6 +209,7 @@ export class PresenceView {
     this.renderUsers(this.currentUsers);
   }
 
+  /** @param {string} name */
   markCopying(name) {
     if (!name) return;
     this.copyingUsers.set(name, Date.now());
