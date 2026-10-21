@@ -76,11 +76,11 @@ public sealed class ResourceBudgetTests
         });
         if (accepted)
         {
-            room.AppendYjsUpdate(new byte[bytes], DateTimeOffset.UtcNow);
+            room.AppendAsTestParticipant(new byte[bytes], DateTimeOffset.UtcNow);
         }
         else
         {
-            Assert.Throws<RoomLimitException>(() => room.AppendYjsUpdate(new byte[bytes], DateTimeOffset.UtcNow));
+            Assert.Throws<RoomLimitException>(() => room.AppendAsTestParticipant(new byte[bytes], DateTimeOffset.UtcNow));
         }
 
         Assert.Equal(accepted ? 1 : 0, room.DocumentRevision.Value);
@@ -103,14 +103,14 @@ public sealed class ResourceBudgetTests
         {
             try
             {
-                room.AppendYjsUpdate(new byte[256], DateTimeOffset.UtcNow);
+                room.AppendAsTestParticipant(new byte[256], DateTimeOffset.UtcNow);
             }
             catch (RoomLimitException) { }
         });
         Assert.Equal(4, room.DocumentRevision.Value);
         Assert.Equal(1024, room.JournalBytes);
-        Assert.True(room.TryCreateYjsCheckpoint(new(4), [1], new(""), DateTimeOffset.UtcNow));
-        room.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
+        Assert.True(room.CheckpointAsTestParticipant(new(4), [1], new(""), DateTimeOffset.UtcNow));
+        room.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
         Assert.Equal(5, room.DocumentRevision.Value);
         Assert.Equal(1, room.JournalCount);
     }
@@ -120,10 +120,10 @@ public sealed class ResourceBudgetTests
     {
         var room = Create(new());
         room.AddUser(new("a"), new("Alice"), 5);
-        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
         var snapshot = room.CreateYjsSyncState();
         room.AddUser(new("b"), new("Bob"), 5);
-        room.AppendYjsUpdate([3], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([3], DateTimeOffset.UtcNow);
         snapshot.Updates[0].Payload[0] = 99;
         Assert.Equal(1, snapshot.DocumentRevision.Value);
         Assert.Equal(2, snapshot.Version.Value);
@@ -147,7 +147,7 @@ public sealed class ResourceBudgetTests
     public void LargeDocumentFitsDefaultBudgets()
     {
         var room = Create(new());
-        room.AppendYjsUpdate(new byte[500100], DateTimeOffset.UtcNow);
-        Assert.True(room.TryCreateYjsCheckpoint(new(1), new byte[500100], new(new string('a', 500000)), DateTimeOffset.UtcNow));
+        room.AppendAsTestParticipant(new byte[500100], DateTimeOffset.UtcNow);
+        Assert.True(room.CheckpointAsTestParticipant(new(1), new byte[500100], new(new string('a', 500000)), DateTimeOffset.UtcNow));
     }
 }

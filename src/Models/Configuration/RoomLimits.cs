@@ -89,7 +89,7 @@ public sealed class RoomLimits : IValidatableObject
         }
 
         // Worst-case escaped text plus Base64 journal/checkpoint and entry framing.
-        var syncBudget = MaxEncodedCheckpointBytes + (4L * ((MaxJournalBytes + 2) / 3))
+        var syncBudget = MaxEncodedCheckpointBytes + Base64Size.EncodedLength(MaxJournalBytes)
             + (6L * MaxSnapshotCharacters) + (80L * MaxJournalCount) + 4096;
         if (syncBudget > 16 * 1024 * 1024)
         {

@@ -62,7 +62,7 @@ public sealed class RoomSessionService : IRoomSessionService
         }
         var update = Decode(updateBase64);
         room = GetParticipant(roomId, connection, out _);
-        var result = room.AppendForParticipant(connection, update, DateTimeOffset.UtcNow);
+        var result = room.Append(connection, update, DateTimeOffset.UtcNow);
         return new RoomSessionAppendResult(result.DocumentRevision, result.RoomVersion, author);
     }
 
@@ -94,7 +94,7 @@ public sealed class RoomSessionService : IRoomSessionService
         }
         var state = Decode(stateBase64);
         room = GetParticipant(roomId, connection, out _);
-        return room.CheckpointForParticipant(connection, revision, state, new RoomText(textSnapshot ?? string.Empty), DateTimeOffset.UtcNow)
+        return room.Checkpoint(connection, revision, state, new RoomText(textSnapshot ?? string.Empty), DateTimeOffset.UtcNow)
             ? CheckpointOutcome.Accepted : CheckpointOutcome.Stale;
     }
 
@@ -117,7 +117,7 @@ public sealed class RoomSessionService : IRoomSessionService
         RoomLanguage language)
     {
         ArgumentNullException.ThrowIfNull(room);
-        return room.LanguageForParticipant(connection, language, DateTimeOffset.UtcNow, _languages);
+        return room.ChangeLanguage(connection, language, DateTimeOffset.UtcNow, _languages);
     }
 
     private readonly IRoomManager _rooms;

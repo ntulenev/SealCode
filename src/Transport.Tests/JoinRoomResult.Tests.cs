@@ -44,7 +44,7 @@ public sealed class JoinRoomResultTests
             [1, 2, 3]);
         room.AddUser(new ConnectionId("conn-2"), new RoomUser("Bob"), 5);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([4, 5], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([4, 5], DateTimeOffset.UtcNow);
 
         var result = JoinRoomResult.From(room);
 

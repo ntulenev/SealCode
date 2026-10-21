@@ -90,9 +90,13 @@ public sealed class RoomHubTests
         var exception = await Assert.ThrowsAsync<HubException>(async () =>
         {
             if (method == "UpdateYjs")
-            { await hub.UpdateYjsAsync(DefaultRoomId, payload); }
+            {
+                await hub.UpdateYjsAsync(DefaultRoomId, payload);
+            }
             else
-            { _ = await hub.CheckpointYjsAsync(DefaultRoomId, payload, "", 0); }
+            {
+                _ = await hub.CheckpointYjsAsync(DefaultRoomId, payload, "", 0);
+            }
         });
 
         exception.Message.Should().Be(expected);
@@ -282,7 +286,7 @@ public sealed class RoomHubTests
         var room = CreateRoomState(DefaultRoomId);
         if (reconnect)
         {
-            room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
+            room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
         }
 
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
@@ -312,7 +316,7 @@ public sealed class RoomHubTests
 
         var joinTask = hub.JoinRoomAsync(DefaultRoomId, "Alice");
         await subscriptionStarted.Task;
-        var appended = room.AppendYjsUpdate([2, 3], DateTimeOffset.UtcNow);
+        var appended = room.AppendAsTestParticipant([2, 3], DateTimeOffset.UtcNow);
         subscriptionCompleted.SetResult();
         var result = await joinTask;
 
@@ -405,7 +409,7 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync("YjsCheckpointed",
@@ -444,7 +448,7 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var failure = new InvalidOperationException("Broadcast failed");
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -481,8 +485,8 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
-        room.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);
