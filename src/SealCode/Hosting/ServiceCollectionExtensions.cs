@@ -54,11 +54,6 @@ internal static class ServiceCollectionExtensions
         });
         _ = services.AddSingleton<AdminHttpSecurity>();
         _ = services.AddHttpContextAccessor();
-        _ = services.AddScoped(sp =>
-        {
-            var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-            return accessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
-        });
         _ = services.AddScoped<IAdminUserManager, AdminUserManager>();
         _ = services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
             .AddCookie(options =>

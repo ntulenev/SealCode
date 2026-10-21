@@ -22,6 +22,19 @@ namespace SealCode.Tests;
 
 public sealed class AdminUserManagerTests
 {
+    [Fact]
+    public async Task CallsOutsideRequestShouldThrowClearException()
+    {
+        var manager = new AdminUserManager(CreateSettings(), new HttpContextAccessor());
+
+        var read = () => manager.IsAdmin();
+        read.Should().Throw<InvalidOperationException>().WithMessage("*outside an HTTP request*");
+        var login = () => manager.TrySetCurrentUserAsync(CancellationToken.None);
+        await login.Should().ThrowAsync<InvalidOperationException>().WithMessage("*outside an HTTP request*");
+        var logout = () => manager.ClearCurrentAdminUserAsync();
+        await logout.Should().ThrowAsync<InvalidOperationException>().WithMessage("*outside an HTTP request*");
+    }
+
     private const string COOKIENAME = "admin_auth";
 
     [Fact(DisplayName = "CtorShouldThrowWhenContextIsNull")]
@@ -41,7 +54,7 @@ public sealed class AdminUserManagerTests
     {
         var context = new DefaultHttpContext();
 
-        var action = () => new AdminUserManager(null!, context);
+        var action = () => new AdminUserManager(null!, new HttpContextAccessor { HttpContext = context });
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -163,7 +176,7 @@ public sealed class AdminUserManagerTests
             Name = configuredName,
             Password = "pass1"
         };
-        var manager = new AdminUserManager(settings, context);
+        var manager = new AdminUserManager(settings, new HttpContextAccessor { HttpContext = context });
         SetForm(context, "name=Admin&password=pass1");
 
         var result = await manager.TrySetCurrentUserAsync(CancellationToken.None);
@@ -228,7 +241,7 @@ public sealed class AdminUserManagerTests
     });
 
     private static AdminUserManager CreateManager(HttpContext context)
-        => new(CreateSettings(), context);
+        => new(CreateSettings(), new HttpContextAccessor { HttpContext = context });
 
     private static void SetForm(DefaultHttpContext context, string formBody)
     {
