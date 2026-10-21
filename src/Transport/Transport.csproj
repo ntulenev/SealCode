@@ -1,20 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-	<PropertyGroup>
-		<TargetFramework>net10.0</TargetFramework>
-		<Nullable>enable</Nullable>
-		<ImplicitUsings>enable</ImplicitUsings>
-	</PropertyGroup>
-	<PropertyGroup>
-		<NuGetAuditMode>all</NuGetAuditMode>
-	</PropertyGroup>
-
-	<PropertyGroup>
-		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
-		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-		<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
-		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-	</PropertyGroup>
 	<ItemGroup>
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>

@@ -1,23 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 	<PropertyGroup>
-		<TargetFramework>net10.0</TargetFramework>
-		<Nullable>enable</Nullable>
-		<ImplicitUsings>enable</ImplicitUsings>
 		<MinVerTagPrefix>v</MinVerTagPrefix>
 		<MinVerDefaultPreReleaseIdentifiers>dev</MinVerDefaultPreReleaseIdentifiers>
 	</PropertyGroup>
 	<PropertyGroup>
-		<NuGetAuditMode>all</NuGetAuditMode>
-	</PropertyGroup>
-	<PropertyGroup>
 		<NoWarn>CA1873</NoWarn>
-	</PropertyGroup>
-	<PropertyGroup>
-		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
-		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-		<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
-		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 	</PropertyGroup>
 	<ItemGroup>
 		<Compile Remove="Abstractions\**\*.cs" />
@@ -26,7 +13,7 @@
 		<Compile Remove="Transport\**\*.cs" />
 	</ItemGroup>
 	<ItemGroup>
-		<PackageReference Include="MinVer" Version="8.0.0" PrivateAssets="all" />
+		<PackageReference Include="MinVer" PrivateAssets="all" />
 		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
 		<ProjectReference Include="..\Logic\Logic.csproj" />
 		<ProjectReference Include="..\Models\Models.csproj" />
