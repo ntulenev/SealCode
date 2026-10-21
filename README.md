@@ -176,83 +176,159 @@ Where:
 
 ## Production setup and migration
 
-Generate an Identity password hash offline using `dotnet run --project tools/password-hash`.
-The console prompts without echo; do not put a password in command arguments,
-shell history, source control, or logs. Configure `AdminUsers__0__Name` and
-`AdminUsers__0__PasswordHash` through environment variables or a deployment secret
-provider, and remove the old `Password` key entirely. Keep hashes private too.
-Existing name-only/older tickets require signing in again. Changing a credential
-or removing an account invalidates authorization after the configuration takes
-effect. Sessions last eight hours without sliding extension.
+### Admin credentials and sessions
 
-Run behind HTTPS. For a reverse proxy, set `TrustedProxies` to its exact IP
-addresses, forward the original host and scheme, and configure `AllowedHosts`
-for the deployment hostname. Unlisted proxies cannot supply trusted forwarded
-headers. Production enables HSTS/HTTPS redirection and Secure admin cookies.
-The browser WebSocket Origin must match this effective hostname/scheme. Persist
-ASP.NET Data Protection keys securely if sessions must survive a redeployment;
-room data still disappears. The application supports one process only; it has
-no database, multi-instance coordination or durable room storage. Anyone knowing
-a room link is a trusted participant under [ADR 0003](docs/adr/0003-crdt-recovery-lifecycle.md).
-The server validates membership, revisions, encoding and resource limits but does
-not interpret Yjs updates to verify their document semantics.
+Generate an Identity password hash offline:
 
-Admin POST/DELETE requests require a token from `/admin/token` in `X-CSRF-TOKEN`
-(or `__RequestVerificationToken` for a form). Fetch a fresh token after login.
-The provided UI does this automatically. Input exceptions handled by the API middleware return ProblemDetails;
-Hub resource refusals contain stable `LimitExceeded`/`RateLimited` codes.
-Room names deliberately retain the existing trim/20-character-plus-ellipsis
-normalization; raw inputs over 1024 characters are rejected. Participant names
-are trimmed and limited to 64 characters.
+```bash
+dotnet run --project tools/password-hash
+```
+
+The console prompts without echo. Keep passwords out of command arguments, shell history, source control and logs; keep the generated hashes private too.
+
+For each admin account:
+
+- Configure `AdminUsers__0__Name` and `AdminUsers__0__PasswordHash` through environment variables or a deployment secret provider (adjust the index for additional accounts).
+- Remove the legacy `Password` key entirely.
+
+Existing name-only or older authentication tickets require signing in again. Changing a credential or removing an account invalidates authorization after the configuration takes effect.
+
+Sessions last **eight hours**, without sliding extension. Persist ASP.NET Data Protection keys securely if sessions must survive a redeployment.
+
+### HTTPS and reverse proxies
+
+Run behind HTTPS. Production enables HSTS, HTTPS redirection and Secure admin cookies.
+
+When using a reverse proxy:
+
+- Set `TrustedProxies` to the proxy's exact IP addresses.
+- Forward the original host and scheme.
+- Set `AllowedHosts` to the deployment hostname.
+
+Unlisted proxies cannot supply trusted forwarded headers. The browser WebSocket Origin must match the effective hostname and scheme.
+
+### Deployment and trust boundaries
+
+The application supports **one process only**. It has no database, multi-instance coordination or durable room storage; room data disappears when the process stops, even if Data Protection keys are persisted.
+
+Anyone knowing a room link is a trusted participant under [ADR 0003](docs/adr/0003-crdt-recovery-lifecycle.md). The server validates membership, revisions, encoding and resource limits, but does not interpret Yjs updates to verify their document semantics.
+
+### Admin requests and input validation
+
+Admin POST/DELETE requests require an antiforgery token:
+
+1. Fetch a token from `/admin/token`.
+2. Send it in `X-CSRF-TOKEN`, or use `__RequestVerificationToken` for a form.
+3. Fetch a fresh token after login.
+
+The provided UI handles this automatically.
+
+| Area | Behavior |
+| --- | --- |
+| API input exceptions | Exceptions handled by the API middleware return ProblemDetails. |
+| Hub resource refusals | Stable `LimitExceeded` / `RateLimited` codes. |
+| Room names | Trimmed and shortened to 20 characters plus an ellipsis; raw inputs over 1024 characters are rejected. |
+| Participant names | Trimmed and limited to 64 characters. |
 
 ## Resource budgets
 
-Empty room expiration is opt-in: `Limits:RoomIdleTimeoutMinutes` defaults to `0`
-(disabled), with a validated range of 0–525600 minutes. When enabled, a background
-service checks once per minute and deletes empty rooms whose last activity is at
-least the configured timeout old, using the reason `Room expired`. Every successful
-mutation, including joining and leaving, updates `LastActivityUtc`; `LastUpdatedUtc`
-keeps its existing document/metadata meaning. Eligibility is checked again under
-the aggregate lock before deletion, so a concurrent participant join preserves
-the room if it wins that lock. A room expires at the first sweep after its timeout.
+### Empty room expiration
 
-The `Limits` section accepts `MaxEncodedUpdateBytes` and
-`MaxEncodedCheckpointBytes` (4 MiB Base64 characters each), `MaxJournalBytes`
-(4 MiB decoded), `MaxJournalCount` (2048), `MaxSnapshotCharacters` (1,048,576),
-`MaxRooms` (32), `MaxConnections` (160), `NewConnectionsPerSourcePerMinute`
-(30, range 1–10000), and `InvocationsPerSecond` (100).
-Increase `Limits:NewConnectionsPerSourcePerMinute` for deployments behind shared
-NAT/proxies to accommodate reconnect bursts. Configure `TrustedProxies` so the
-source address reflects the intended client boundary.
-Defaults are implementation choices verified with 500,000-character documents.
-Combined limits must fit a worst-case 16 MiB synchronization response; invalid
-settings fail startup. The browser pending/delivery budgets are 8 MiB/2048 entries.
-A permanent refusal retains visible unsynced text and stops retries: copy it
-before reloading. A valid checkpoint frees journal capacity; accepted updates
-are never evicted for quota. Resource counters are available from the
-`SealCode.Rooms` and `SealCode.Hub` diagnostic meters without document content.
+Expiration is opt-in. Set `Limits:RoomIdleTimeoutMinutes` to enable it:
 
-Checkpoint thresholds are validated at startup: `4 * CheckpointEveryRevisions <=
-MaxJournalCount` and `3 * CheckpointEveryBase64Bytes <= MaxJournalBytes`. This
-reserves headroom beyond the doubled fallback threshold for in-flight updates
-and accounts for Base64-to-decoded-byte conversion. The ranges are 1-10000
-revisions and 1024-4194304 Base64 characters, respectively.
+| Setting | Default | Valid range |
+| --- | --- | --- |
+| `Limits:RoomIdleTimeoutMinutes` | `0` (disabled) | 0–525600 minutes |
+
+When enabled, a background service checks **once per minute** and deletes empty rooms whose last activity is at least the configured timeout old. The deletion reason is `Room expired`; expiration occurs at the first sweep after the timeout.
+
+Every successful mutation, including joining and leaving, updates `LastActivityUtc`. `LastUpdatedUtc` continues to track document and metadata changes.
+
+Eligibility is checked again under the room lock before deletion. A concurrent participant join preserves the room if it acquires that lock first.
+
+### Server limits
+
+Configure these values in the `Limits` section:
+
+| Setting | Default | Budget |
+| --- | --- | --- |
+| `MaxEncodedUpdateBytes` | 4 MiB | Base64 characters per update |
+| `MaxEncodedCheckpointBytes` | 4 MiB | Base64 characters per checkpoint |
+| `MaxJournalBytes` | 4 MiB | Decoded journal bytes |
+| `MaxJournalCount` | 2048 | Journal updates |
+| `MaxSnapshotCharacters` | 1,048,576 | UTF-16 characters per text snapshot |
+| `MaxRooms` | 32 | Rooms per process |
+| `MaxConnections` | 160 | Concurrent hub connections |
+| `NewConnectionsPerSourcePerMinute` | 30 | New connections per source per minute; range 1–10000 |
+| `InvocationsPerSecond` | 100 | Hub invocations per connection per second |
+
+For deployments behind shared NAT or proxies, increase `Limits:NewConnectionsPerSourcePerMinute` to accommodate reconnect bursts. Configure `TrustedProxies` so the source address reflects the intended client boundary.
+
+Defaults were verified with 500,000-character documents. Combined limits must fit a worst-case **16 MiB synchronization response**; invalid settings fail startup.
+
+### Client limits and quota handling
+
+The browser pending/delivery budgets are **8 MiB / 2048 entries**.
+
+- A permanent refusal retains visible unsynced text and stops retries. **Copy the text before reloading.**
+- A valid checkpoint frees journal capacity.
+- Accepted updates are never evicted to satisfy a quota.
+
+Resource counters are available from the `SealCode.Rooms` and `SealCode.Hub` diagnostic meters without document content.
+
+### Checkpoint thresholds
+
+| Setting | Default | Valid range |
+| --- | --- | --- |
+| `CheckpointEveryRevisions` | 64 | 1–10000 revisions |
+| `CheckpointEveryBase64Bytes` | 256 KiB | 1024–4194304 Base64 characters |
+
+Startup validation requires both conditions:
+
+```text
+4 * CheckpointEveryRevisions <= MaxJournalCount
+3 * CheckpointEveryBase64Bytes <= MaxJournalBytes
+```
+
+These constraints reserve headroom beyond the doubled fallback threshold for in-flight updates and account for Base64-to-decoded-byte conversion.
 
 ## Local assets, publishing and verification
 
-Build/Publish runs `npm run build:client`; run `npm ci` first on a clean checkout.
-Generated `wwwroot/assets` is ignored by Git and included in publication.
-Monaco/Yjs/SignalR and workers load locally with a single Yjs instance; no CDN
-is needed. CSP intentionally permits inline styles for Monaco, but scripts and
-workers must come from this origin. `SkipClientBuild=true` is for an already
-prepared client build only.
+### Building and publishing
 
-CI is defined in `.github/workflows/verify.yml`. Browser tests use an isolated
-temporary content root with disposable settings, never local admin credentials.
-For the additional production check, create a development HTTPS certificate
-with `dotnet dev-certs https`, then run
-`npx playwright test --config playwright.https.config.js`. The browser test client
-ignores trust only for that local test certificate. Server coverage is merged
-with ReportGenerator by source lines/branches, rather than averaging project
-percentages; JS coverage is reported separately. See [ADR 0004](docs/adr/0004-resource-and-security-boundaries.md) for contracts
-and [the implementation audit](docs/audit-implementation.md) for validation evidence.
+On a clean checkout, install dependencies first:
+
+```bash
+npm ci
+```
+
+Build/Publish runs `npm run build:client` automatically. Generated `wwwroot/assets` is ignored by Git and included in publication. Use `SkipClientBuild=true` only when the client build is already prepared.
+
+Monaco, Yjs, SignalR and workers load locally, with a single Yjs instance; no CDN is needed. CSP permits inline styles for Monaco, while scripts and workers must come from this origin.
+
+### CI and test isolation
+
+CI is defined in [verify.yml](.github/workflows/verify.yml).
+
+Browser tests use an isolated temporary content root with disposable settings, never local admin credentials.
+
+Coverage reports are separate:
+
+- **Server:** ReportGenerator merges source lines and branches across projects, rather than averaging project percentages.
+- **Client:** JavaScript coverage is reported separately.
+
+### Production HTTPS check
+
+Create a development HTTPS certificate, then run the additional production check:
+
+```bash
+dotnet dev-certs https
+npx playwright test --config playwright.https.config.js
+```
+
+The browser test client ignores certificate trust only for that local test certificate.
+
+### Further details
+
+- [ADR 0004: Resource and security boundaries](docs/adr/0004-resource-and-security-boundaries.md) — contracts and constraints.
+- [Implementation audit](docs/audit-implementation.md) — validation evidence.
