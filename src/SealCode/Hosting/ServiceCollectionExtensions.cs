@@ -75,6 +75,8 @@ internal static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddSealCodeRooms(this IServiceCollection services)
     {
+        _ = services.AddSingleton(TimeProvider.System);
+        _ = services.AddHostedService<IdleRoomCleanupService>();
         _ = services.AddSingleton<IRoomRegistry, RoomRegistry>();
         _ = services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
         _ = services.AddSingleton<IRoomManager, RoomManager>();

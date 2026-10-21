@@ -62,6 +62,12 @@ public sealed class RoomLimits : IValidatableObject
     public int MaxRooms { get; init; } = 32;
 
     /// <summary>
+    /// Gets the empty room idle timeout in minutes; 0 disables automatic deletion.
+    /// </summary>
+    [Range(0, 525600)]
+    public int RoomIdleTimeoutMinutes { get; init; }
+
+    /// <summary>
     /// Gets the maximum number of concurrent anonymous hub connections.
     /// </summary>
     [Range(1, 10000)]

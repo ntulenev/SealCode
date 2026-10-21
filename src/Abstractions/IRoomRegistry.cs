@@ -1,6 +1,5 @@
 using Models;
 
-
 namespace Abstractions;
 
 /// <summary>
@@ -39,4 +38,14 @@ public interface IRoomRegistry
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>True when removed; otherwise false.</returns>
     Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes a room only if it is still empty and inactive under its aggregate lock.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <param name="reason">The deletion reason.</param>
+    /// <param name="idleCutoff">The latest eligible activity timestamp.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True when the room was still eligible and removed; otherwise false.</returns>
+    Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, DateTimeOffset idleCutoff, CancellationToken cancellationToken);
 }

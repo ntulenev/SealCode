@@ -20,6 +20,7 @@ public sealed class RoomState
     /// <param name="createdBy">The admin that created the room.</param>
     /// <param name="yjsState">The serialized Yjs document state (full update).</param>
     /// <param name="limits">Resource budgets.</param>
+    /// <param name="timeProvider">The clock used for activity timestamps.</param>
     public RoomState(
         RoomId roomId,
         RoomName name,
@@ -29,9 +30,12 @@ public sealed class RoomState
         DateTimeOffset lastUpdatedUtc,
         AdminUser createdBy,
         byte[]? yjsState = null,
-        RoomLimits? limits = null)
+        RoomLimits? limits = null,
+        TimeProvider? timeProvider = null)
     {
         _limits = limits ?? new RoomLimits();
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _lastActivityUtc = _timeProvider.GetUtcNow();
         RoomId = roomId;
         Name = name;
         Language = language;
@@ -145,6 +149,20 @@ public sealed class RoomState
     public DateTimeOffset LastUpdatedUtc { get; private set; }
 
     /// <summary>
+    /// Gets the most recent successful mutation, including participant joins and departures.
+    /// </summary>
+    public DateTimeOffset LastActivityUtc
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _lastActivityUtc;
+            }
+        }
+    }
+
+    /// <summary>
     /// Gets the admin that created the room.
     /// </summary>
     public AdminUser CreatedBy { get; }
@@ -219,6 +237,7 @@ public sealed class RoomState
         {
             EnsureOpen();
             _membership.Add(connectionId, roomUser, maxUsers);
+            _lastActivityUtc = _timeProvider.GetUtcNow();
         }
     }
 
@@ -259,6 +278,7 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             _closed = true;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
             _journal.Clear();
         }
     }
@@ -286,6 +306,7 @@ public sealed class RoomState
             var revision = _journal.Append(update);
             Version = Version.Next();
             LastUpdatedUtc = now;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
             return new RoomDocumentAppendResult(revision, Version);
         }
     }
@@ -320,6 +341,7 @@ public sealed class RoomState
             }
             Text = text;
             LastUpdatedUtc = now;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
             return true;
         }
     }
@@ -354,6 +376,7 @@ public sealed class RoomState
             MetadataRevision++;
             Version = Version.Next();
             LastUpdatedUtc = now;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
             return new RoomLanguageChangeResult(Version, MetadataRevision);
         }
     }
@@ -382,7 +405,29 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             var removed = _membership.Remove(connection, out var user);
+            if (removed)
+            {
+                _lastActivityUtc = _timeProvider.GetUtcNow();
+            }
             return new RoomLeaveResult(removed, user, CreateUsersSnapshot(), PresenceRevision);
+        }
+    }
+
+    /// <summary>
+    /// Atomically closes an empty room only if its activity is at or before the cutoff.
+    /// </summary>
+    /// <param name="idleCutoff">The latest eligible activity timestamp.</param>
+    /// <returns>Whether the room was closed for expiration.</returns>
+    public bool TryCloseIfIdle(DateTimeOffset idleCutoff)
+    {
+        lock (_versionGuard)
+        {
+            if (_closed || _membership.Count != 0 || _lastActivityUtc > idleCutoff)
+            {
+                return false;
+            }
+            Close();
+            return true;
         }
     }
 
@@ -406,6 +451,8 @@ public sealed class RoomState
     }
 
     private bool _closed;
+    private DateTimeOffset _lastActivityUtc;
+    private readonly TimeProvider _timeProvider;
     private readonly Lock _versionGuard = new();
     private readonly RoomDocumentJournal _journal;
     private readonly RoomMembership _membership = new();
