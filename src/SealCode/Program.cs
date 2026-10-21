@@ -20,7 +20,7 @@ app.UseMiddleware<ApiExceptionMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<WebSocketOriginGuardMiddleware>();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = StaticAssetCaching.Apply });
 app.UseAuthentication();
 app.Use((context, next) => AdminHttpSecurity.InvokeAsync(context, next));
 app.MapSealCodeEndpoints();

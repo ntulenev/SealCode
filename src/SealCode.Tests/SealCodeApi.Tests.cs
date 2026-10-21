@@ -22,6 +22,32 @@ namespace SealCode.Tests;
 public sealed class SealCodeApiTests
 {
     [Fact]
+    public async Task StaticFilesRevalidateEntryPointsAndCacheHashedAssets()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"sealcode-static-{Guid.NewGuid():N}");
+        _ = Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "room.html"), "room");
+            await File.WriteAllTextAsync(Path.Combine(root, "chunk-ABCDEFGH.js"), "export {};");
+            using var baseFactory = CreateFactory();
+            using var factory = baseFactory.WithWebHostBuilder(builder => builder.UseWebRoot(root));
+            using var client = factory.CreateClient();
+            using var entry = await client.GetAsync("/room.html");
+            using var chunk = await client.GetAsync("/chunk-ABCDEFGH.js");
+            entry.StatusCode.Should().Be(HttpStatusCode.OK);
+            entry.Headers.CacheControl!.NoCache.Should().BeTrue();
+            chunk.StatusCode.Should().Be(HttpStatusCode.OK);
+            chunk.Headers.CacheControl!.ToString().Should().Contain("immutable");
+            chunk.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromDays(365));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task GetVersionShouldReturnRunningAssemblyMetadataWithoutCaching()
     {
         using var factory = CreateFactory();

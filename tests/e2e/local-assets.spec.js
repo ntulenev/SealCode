@@ -5,6 +5,8 @@ test('room runs with local assets and CSP, including a language worker', async (
   page,
   baseURL
 }) => {
+  const asset = await page.request.get('/assets/room.js');
+  expect(asset.headers()['cache-control']).toContain('no-cache');
   const errors = [];
   const external = [];
   const workers = [];
