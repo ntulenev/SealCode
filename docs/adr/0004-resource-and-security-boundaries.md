@@ -9,9 +9,17 @@ SC-08 is conditional and is not implemented by these changes.
 `Limits` has validated defaults: 4 MiB Base64 characters per update/checkpoint,
 4 MiB decoded journal payloads, 2048 journal entries, 1,048,576 UTF-16 snapshot
 characters, 32 rooms, 160 concurrent hub connections, 100 invocations/second
-per connection. Anonymous source buckets permit 30 new connections/minute by
+per connection. A normalized source may hold at most 20 concurrent connections
+(`MaxConnectionsPerSource`, range 1-10000, no greater than `MaxConnections`).
+Unjoined connections are aborted after 60 seconds
+(`UnjoinedConnectionTimeoutSeconds`, range 5-3600). The one-shot deadline is
+canceled on disconnect; connections already in a room are retained. Active-source
+counters are removed when their last connection leaves and are bounded by the
+process connection budget. IPv4 uses the address; IPv6 uses its /64 prefix;
+IPv4-mapped IPv6 is normalized to IPv4 and missing addresses use `unknown`.
+Anonymous source buckets permit 30 new connections/minute by
 `Limits:NewConnectionsPerSourcePerMinute` (validated range 1–10000). Increase this
-for deployments behind NAT/proxies and configure `TrustedProxies` appropriately,
+and the concurrent source limit for deployments behind NAT/proxies and configure `TrustedProxies` appropriately,
 so reconnect bursts do not throttle an entire office.
 These are implementation defaults, not previously agreed product commitments.
 The 500,000-character fixture fits these defaults. Combined configurable limits
@@ -54,6 +62,10 @@ are validated at startup. Hashes need the same protection as other credentials.
 Admin mutations, including login/logout, require antiforgery tokens. The token
 endpoint is uncached, and tokens are refreshed after identity changes. Login is
 limited to 30 attempts/source/minute and 10/name/minute using bounded buckets.
+The per-name limit deliberately permits anyone who knows an administrator name
+to temporarily deny that account a login by consuming its ten attempts. This is
+an accepted tradeoff against password guessing. Use non-obvious administrator
+names and restrict `/admin` through a proxy or VPN to mitigate it.
 Unknown accounts and wrong passwords receive the same external failure. Sessions
 expire after eight hours without sliding renewal. Credential fingerprint changes
 or account removal invalidate application authorization immediately after the

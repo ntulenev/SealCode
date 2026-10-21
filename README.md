@@ -58,7 +58,7 @@ dotnet run --project src/SealCode/SealCode.csproj
 
 ## Tests
 
-After `npm ci`, install Chromium once with `npx playwright install chromium`.
+Use Node.js 24 for the test runner and its coverage flags. After `npm ci`, install Chromium once with `npx playwright install chromium`.
 Run `npm run build:client` before browser tests. Browser tests build the server and
 start their own isolated application instance. Set `E2E_PORT` to override the HTTP
 port (5087) or the production HTTPS check port (5088).
@@ -107,6 +107,12 @@ The checked-in `appsettings.json` contains empty `PasswordHash` placeholders. Be
 
 ## Synchronization limits
 
+The client reads the server's update, checkpoint and text-snapshot limits from
+`/features`. It splits queued edits into batches within `MaxEncodedUpdateBytes`;
+if a merged batch is refused, it retries each edit separately before blocking.
+Checkpoint state and text are checked against `MaxEncodedCheckpointBytes` and
+`MaxSnapshotCharacters` before transmission.
+
 Checkpoint writers wait 1 second and compact at the server-advertised
 `Limits:CheckpointEveryRevisions` (default 64) or
 `Limits:CheckpointEveryBase64Bytes` (default 256 KiB of Base64 characters). The latest author writes first; other
@@ -118,7 +124,8 @@ are rejected before Base64 decoding, with the locked check remaining authoritati
 - SignalR accepts messages up to 16 MiB. The client checks the complete UTF-8
   JSON message, including the full CRDT state and text in a checkpoint, before sending.
 - A checkpoint over the limit is skipped with a visible warning; incremental
-  edits continue syncing. It is reconsidered when the document revision changes.
+  edits continue syncing. After a size refusal, it is reconsidered only after
+  another `CheckpointEveryRevisions` revisions.
 - An edit over the limit remains local and queued, with a warning to copy the
   text before reloading. Oversized messages are not retried automatically.
 - Admin sessions use protected authentication cookies; old name-only cookies
@@ -261,10 +268,17 @@ Configure these values in the `Limits` section:
 | `MaxSnapshotCharacters` | 1,048,576 | UTF-16 characters per text snapshot |
 | `MaxRooms` | 32 | Rooms per process |
 | `MaxConnections` | 160 | Concurrent hub connections |
+| `MaxConnectionsPerSource` | 20 | Concurrent connections per normalized source (1-10000; no greater than `MaxConnections`) |
+| `UnjoinedConnectionTimeoutSeconds` | 60 | Deadline to join a room (5-3600 seconds) |
 | `NewConnectionsPerSourcePerMinute` | 30 | New connections per source per minute; range 1–10000 |
 | `InvocationsPerSecond` | 100 | Hub invocations per connection per second |
 
-For deployments behind shared NAT or proxies, increase `Limits:NewConnectionsPerSourcePerMinute` to accommodate reconnect bursts. Configure `TrustedProxies` so the source address reflects the intended client boundary.
+For deployments behind shared NAT or proxies, increase `Limits:NewConnectionsPerSourcePerMinute`
+and `Limits:MaxConnectionsPerSource` to accommodate reconnect bursts and concurrent users.
+A source is one IPv4 address or one IPv6 /64 prefix. IPv4-mapped IPv6 addresses use
+their IPv4 address; missing addresses share `unknown`. Configure `TrustedProxies`
+so the source address reflects the intended client boundary. Connections that do
+not join a room before `UnjoinedConnectionTimeoutSeconds` are closed.
 
 Defaults were verified with 500,000-character documents. Combined limits must fit a worst-case **16 MiB synchronization response**; invalid settings fail startup.
 
@@ -298,6 +312,11 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 ### Building and publishing
 
+The client build clears `wwwroot/assets` before writing the new bundle and chunks.
+Stable URLs (HTML, JavaScript entry points and workers) use `Cache-Control: no-cache`
+so browsers revalidate them using ETag/Last-Modified. Files with esbuild hashes in
+their names are cached for one year with `immutable`.
+
 On a clean checkout, install dependencies first:
 
 ```bash
@@ -317,7 +336,10 @@ Browser tests use an isolated temporary content root with disposable settings, n
 Coverage reports are separate:
 
 - **Server:** ReportGenerator merges source lines and branches across projects, rather than averaging project percentages.
-- **Client:** JavaScript coverage is reported separately.
+- **Client:** `c8 --all` includes every root `wwwroot/*.js` module, including
+  untested browser entry points. Tests are excluded. The enforced floors are
+  61% lines, 83% branches and 82% functions; LCOV is written to
+  `coverage/client/lcov.info`. Native Node coverage is also reported for loaded modules.
 
 ### Production HTTPS check
 
