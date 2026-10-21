@@ -1,3 +1,4 @@
+import { PresenceView } from './presence-ui.js';
 import { base64FromUint8, uint8FromBase64 } from './encoding.js';
 import {
   isCopyShortcut,
@@ -71,20 +72,10 @@ const syncError = document.getElementById('syncError');
 const pathSegments = new URL(window.location.href).pathname.split('/').filter(Boolean);
 const roomId = pathSegments[pathSegments.length - 1] ?? '';
 let displayName = '';
+const presence = new PresenceView({ editor: null, monaco, participantsList, document });
 let currentVersion = 0;
 let isApplyingRemoteUpdate = false;
 let cursorTimer = null;
-let currentUsers = [];
-const cursorPositions = {};
-const caretColors = {};
-const caretPalette = ['#fbbf24', '#22d3ee', '#34d399', '#f472b6', '#a78bfa', '#fb7185'];
-let hideRemoteCarets = false;
-let hideRemoteTimer = null;
-const activeEditors = new Map();
-const selectingUsers = new Map();
-const copyingUsers = new Map();
-const caretClassMap = new Map();
-let caretClassCounter = 0;
 
 let editor = null;
 let model = null;
@@ -120,13 +111,14 @@ const rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000];
 
 const connectionLifecycle = createRoomConnection(signalR, '/roomHub');
 const connection = connectionLifecycle.connection;
+Object.defineProperty(presence, 'displayName', { get: () => displayName });
 const roomView = new RevisionedRoomView({
   language: (language) => {
     ensureLanguageOption(language);
     languageSelect.value = language;
     setLanguage(language);
   },
-  users: (users) => renderUsers(users)
+  users: (users) => presence.renderUsers(users)
 });
 
 const syncScheduler = new SyncScheduler();
@@ -378,12 +370,6 @@ async function rejoinRoomWithRetry() {
   }, delayMs);
 }
 
-function truncateName(name) {
-  if (!name) return '';
-  if (name.length <= 10) return name;
-  return `${name.slice(0, 9)}...`;
-}
-
 function setLanguageOptions(selectEl, languages, selected) {
   const cleaned = Array.isArray(languages)
     ? languages
@@ -447,149 +433,6 @@ async function loadLanguages(selected) {
   }
 }
 
-function renderUsers(users) {
-  if (!Array.isArray(users)) {
-    participantsList.innerHTML = '';
-    return;
-  }
-  currentUsers = users;
-  participantsList.innerHTML = '';
-  for (const user of users) {
-    const li = document.createElement('li');
-    const pos = cursorPositions[user];
-    const display = truncateName(user);
-    li.title = user;
-    if (activeEditors.get(user)) {
-      li.classList.add('active');
-    }
-    if (selectingUsers.get(user)) {
-      li.classList.add('copied');
-    }
-    if (copyingUsers.get(user)) {
-      li.classList.add('copying');
-    }
-    if (typeof pos === 'number' && model) {
-      const lc = getLineColFromOffset(pos);
-      li.textContent = `${display} (${lc.line}:${lc.col})`;
-    } else {
-      li.textContent = display;
-    }
-    participantsList.appendChild(li);
-  }
-}
-
-function getLineColFromOffset(offset) {
-  if (!model) return { line: 1, col: 1 };
-  const pos = model.getPositionAt(Math.max(0, offset));
-  return { line: pos.lineNumber, col: pos.column };
-}
-
-function assignColor(name) {
-  if (!caretColors[name]) {
-    const idx = Object.keys(caretColors).length % caretPalette.length;
-    caretColors[name] = caretPalette[idx];
-  }
-  return caretColors[name];
-}
-
-function ensureCaretStyles() {
-  let styleEl = document.getElementById('remoteCaretStyles');
-  if (!styleEl) {
-    styleEl = document.createElement('style');
-    styleEl.id = 'remoteCaretStyles';
-    document.head.appendChild(styleEl);
-  }
-  return styleEl;
-}
-
-function renderRemoteCarets() {
-  if (!editor || !model) return;
-  if (hideRemoteCarets) {
-    editor.remoteCaretDecorations = editor.deltaDecorations(
-      editor.remoteCaretDecorations || [],
-      []
-    );
-    return;
-  }
-  const decorations = [];
-  const styleEl = ensureCaretStyles();
-  let css = '';
-
-  for (const [name, offset] of Object.entries(cursorPositions)) {
-    if (name === displayName) continue;
-    if (typeof offset !== 'number') continue;
-    const pos = model.getPositionAt(Math.max(0, offset));
-    const line = pos.lineNumber;
-    const col = Math.min(pos.column, model.getLineMaxColumn(line));
-    const color = assignColor(name);
-    if (!caretClassMap.has(name)) {
-      caretClassCounter += 1;
-      caretClassMap.set(name, `remote-caret-${caretClassCounter}`);
-    }
-    const className = caretClassMap.get(name);
-    css += `.${className} { border-left: 2px solid ${color}; margin-left: -1px; }\n`;
-    decorations.push({
-      range: new monaco.Range(line, col, line, col),
-      options: {
-        beforeContentClassName: className,
-        stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
-      }
-    });
-  }
-
-  styleEl.textContent = css;
-  editor.remoteCaretDecorations = editor.deltaDecorations(
-    editor.remoteCaretDecorations || [],
-    decorations
-  );
-}
-
-function hideRemoteCaretsTemporarily() {
-  hideRemoteCarets = true;
-  renderRemoteCarets();
-  if (hideRemoteTimer) clearTimeout(hideRemoteTimer);
-  hideRemoteTimer = setTimeout(() => {
-    hideRemoteCarets = false;
-    renderRemoteCarets();
-  }, 800);
-}
-
-function markActiveEditor(name) {
-  if (!name) return;
-  activeEditors.set(name, Date.now());
-  renderUsers(currentUsers);
-  setTimeout(() => {
-    const last = activeEditors.get(name);
-    if (last && Date.now() - last > 1200) {
-      activeEditors.delete(name);
-      renderUsers(currentUsers);
-    }
-  }, 1300);
-}
-
-function markSelecting(name, isSelecting) {
-  if (!name) return;
-  if (isSelecting) {
-    selectingUsers.set(name, Date.now());
-  } else {
-    selectingUsers.delete(name);
-  }
-  renderUsers(currentUsers);
-}
-
-function markCopying(name) {
-  if (!name) return;
-  copyingUsers.set(name, Date.now());
-  renderUsers(currentUsers);
-  setTimeout(() => {
-    const last = copyingUsers.get(name);
-    if (last && Date.now() - last > 1200) {
-      copyingUsers.delete(name);
-      renderUsers(currentUsers);
-    }
-  }, 1300);
-}
-
 function sendCursor() {
   if (!displayName) return;
   if (connection.state !== signalR.HubConnectionState.Connected) return;
@@ -597,9 +440,9 @@ function sendCursor() {
   const pos = editor.getPosition();
   if (!pos) return;
   const offset = model.getOffsetAt(pos);
-  cursorPositions[displayName] = offset;
-  renderUsers(currentUsers);
-  renderRemoteCarets();
+  presence.cursorPositions[displayName] = offset;
+  presence.renderUsers(presence.currentUsers);
+  presence.renderRemoteCarets();
   connection.invoke(HubMethods.UpdateCursor, roomId, offset).catch(() => {});
 }
 
@@ -837,7 +680,7 @@ function initializeYjs(text, stateBase64, updates, documentRevision, checkpointR
     scheduleYjsUpdateSend(update);
   });
   resetDocumentRevisionState(documentRevision, checkpointRevision, normalizedUpdates);
-  renderRemoteCarets();
+  presence.renderRemoteCarets();
 }
 
 function mergeYjsSyncState(stateBase64, updates, documentRevision, checkpointRevision) {
@@ -848,7 +691,7 @@ function mergeYjsSyncState(stateBase64, updates, documentRevision, checkpointRev
     console.error('Monaco and Yjs diverged after reconnect synchronization.');
     return false;
   }
-  renderRemoteCarets();
+  presence.renderRemoteCarets();
   return true;
 }
 
@@ -873,13 +716,13 @@ function applyRemoteCursorAdjustment(changes) {
     const end = start + length;
     const delta = (change.text || '').length - length;
 
-    for (const [name, offset] of Object.entries(cursorPositions)) {
+    for (const [name, offset] of Object.entries(presence.cursorPositions)) {
       if (name === displayName || typeof offset !== 'number') continue;
       if (offset <= start) continue;
       if (offset >= end) {
-        cursorPositions[name] = offset + delta;
+        presence.cursorPositions[name] = offset + delta;
       } else {
-        cursorPositions[name] = start + Math.max(0, (change.text || '').length);
+        presence.cursorPositions[name] = start + Math.max(0, (change.text || '').length);
       }
     }
   }
@@ -892,11 +735,12 @@ function initMonaco() {
     redo: performCollaborativeRedo
   }));
 
+  presence.editor = editor;
   editor.onDidChangeModelContent((event) => {
     if (isApplyingRemoteUpdate) return;
-    hideRemoteCaretsTemporarily();
+    presence.hideRemoteCaretsTemporarily();
     applyRemoteCursorAdjustment(event.changes);
-    markActiveEditor(displayName);
+    presence.markActiveEditor(displayName);
     scheduleCursorSend();
   });
 
@@ -939,7 +783,7 @@ function initMonaco() {
     const sel = editor.getSelection();
     if (!sel) return;
     const isMultiLine = sel.startLineNumber !== sel.endLineNumber;
-    markSelecting(displayName, isMultiLine);
+    presence.markSelecting(displayName, isMultiLine);
     if (lastSentSelectionMultiLine === isMultiLine) return;
     lastSentSelectionMultiLine = isMultiLine;
     connection.invoke(HubMethods.UpdateSelection, roomId, isMultiLine).catch((err) => {
@@ -1074,29 +918,29 @@ window.addEventListener('online', () => {
 
 connection.on(HubEvents.UserJoined, (name, users, revision) => {
   if (!roomView.updateUsers(users, Number(revision))) return;
-  cursorPositions[name] ??= 0;
-  renderUsers(users);
-  renderRemoteCarets();
+  presence.cursorPositions[name] ??= 0;
+  presence.renderUsers(users);
+  presence.renderRemoteCarets();
 });
 
 connection.on(HubEvents.UserLeft, (name, users, revision) => {
   if (!roomView.updateUsers(users, Number(revision))) return;
-  delete cursorPositions[name];
-  caretClassMap.delete(name);
-  delete caretColors[name];
-  activeEditors.delete(name);
-  selectingUsers.delete(name);
-  copyingUsers.delete(name);
-  renderUsers(users);
-  renderRemoteCarets();
+  delete presence.cursorPositions[name];
+  presence.caretClassMap.delete(name);
+  delete presence.caretColors[name];
+  presence.activeEditors.delete(name);
+  presence.selectingUsers.delete(name);
+  presence.copyingUsers.delete(name);
+  presence.renderUsers(users);
+  presence.renderRemoteCarets();
 });
 
 function handleYjsUpdated(updateBase64, documentRevision, roomVersion, author) {
   currentVersion = Math.max(currentVersion, Number(roomVersion) || 0);
   versionNumberEl.textContent = currentVersion;
-  renderUsers(currentUsers);
+  presence.renderUsers(presence.currentUsers);
   if (!ydoc) return;
-  if (author && author !== displayName) markActiveEditor(author);
+  if (author && author !== displayName) presence.markActiveEditor(author);
   const update = uint8FromBase64(updateBase64);
   if (update.length === 0) return;
   applyYjsUpdate(update, remoteYjsOrigin);
@@ -1170,17 +1014,17 @@ connection.on(HubEvents.LanguageUpdated, (language, version, revision) => {
 
 connection.on(HubEvents.CursorUpdated, (name, position) => {
   if (!name) return;
-  cursorPositions[name] = position;
-  renderUsers(currentUsers);
-  renderRemoteCarets();
+  presence.cursorPositions[name] = position;
+  presence.renderUsers(presence.currentUsers);
+  presence.renderRemoteCarets();
 });
 
 connection.on(HubEvents.UserSelection, (name, isMultiLine) => {
-  markSelecting(name, isMultiLine);
+  presence.markSelecting(name, isMultiLine);
 });
 
 connection.on(HubEvents.UserCopy, (name) => {
-  markCopying(name);
+  presence.markCopying(name);
 });
 
 function isRoomNotFound(error) {
@@ -1241,7 +1085,7 @@ document.addEventListener(
     }
     if (!displayName) return;
     if (connection.state !== signalR.HubConnectionState.Connected) return;
-    markCopying(displayName);
+    presence.markCopying(displayName);
     connection.invoke(HubMethods.UpdateCopy, roomId).catch(() => {});
   },
   true
