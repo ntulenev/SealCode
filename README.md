@@ -153,7 +153,7 @@ The `Limits` section accepts `MaxEncodedUpdateBytes` and
 `MaxEncodedCheckpointBytes` (4 MiB Base64 characters each), `MaxJournalBytes`
 (4 MiB decoded), `MaxJournalCount` (2048), `MaxSnapshotCharacters` (1,048,576),
 `MaxRooms` (32), `MaxConnections` (160), `NewConnectionsPerSourcePerMinute`
-(30, range 1–10000), and `InvocationsPerSecond` (100).
+(30, range 1â€“10000), and `InvocationsPerSecond` (100).
 Increase `Limits:NewConnectionsPerSourcePerMinute` for deployments behind shared
 NAT/proxies to accommodate reconnect bursts. Configure `TrustedProxies` so the
 source address reflects the intended client boundary.
