@@ -288,12 +288,12 @@ public sealed class RoomHub : Hub
         {
             try
             {
-                await Clients.GroupExcept(roomId, Context.ConnectionId)
+                await Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId)
                     .SendAsync("YjsCheckpointed", basedOnRevision, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                _logger.LogWarning(ex, "Failed to broadcast Yjs checkpoint for {RoomId}", roomId);
+                _logger.LogWarning(ex, "Failed to broadcast Yjs checkpoint for {RoomId}", parsedRoomId.Value);
             }
         }
         return accepted;

@@ -287,9 +287,12 @@ public sealed class RoomHubTests
         yjsUpdatedCalls.Should().Be(1);
     }
 
-    [Fact(DisplayName = "CheckpointYjsAsyncShouldAcceptCurrentCheckpoint")]
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
     [Trait("Category", "Unit")]
-    public async Task CheckpointYjsAsyncShouldAcceptCurrentCheckpoint()
+    public async Task CheckpointYjsAsyncShouldAcceptCurrentCheckpoint(bool fullGuid, bool padded)
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
@@ -304,8 +307,15 @@ public sealed class RoomHubTests
             .Returns(proxy.Object).Verifiable();
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);
 
+        ShortGuid.TryParse(DefaultRoomId, out var guid).Should().BeTrue();
+        var inputRoomId = fullGuid ? guid.Value.ToString() : DefaultRoomId;
+        if (padded)
+        {
+            inputRoomId = $"  {inputRoomId}  ";
+        }
+
         var accepted = await hub.CheckpointYjsAsync(
-            DefaultRoomId,
+            inputRoomId,
             Convert.ToBase64String([3, 4]),
             "merged",
             1);
