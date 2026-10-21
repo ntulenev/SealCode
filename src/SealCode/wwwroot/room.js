@@ -1,3 +1,4 @@
+import { YjsSession } from './yjs-session.js';
 import { PresenceView } from './presence-ui.js';
 import { base64FromUint8, uint8FromBase64 } from './encoding.js';
 import {
@@ -49,8 +50,6 @@ import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-siz
 
 window.monaco = monaco;
 window.signalR = signalR;
-const remoteYjsOrigin = Object.freeze({ source: 'signalr' });
-const bootstrapYjsOrigin = Object.freeze({ source: 'bootstrap' });
 const maxUndoDepth = 100;
 const maxUndoEstimatedBytes = 8 * 1024 * 1024;
 let collaborativeUndoEnabled = true;
@@ -74,7 +73,6 @@ const roomId = pathSegments[pathSegments.length - 1] ?? '';
 let displayName = '';
 const presence = new PresenceView({ editor: null, monaco, participantsList, document });
 let currentVersion = 0;
-let isApplyingRemoteUpdate = false;
 let cursorTimer = null;
 
 let editor = null;
@@ -83,24 +81,11 @@ let editorReadyResolve;
 const editorReady = new Promise((resolve) => {
   editorReadyResolve = resolve;
 });
-let ydoc = null;
-let ytext = null;
-let awareness = null;
-let monacoBinding = null;
-let undoHistory = null;
 
 const maxPendingBytes = 8 * 1024 * 1024;
 
-let yjsSession = 0;
-let currentDocumentRevision = 0;
-let highestDocumentRevisionSeen = 0;
 let checkpointEveryRevisions = 64;
 let checkpointEveryBase64Bytes = 256 * 1024;
-const checkpointJournal = new CheckpointJournalTracker();
-const pendingDocumentRevisions = new Set();
-let isSynchronizingYjs = false;
-let synchronizationEpoch = 0;
-const bufferedYjsMessages = [];
 let roomClosed = false;
 let hasJoinedRoom = false;
 let lastSentSelectionMultiLine;
@@ -121,13 +106,41 @@ const roomView = new RevisionedRoomView({
   users: (users) => presence.renderUsers(users)
 });
 
+const yjs = new YjsSession({
+  Y,
+  MonacoBinding,
+  Awareness,
+  BoundedUndoManager,
+  CheckpointJournalTracker,
+  getDisplayName: () => displayName,
+  undoEnabled: () => collaborativeUndoEnabled,
+  cursorPositions: presence.cursorPositions,
+  onRevision: (version) => {
+    currentVersion = Math.max(currentVersion, Number(version) || 0);
+    versionNumberEl.textContent = currentVersion;
+    presence.renderUsers(presence.currentUsers);
+  },
+  onRemoteChange: () => presence.renderRemoteCarets(),
+  onRemoteAuthor: (author) => presence.markActiveEditor(author),
+  onUpdate: (update) => scheduleYjsUpdateSend(update),
+  onCheckpoint: () => scheduleYjsCheckpoint(),
+  onRecovery: (delay) => scheduleYjsRecovery(delay),
+  onDispose: () => {
+    if (updateSender.timer) clearTimeout(updateSender.timer);
+    updateSender.reset();
+    syncScheduler.reset();
+    recoveryController.reset();
+    checkpointWriter.reset();
+  }
+});
+
 const syncScheduler = new SyncScheduler();
 const updateSender = new UpdateQueue({
   merge: (updates) => Y.mergeUpdates(updates),
   ready: () =>
     !roomClosed &&
-    ydoc &&
-    !isSynchronizingYjs &&
+    yjs.ydoc &&
+    !yjs.isSynchronizingYjs &&
     connection.state === signalR.HubConnectionState.Connected,
   send: (update) => {
     const args = [roomId, base64FromUint8(update)];
@@ -157,37 +170,41 @@ const updateSender = new UpdateQueue({
 });
 
 function captureSyncContext() {
-  return { document: ydoc, session: yjsSession, connectionId: connection.connectionId };
+  return {
+    document: yjs.ydoc,
+    session: yjs.yjsSession,
+    connectionId: connection.connectionId
+  };
 }
 function isCurrentSyncContext(context) {
   return (
     !roomClosed &&
-    ydoc === context.document &&
-    yjsSession === context.session &&
+    yjs.ydoc === context.document &&
+    yjs.yjsSession === context.session &&
     connection.connectionId === context.connectionId
   );
 }
 const recoveryController = new SnapshotRecovery({
   scheduler: syncScheduler,
-  active: () => !roomClosed && hasJoinedRoom && !!ydoc,
+  active: () => !roomClosed && hasJoinedRoom && !!yjs.ydoc,
   ready: () =>
-    !isSynchronizingYjs && connection.state === signalR.HubConnectionState.Connected,
+    !yjs.isSynchronizingYjs && connection.state === signalR.HubConnectionState.Connected,
   capture: captureSyncContext,
   current: isCurrentSyncContext,
   revisions: () => ({
-    DocumentRevision: currentDocumentRevision,
+    DocumentRevision: yjs.currentDocumentRevision,
     MetadataRevision: roomView.languageRevision,
     PresenceRevision: roomView.presenceRevision
   }),
   probe: () => connection.invoke(HubMethods.GetRoomRevisions, roomId),
   snapshot: () => connection.invoke(HubMethods.SyncYjs, roomId),
   begin: () => {
-    isSynchronizingYjs = true;
-    return ++synchronizationEpoch;
+    yjs.isSynchronizingYjs = true;
+    return ++yjs.synchronizationEpoch;
   },
   apply: (result) => {
     if (
-      !mergeYjsSyncState(
+      !yjs.mergeYjsSyncState(
         result.YjsState ?? result.yjsState,
         result.YjsUpdates ?? result.yjsUpdates ?? [],
         result.DocumentRevision ?? result.documentRevision,
@@ -203,9 +220,9 @@ const recoveryController = new SnapshotRecovery({
     applyRoomMetadata(result);
   },
   end: (epoch) => {
-    if (epoch !== synchronizationEpoch) return;
-    isSynchronizingYjs = false;
-    flushBufferedYjsMessages();
+    if (epoch !== yjs.synchronizationEpoch) return;
+    yjs.isSynchronizingYjs = false;
+    yjs.flushBufferedYjsMessages();
     scheduleYjsUpdateSend();
     scheduleYjsCheckpoint();
   },
@@ -224,32 +241,32 @@ const checkpointWriter = new CheckpointWriter({
   ready: () =>
     !roomClosed &&
     hasJoinedRoom &&
-    !!ydoc &&
-    !!ytext &&
-    currentDocumentRevision > 0 &&
-    currentDocumentRevision === highestDocumentRevisionSeen &&
-    !isSynchronizingYjs &&
+    !!yjs.ydoc &&
+    !!yjs.ytext &&
+    yjs.currentDocumentRevision > 0 &&
+    yjs.currentDocumentRevision === yjs.highestDocumentRevisionSeen &&
+    !yjs.isSynchronizingYjs &&
     !updateSender.pending.length &&
     !updateSender.timer &&
     !updateSender.inFlight &&
     !updateSender.blocked &&
     shouldWriteCheckpoint({
-      documentRevision: currentDocumentRevision,
-      checkpointRevision: checkpointJournal.checkpointRevision,
+      documentRevision: yjs.currentDocumentRevision,
+      checkpointRevision: yjs.checkpointJournal.checkpointRevision,
       minRevisions: checkpointEveryRevisions,
       minBytes: checkpointEveryBase64Bytes,
-      bytesSinceCheckpoint: checkpointJournal.bytesSinceCheckpoint,
-      isLatestAuthor: checkpointJournal.isLatestAuthor
+      bytesSinceCheckpoint: yjs.checkpointJournal.bytesSinceCheckpoint,
+      isLatestAuthor: yjs.checkpointJournal.isLatestAuthor
     }) &&
     connection.state === signalR.HubConnectionState.Connected,
   capture: captureSyncContext,
   current: isCurrentSyncContext,
-  revision: () => currentDocumentRevision,
+  revision: () => yjs.currentDocumentRevision,
   payload: (revision) => {
     const args = [
       roomId,
-      base64FromUint8(Y.encodeStateAsUpdate(ydoc)),
-      ytext.toString(),
+      base64FromUint8(Y.encodeStateAsUpdate(yjs.ydoc)),
+      yjs.ytext.toString(),
       revision
     ];
     if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
@@ -258,7 +275,7 @@ const checkpointWriter = new CheckpointWriter({
   },
   send: (args) => connection.invoke(HubMethods.CheckpointYjs, ...args),
   onSuccess: (revision) => {
-    checkpointJournal.noteCheckpoint(revision);
+    yjs.checkpointJournal.noteCheckpoint(revision);
     clearSyncError('checkpoint-size');
   },
   onError: (error, permanent) => {
@@ -272,18 +289,18 @@ const checkpointWriter = new CheckpointWriter({
 });
 
 window.__debugYjsSend = () => {
-  if (!ydoc) return false;
-  scheduleYjsUpdateSend(Y.encodeStateAsUpdate(ydoc));
+  if (!yjs.ydoc) return false;
+  scheduleYjsUpdateSend(Y.encodeStateAsUpdate(yjs.ydoc));
   return true;
 };
 
 window.__debugUndoState = () => ({
-  canUndo: undoHistory?.canUndo() ?? false,
-  canRedo: undoHistory?.canRedo() ?? false,
-  undoDepth: undoHistory?.undoDepth ?? 0,
-  redoDepth: undoHistory?.redoDepth ?? 0,
-  documentRevision: currentDocumentRevision,
-  highestDocumentRevisionSeen
+  canUndo: yjs.undoHistory?.canUndo() ?? false,
+  canRedo: yjs.undoHistory?.canRedo() ?? false,
+  undoDepth: yjs.undoHistory?.undoDepth ?? 0,
+  redoDepth: yjs.undoHistory?.redoDepth ?? 0,
+  documentRevision: yjs.currentDocumentRevision,
+  highestDocumentRevisionSeen: yjs.highestDocumentRevisionSeen
 });
 
 window.__debugReconnect = async () => {
@@ -493,15 +510,15 @@ async function loadFeatures() {
 }
 
 function performCollaborativeUndo() {
-  if (!undoHistory || connection.state !== signalR.HubConnectionState.Connected)
+  if (!yjs.undoHistory || connection.state !== signalR.HubConnectionState.Connected)
     return false;
-  return undoHistory.undo() != null;
+  return yjs.undoHistory.undo() != null;
 }
 
 function performCollaborativeRedo() {
-  if (!undoHistory || connection.state !== signalR.HubConnectionState.Connected)
+  if (!yjs.undoHistory || connection.state !== signalR.HubConnectionState.Connected)
     return false;
-  return undoHistory.redo() != null;
+  return yjs.undoHistory.redo() != null;
 }
 
 function setLanguage(language) {
@@ -520,107 +537,8 @@ function setLanguageReadOnly(isReadOnly) {
 }
 
 function scheduleYjsUpdateSend(update) {
-  if (roomClosed || !ydoc) return;
+  if (roomClosed || !yjs.ydoc) return;
   updateSender.enqueue(update);
-}
-
-function normalizeYjsUpdates(updates) {
-  if (!Array.isArray(updates)) return [];
-  return updates
-    .map((item) => ({
-      revision: Number(item?.Revision ?? item?.revision),
-      update: item?.Update ?? item?.update
-    }))
-    .filter(
-      (item) =>
-        Number.isSafeInteger(item.revision) &&
-        item.revision > 0 &&
-        typeof item.update === 'string' &&
-        item.update.length > 0
-    )
-    .sort((left, right) => left.revision - right.revision);
-}
-
-function applyYjsUpdate(update, origin) {
-  if (!ydoc || !update || update.length === 0) return;
-  isApplyingRemoteUpdate = true;
-  try {
-    Y.applyUpdate(ydoc, update, origin);
-  } finally {
-    isApplyingRemoteUpdate = false;
-  }
-}
-
-function applyYjsSyncPayload(text, stateBase64, updates) {
-  const normalizedUpdates = normalizeYjsUpdates(updates);
-  let appliedCrdtState = false;
-  if (stateBase64) {
-    const checkpoint = uint8FromBase64(stateBase64);
-    if (checkpoint.length > 0) {
-      applyYjsUpdate(checkpoint, bootstrapYjsOrigin);
-      appliedCrdtState = true;
-    }
-  }
-  for (const item of normalizedUpdates) {
-    const update = uint8FromBase64(item.update);
-    if (update.length === 0) continue;
-    applyYjsUpdate(update, bootstrapYjsOrigin);
-    appliedCrdtState = true;
-  }
-  if (!appliedCrdtState && text && ytext?.length === 0) {
-    ydoc.transact(() => {
-      ytext.insert(0, text);
-    }, bootstrapYjsOrigin);
-  }
-  return normalizedUpdates;
-}
-
-function resetDocumentRevisionState(documentRevision, checkpointRevision, updates) {
-  const latestRevision = Number(documentRevision);
-  const baseRevision = Number(checkpointRevision);
-  checkpointJournal.resetFromSync(baseRevision, updates);
-  currentDocumentRevision =
-    Number.isSafeInteger(latestRevision) && latestRevision >= 0 ? latestRevision : 0;
-  highestDocumentRevisionSeen = currentDocumentRevision;
-  pendingDocumentRevisions.clear();
-
-  let expectedRevision =
-    Number.isSafeInteger(baseRevision) && baseRevision >= 0 ? baseRevision : 0;
-  for (const item of updates) {
-    if (item.revision !== expectedRevision + 1) {
-      console.warn('Yjs synchronization payload contains a revision gap.', {
-        expected: expectedRevision + 1,
-        actual: item.revision
-      });
-    }
-    expectedRevision = Math.max(expectedRevision, item.revision);
-  }
-  if (expectedRevision !== currentDocumentRevision) {
-    console.warn('Yjs synchronization payload does not end at the advertised revision.', {
-      expectedRevision,
-      currentDocumentRevision
-    });
-  }
-  if (currentDocumentRevision > baseRevision) scheduleYjsCheckpoint();
-}
-
-function noteDocumentRevision(revision) {
-  const parsedRevision = Number(revision);
-  if (!Number.isSafeInteger(parsedRevision) || parsedRevision <= 0) return false;
-  highestDocumentRevisionSeen = Math.max(highestDocumentRevisionSeen, parsedRevision);
-  if (parsedRevision <= currentDocumentRevision) return false;
-
-  pendingDocumentRevisions.add(parsedRevision);
-  let advanced = false;
-  while (pendingDocumentRevisions.delete(currentDocumentRevision + 1)) {
-    currentDocumentRevision += 1;
-    advanced = true;
-  }
-  if (advanced && currentDocumentRevision === highestDocumentRevisionSeen) {
-    scheduleYjsCheckpoint();
-  }
-  if (currentDocumentRevision < highestDocumentRevisionSeen) scheduleYjsRecovery(250);
-  return advanced;
 }
 
 function scheduleYjsRecovery(delay = 5000) {
@@ -628,104 +546,6 @@ function scheduleYjsRecovery(delay = 5000) {
 }
 function scheduleYjsCheckpoint() {
   checkpointWriter.schedule();
-}
-
-function disposeYjs() {
-  checkpointJournal.reset();
-  yjsSession += 1;
-  if (updateSender.timer) clearTimeout(updateSender.timer);
-  updateSender.timer = null;
-  updateSender.reset();
-  syncScheduler.reset();
-  updateSender.inFlight = false;
-  recoveryController.reset();
-  checkpointWriter.reset();
-  undoHistory?.destroy();
-  undoHistory = null;
-  monacoBinding?.destroy();
-  monacoBinding = null;
-  awareness?.destroy();
-  awareness = null;
-  ydoc?.destroy();
-  ydoc = null;
-  ytext = null;
-}
-
-function initializeYjs(text, stateBase64, updates, documentRevision, checkpointRevision) {
-  if (!model) return;
-  disposeYjs();
-  ydoc = new Y.Doc();
-  ytext = ydoc.getText('monaco');
-  const normalizedUpdates = applyYjsSyncPayload(text, stateBase64, updates);
-  awareness = new Awareness(ydoc);
-  if (displayName) {
-    awareness.setLocalStateField('user', { name: displayName });
-  }
-  isApplyingRemoteUpdate = true;
-  try {
-    monacoBinding = new MonacoBinding(ytext, model, new Set([editor]), awareness);
-  } finally {
-    isApplyingRemoteUpdate = false;
-  }
-  if (collaborativeUndoEnabled) {
-    undoHistory = new BoundedUndoManager(Y, ytext, {
-      trackedOrigin: monacoBinding,
-      maxDepth: maxUndoDepth,
-      maxEstimatedBytes: maxUndoEstimatedBytes,
-      captureTimeout: 500
-    });
-  }
-  ydoc.on('update', (update, origin) => {
-    if (origin === remoteYjsOrigin || origin === bootstrapYjsOrigin) return;
-    scheduleYjsUpdateSend(update);
-  });
-  resetDocumentRevisionState(documentRevision, checkpointRevision, normalizedUpdates);
-  presence.renderRemoteCarets();
-}
-
-function mergeYjsSyncState(stateBase64, updates, documentRevision, checkpointRevision) {
-  if (!ydoc || !ytext) return false;
-  const normalizedUpdates = applyYjsSyncPayload('', stateBase64, updates);
-  resetDocumentRevisionState(documentRevision, checkpointRevision, normalizedUpdates);
-  if (model && model.getValue() !== ytext.toString()) {
-    console.error('Monaco and Yjs diverged after reconnect synchronization.');
-    return false;
-  }
-  presence.renderRemoteCarets();
-  return true;
-}
-
-function applyRemoteCursorAdjustment(changes) {
-  if (!changes || !changes.length || !model) return;
-  const sorted = [...changes].sort((a, b) => (a.rangeOffset ?? 0) - (b.rangeOffset ?? 0));
-  for (const change of sorted) {
-    const start =
-      typeof change.rangeOffset === 'number'
-        ? change.rangeOffset
-        : model.getOffsetAt({
-            lineNumber: change.range.startLineNumber,
-            column: change.range.startColumn
-          });
-    const length =
-      typeof change.rangeLength === 'number'
-        ? change.rangeLength
-        : model.getOffsetAt({
-            lineNumber: change.range.endLineNumber,
-            column: change.range.endColumn
-          }) - start;
-    const end = start + length;
-    const delta = (change.text || '').length - length;
-
-    for (const [name, offset] of Object.entries(presence.cursorPositions)) {
-      if (name === displayName || typeof offset !== 'number') continue;
-      if (offset <= start) continue;
-      if (offset >= end) {
-        presence.cursorPositions[name] = offset + delta;
-      } else {
-        presence.cursorPositions[name] = start + Math.max(0, (change.text || '').length);
-      }
-    }
-  }
 }
 
 function initMonaco() {
@@ -736,10 +556,11 @@ function initMonaco() {
   }));
 
   presence.editor = editor;
+  yjs.editor = editor;
   editor.onDidChangeModelContent((event) => {
-    if (isApplyingRemoteUpdate) return;
+    if (yjs.isApplyingRemoteUpdate) return;
     presence.hideRemoteCaretsTemporarily();
-    applyRemoteCursorAdjustment(event.changes);
+    yjs.applyRemoteCursorAdjustment(event.changes);
     presence.markActiveEditor(displayName);
     scheduleCursorSend();
   });
@@ -747,8 +568,8 @@ function initMonaco() {
   editor.onKeyDown((keyboardEvent) => {
     const browserEvent = keyboardEvent.browserEvent;
     if (isPasteShortcut(browserEvent)) {
-      undoHistory?.stopCapturing();
-      setTimeout(() => undoHistory?.stopCapturing(), 0);
+      yjs.undoHistory?.stopCapturing();
+      setTimeout(() => yjs.undoHistory?.stopCapturing(), 0);
     }
     if (isUndoRedoShortcut(browserEvent)) {
       browserEvent.preventDefault();
@@ -770,11 +591,11 @@ function initMonaco() {
     keyboardEvent.stopPropagation();
   });
 
-  editor.onDidPaste?.(() => undoHistory?.stopCapturing());
+  editor.onDidPaste?.(() => yjs.undoHistory?.stopCapturing());
 
   editor.onDidChangeCursorSelection((event) => {
     if (event.reason === monaco.editor.CursorChangeReason.Explicit) {
-      undoHistory?.stopCapturing();
+      yjs.undoHistory?.stopCapturing();
     }
     if (!displayName || connection.state !== signalR.HubConnectionState.Connected) {
       return;
@@ -798,11 +619,11 @@ function initMonaco() {
 async function joinRoom() {
   if (roomClosed) return false;
   joinError.classList.add('hidden');
-  isSynchronizingYjs = true;
-  const epoch = ++synchronizationEpoch;
+  yjs.isSynchronizingYjs = true;
+  const epoch = ++yjs.synchronizationEpoch;
   try {
     const result = await connection.invoke(HubMethods.JoinRoom, roomId, displayName);
-    if (roomClosed || epoch !== synchronizationEpoch) return false;
+    if (roomClosed || epoch !== yjs.synchronizationEpoch) return false;
     const name = result.Name ?? result.name;
     const language = result.Language ?? result.language;
     const text = result.Text ?? result.text;
@@ -819,14 +640,14 @@ async function joinRoom() {
       createdByEl.textContent = createdBy || 'unknown';
     }
     applyRoomMetadata(result);
-    if (ydoc && hasJoinedRoom) {
+    if (yjs.ydoc && hasJoinedRoom) {
       if (
-        !mergeYjsSyncState(yjsState, yjsUpdates, documentRevision, checkpointRevision)
+        !yjs.mergeYjsSyncState(yjsState, yjsUpdates, documentRevision, checkpointRevision)
       ) {
         throw new Error('Failed to merge the room document after reconnect.');
       }
     } else {
-      initializeYjs(
+      yjs.initializeYjs(
         text || '',
         yjsState,
         yjsUpdates,
@@ -853,9 +674,9 @@ async function joinRoom() {
     joinError.classList.remove('hidden');
     return false;
   } finally {
-    if (epoch === synchronizationEpoch) {
-      isSynchronizingYjs = false;
-      flushBufferedYjsMessages();
+    if (epoch === yjs.synchronizationEpoch) {
+      yjs.isSynchronizingYjs = false;
+      yjs.flushBufferedYjsMessages();
       scheduleYjsUpdateSend();
       scheduleYjsCheckpoint();
     }
@@ -935,73 +756,12 @@ connection.on(HubEvents.UserLeft, (name, users, revision) => {
   presence.renderRemoteCarets();
 });
 
-function handleYjsUpdated(updateBase64, documentRevision, roomVersion, author) {
-  currentVersion = Math.max(currentVersion, Number(roomVersion) || 0);
-  versionNumberEl.textContent = currentVersion;
-  presence.renderUsers(presence.currentUsers);
-  if (!ydoc) return;
-  if (author && author !== displayName) presence.markActiveEditor(author);
-  const update = uint8FromBase64(updateBase64);
-  if (update.length === 0) return;
-  applyYjsUpdate(update, remoteYjsOrigin);
-  const revision = Number(documentRevision);
-  checkpointJournal.noteUpdate(
-    revision,
-    updateBase64.length,
-    author === displayName,
-    highestDocumentRevisionSeen
-  );
-  noteDocumentRevision(documentRevision);
-  if (model && ytext && model.getValue() !== ytext.toString()) {
-    console.error('Monaco and Yjs diverged after applying a room update.', {
-      documentRevision
-    });
-  }
-}
-
-function flushBufferedYjsMessages() {
-  if (isSynchronizingYjs || bufferedYjsMessages.length === 0) return;
-  const messages = bufferedYjsMessages
-    .splice(0, bufferedYjsMessages.length)
-    .sort(
-      (left, right) => Number(left.documentRevision) - Number(right.documentRevision)
-    );
-  for (const message of messages) {
-    handleYjsUpdated(
-      message.updateBase64,
-      message.documentRevision,
-      message.roomVersion,
-      message.author
-    );
-  }
-}
-
-connection.on(
-  HubEvents.YjsUpdated,
-  (updateBase64, documentRevision, roomVersion, author) => {
-    if (isSynchronizingYjs) {
-      if (
-        bufferedYjsMessages.length >= 2048 ||
-        bufferedYjsMessages.reduce((sum, item) => sum + item.updateBase64.length, 0) +
-          updateBase64.length >
-          maxPendingBytes
-      ) {
-        // The authoritative journal is retained; discard only this delivery buffer and recover.
-        bufferedYjsMessages.length = 0;
-        scheduleYjsRecovery(250);
-        return;
-      }
-      bufferedYjsMessages.push({ updateBase64, documentRevision, roomVersion, author });
-      return;
-    }
-    handleYjsUpdated(updateBase64, documentRevision, roomVersion, author);
-  }
-);
+connection.on(HubEvents.YjsUpdated, (...args) => yjs.receiveUpdate(...args));
 
 connection.on(HubEvents.YjsCheckpointed, (revision) => {
   revision = Number(revision);
   if (!Number.isSafeInteger(revision) || revision <= 0) return;
-  checkpointJournal.noteCheckpoint(revision);
+  yjs.checkpointJournal.noteCheckpoint(revision);
 });
 
 connection.on(HubEvents.LanguageUpdated, (language, version, revision) => {
@@ -1034,14 +794,14 @@ function isRoomNotFound(error) {
 function closeRoom(reason) {
   roomClosed = true;
   lastSentSelectionMultiLine = undefined;
-  synchronizationEpoch += 1;
-  isSynchronizingYjs = false;
+  yjs.synchronizationEpoch += 1;
+  yjs.isSynchronizingYjs = false;
   hasJoinedRoom = false;
-  bufferedYjsMessages.length = 0;
+  yjs.bufferedYjsMessages.length = 0;
   clearRejoinRetryTimer();
   setEditorReadOnly(true);
   setLanguageReadOnly(true);
-  disposeYjs();
+  yjs.disposeYjs();
   joinError.textContent = reason || 'Room closed.';
   joinError.classList.remove('hidden');
   joinOverlay.classList.remove('hidden');
