@@ -28,7 +28,8 @@ import {
   SyncScheduler,
   SnapshotRecovery,
   shouldWriteCheckpoint,
-  CheckpointWriter
+  CheckpointWriter,
+  CheckpointJournalTracker
 } from './room-sync.js';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
@@ -92,16 +93,7 @@ let currentDocumentRevision = 0;
 let highestDocumentRevisionSeen = 0;
 let checkpointEveryRevisions = 64;
 let checkpointEveryBase64Bytes = 256 * 1024;
-let knownCheckpointRevision = 0;
-let latestRevisionAuthoredLocally = false;
-const checkpointUpdateBytes = new Map();
-function noteCheckpointRevision(revision) {
-  if (!Number.isSafeInteger(revision) || revision <= knownCheckpointRevision) return;
-  knownCheckpointRevision = revision;
-  for (const key of checkpointUpdateBytes.keys()) {
-    if (key <= revision) checkpointUpdateBytes.delete(key);
-  }
-}
+const checkpointJournal = new CheckpointJournalTracker();
 const pendingDocumentRevisions = new Set();
 let isSynchronizingYjs = false;
 let synchronizationEpoch = 0;
@@ -239,11 +231,11 @@ const checkpointWriter = new CheckpointWriter({
     !updateSender.blocked &&
     shouldWriteCheckpoint({
       documentRevision: currentDocumentRevision,
-      checkpointRevision: knownCheckpointRevision,
+      checkpointRevision: checkpointJournal.checkpointRevision,
       minRevisions: checkpointEveryRevisions,
       minBytes: checkpointEveryBase64Bytes,
-      bytesSinceCheckpoint: [...checkpointUpdateBytes.values()].reduce((sum, bytes) => sum + bytes, 0),
-      isLatestAuthor: latestRevisionAuthoredLocally
+      bytesSinceCheckpoint: checkpointJournal.bytesSinceCheckpoint,
+      isLatestAuthor: checkpointJournal.isLatestAuthor
     }) &&
     connection.state === signalR.HubConnectionState.Connected,
   capture: captureSyncContext,
@@ -262,7 +254,7 @@ const checkpointWriter = new CheckpointWriter({
   },
   send: (args) => connection.invoke('CheckpointYjs', ...args),
   onSuccess: (revision) => {
-    noteCheckpointRevision(revision);
+    checkpointJournal.noteCheckpoint(revision);
     clearSyncError('checkpoint-size');
   },
   onError: (error, permanent) => {
@@ -788,12 +780,7 @@ function applyYjsSyncPayload(text, stateBase64, updates) {
 function resetDocumentRevisionState(documentRevision, checkpointRevision, updates) {
   const latestRevision = Number(documentRevision);
   const baseRevision = Number(checkpointRevision);
-  noteCheckpointRevision(baseRevision);
-  checkpointUpdateBytes.clear();
-  latestRevisionAuthoredLocally = false;
-  for (const item of updates) {
-    if (item.revision > knownCheckpointRevision) checkpointUpdateBytes.set(item.revision, item.update.length);
-  }
+  checkpointJournal.resetFromSync(baseRevision, updates);
   currentDocumentRevision =
     Number.isSafeInteger(latestRevision) && latestRevision >= 0 ? latestRevision : 0;
   highestDocumentRevisionSeen = currentDocumentRevision;
@@ -846,9 +833,7 @@ function scheduleYjsCheckpoint() {
 }
 
 function disposeYjs() {
-  knownCheckpointRevision = 0;
-  latestRevisionAuthoredLocally = false;
-  checkpointUpdateBytes.clear();
+  checkpointJournal.reset();
   yjsSession += 1;
   if (updateSender.timer) clearTimeout(updateSender.timer);
   updateSender.timer = null;
@@ -1161,10 +1146,12 @@ function handleYjsUpdated(updateBase64, documentRevision, roomVersion, author) {
   if (update.length === 0) return;
   applyYjsUpdate(update, remoteYjsOrigin);
   const revision = Number(documentRevision);
-  if (Number.isSafeInteger(revision) && revision > 0) {
-    if (revision > highestDocumentRevisionSeen) latestRevisionAuthoredLocally = author === displayName;
-    if (revision > knownCheckpointRevision) checkpointUpdateBytes.set(revision, updateBase64.length);
-  }
+  checkpointJournal.noteUpdate(
+    revision,
+    updateBase64.length,
+    author === displayName,
+    highestDocumentRevisionSeen
+  );
   noteDocumentRevision(documentRevision);
   if (model && ytext && model.getValue() !== ytext.toString()) {
     console.error('Monaco and Yjs diverged after applying a room update.', {
@@ -1211,7 +1198,7 @@ connection.on('YjsUpdated', (updateBase64, documentRevision, roomVersion, author
 
 connection.on('YjsCheckpointed', (revision) => {
   if (!Number.isSafeInteger(revision) || revision <= 0) return;
-  noteCheckpointRevision(revision);
+  checkpointJournal.noteCheckpoint(revision);
 });
 
 connection.on('LanguageUpdated', (language, version, revision) => {

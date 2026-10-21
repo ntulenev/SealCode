@@ -286,3 +286,52 @@ export class CheckpointWriter {
     this.scheduler.cancel('checkpoint');
   }
 }
+
+/** Tracks checkpoint journal bytes and the author of the latest seen revision. */
+export class CheckpointJournalTracker {
+  constructor() {
+    this.reset();
+  }
+  get checkpointRevision() {
+    return this.knownRevision;
+  }
+  get isLatestAuthor() {
+    return this.latestAuthor;
+  }
+  get bytesSinceCheckpoint() {
+    return this.totalBytes;
+  }
+  noteCheckpoint(revision) {
+    if (!Number.isSafeInteger(revision) || revision <= this.knownRevision) return;
+    this.knownRevision = revision;
+    for (const [key, bytes] of this.updateBytes) {
+      if (key <= revision) {
+        this.totalBytes -= bytes;
+        this.updateBytes.delete(key);
+      }
+    }
+  }
+  noteUpdate(revision, base64Length, authoredLocally, highestSeenBefore) {
+    if (!Number.isSafeInteger(revision) || revision <= 0) return;
+    if (revision > highestSeenBefore) this.latestAuthor = authoredLocally;
+    if (revision > this.knownRevision) {
+      this.totalBytes += base64Length - (this.updateBytes.get(revision) ?? 0);
+      this.updateBytes.set(revision, base64Length);
+    }
+  }
+  resetFromSync(checkpointRevision, updates) {
+    this.noteCheckpoint(checkpointRevision);
+    this.updateBytes.clear();
+    this.totalBytes = 0;
+    this.latestAuthor = false;
+    for (const item of updates) {
+      this.noteUpdate(item.revision, item.update.length, false, Infinity);
+    }
+  }
+  reset() {
+    this.knownRevision = 0;
+    this.latestAuthor = false;
+    this.totalBytes = 0;
+    this.updateBytes = new Map();
+  }
+}
