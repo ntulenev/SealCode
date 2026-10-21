@@ -1,10 +1,19 @@
 /** Decides whether journal growth warrants a checkpoint from this participant. */
-export function shouldWriteCheckpoint({ documentRevision, checkpointRevision, bytesSinceCheckpoint,
-  isLatestAuthor, minRevisions = 64, minBytes = 256 * 1024, fallbackFactor = 2 }) {
+export function shouldWriteCheckpoint({
+  documentRevision,
+  checkpointRevision,
+  bytesSinceCheckpoint,
+  isLatestAuthor,
+  minRevisions = 64,
+  minBytes = 256 * 1024,
+  fallbackFactor = 2
+}) {
   if (documentRevision <= checkpointRevision) return false;
   const factor = isLatestAuthor ? 1 : fallbackFactor;
-  return documentRevision - checkpointRevision >= minRevisions * factor ||
-    bytesSinceCheckpoint >= minBytes * factor;
+  return (
+    documentRevision - checkpointRevision >= minRevisions * factor ||
+    bytesSinceCheckpoint >= minBytes * factor
+  );
 }
 
 /** Bounded transport queue. No DOM, Yjs singleton, or network globals. */
@@ -284,5 +293,54 @@ export class CheckpointWriter {
     this.timer = false;
     this.skippedRevision = -1;
     this.scheduler.cancel('checkpoint');
+  }
+}
+
+/** Tracks checkpoint journal bytes and the author of the latest seen revision. */
+export class CheckpointJournalTracker {
+  constructor() {
+    this.reset();
+  }
+  get checkpointRevision() {
+    return this.knownRevision;
+  }
+  get isLatestAuthor() {
+    return this.latestAuthor;
+  }
+  get bytesSinceCheckpoint() {
+    return this.totalBytes;
+  }
+  noteCheckpoint(revision) {
+    if (!Number.isSafeInteger(revision) || revision <= this.knownRevision) return;
+    this.knownRevision = revision;
+    for (const [key, bytes] of this.updateBytes) {
+      if (key <= revision) {
+        this.totalBytes -= bytes;
+        this.updateBytes.delete(key);
+      }
+    }
+  }
+  noteUpdate(revision, base64Length, authoredLocally, highestSeenBefore) {
+    if (!Number.isSafeInteger(revision) || revision <= 0) return;
+    if (revision > highestSeenBefore) this.latestAuthor = authoredLocally;
+    if (revision > this.knownRevision) {
+      this.totalBytes += base64Length - (this.updateBytes.get(revision) ?? 0);
+      this.updateBytes.set(revision, base64Length);
+    }
+  }
+  resetFromSync(checkpointRevision, updates) {
+    this.noteCheckpoint(checkpointRevision);
+    this.updateBytes.clear();
+    this.totalBytes = 0;
+    this.latestAuthor = false;
+    for (const item of updates) {
+      this.noteUpdate(item.revision, item.update.length, false, Infinity);
+    }
+  }
+  reset() {
+    this.knownRevision = 0;
+    this.latestAuthor = false;
+    this.totalBytes = 0;
+    this.updateBytes = new Map();
   }
 }

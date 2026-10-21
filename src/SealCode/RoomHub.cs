@@ -213,6 +213,11 @@ public sealed class RoomHub : Hub
     /// <summary>
     /// Stores a compact Yjs checkpoint when it represents the latest document revision.
     /// </summary>
+    /// <remarks>
+    /// Stale checkpoints are rejected before decoding the payload. Accepted checkpoints
+    /// broadcast YjsCheckpointed(checkpointRevision) to other participants. Broadcast
+    /// failures are logged as warnings and do not change the accepted result.
+    /// </remarks>
     /// <param name="roomId">The room identifier.</param>
     /// <param name="stateBase64">The full Yjs document state (base64).</param>
     /// <param name="textSnapshot">The corresponding plain text snapshot.</param>
@@ -254,7 +259,9 @@ public sealed class RoomHub : Hub
         {
             _logger.LogDebug(
                 "Ignored stale Yjs checkpoint for {RoomId}: based on {BasedOnRevision}, current {DocumentRevision}",
-                parsedRoomId.Value, basedOnRevision, room.DocumentRevision.Value);
+                parsedRoomId.Value,
+                basedOnRevision,
+                room.DocumentRevision.Value);
             return false;
         }
 
@@ -288,12 +295,12 @@ public sealed class RoomHub : Hub
         {
             try
             {
-                await Clients.GroupExcept(roomId, Context.ConnectionId)
+                await Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId)
                     .SendAsync("YjsCheckpointed", basedOnRevision, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                _logger.LogWarning(ex, "Failed to broadcast Yjs checkpoint for {RoomId}", roomId);
+                _logger.LogWarning(ex, "Failed to broadcast Yjs checkpoint for {RoomId}", parsedRoomId.Value);
             }
         }
         return accepted;

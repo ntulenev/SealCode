@@ -6,7 +6,8 @@ import {
   SyncScheduler,
   SnapshotRecovery,
   shouldWriteCheckpoint,
-  CheckpointWriter
+  CheckpointWriter,
+  CheckpointJournalTracker
 } from '../../src/SealCode/wwwroot/room-sync.js';
 
 function fixture(send, budgets = {}) {
@@ -254,8 +255,15 @@ for (const [label, revisions, bytes, author, expected] of [
   ['older revision', -1, 512 * 1024, true, false]
 ]) {
   test(`checkpoint policy: ${label}`, () => {
-    assert.equal(shouldWriteCheckpoint({ documentRevision: 10 + revisions,
-      checkpointRevision: 10, bytesSinceCheckpoint: bytes, isLatestAuthor: author }), expected);
+    assert.equal(
+      shouldWriteCheckpoint({
+        documentRevision: 10 + revisions,
+        checkpointRevision: 10,
+        bytesSinceCheckpoint: bytes,
+        isLatestAuthor: author
+      }),
+      expected
+    );
   });
 }
 
@@ -263,9 +271,74 @@ test('checkpoint writer uses its configured delay', () => {
   let actualDelay;
   const writer = new CheckpointWriter({
     delay: 1000,
-    scheduler: { schedule: (key, delay) => { actualDelay = delay; } },
-    ready: () => true, revision: () => 64
+    scheduler: {
+      schedule: (key, delay) => {
+        actualDelay = delay;
+      }
+    },
+    ready: () => true,
+    revision: () => 64
   });
   writer.schedule();
   assert.equal(actualDelay, 1000);
+});
+
+test('checkpoint tracker advances monotonically and trims only covered bytes', () => {
+  const tracker = new CheckpointJournalTracker();
+  tracker.noteUpdate(1, 4, true, 0);
+  tracker.noteUpdate(2, 8, false, 1);
+  tracker.noteUpdate(3, 12, true, 2);
+  assert.equal(tracker.bytesSinceCheckpoint, 24);
+  tracker.noteCheckpoint(2);
+  assert.equal(tracker.checkpointRevision, 2);
+  assert.equal(tracker.bytesSinceCheckpoint, 12);
+  for (const invalid of [NaN, -1, 0, 1, 2, 2.5, Infinity]) {
+    tracker.noteCheckpoint(invalid);
+    assert.equal(tracker.checkpointRevision, 2);
+    assert.equal(tracker.bytesSinceCheckpoint, 12);
+  }
+  tracker.noteCheckpoint(3);
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+});
+
+test('checkpoint tracker changes author only for new revisions and deduplicates bytes', () => {
+  const tracker = new CheckpointJournalTracker();
+  tracker.noteUpdate(2, 8, true, 1);
+  tracker.noteUpdate(2, 8, false, 2);
+  tracker.noteUpdate(1, 4, false, 2);
+  assert.equal(tracker.isLatestAuthor, true);
+  assert.equal(tracker.bytesSinceCheckpoint, 12);
+  tracker.noteUpdate(3, 12, false, 2);
+  assert.equal(tracker.isLatestAuthor, false);
+  tracker.noteCheckpoint(3);
+  tracker.noteUpdate(2, 8, true, 3);
+  tracker.noteUpdate(3, 12, true, 3);
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+  assert.equal(tracker.isLatestAuthor, false);
+  for (const invalid of [NaN, -1, 0, 1.5, Infinity]) {
+    tracker.noteUpdate(invalid, 4, true, 3);
+  }
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+  assert.equal(tracker.isLatestAuthor, false);
+});
+
+test('checkpoint tracker rebuilds sync accounting and resets the document session', () => {
+  const tracker = new CheckpointJournalTracker();
+  tracker.noteUpdate(1, 20, true, 0);
+  tracker.resetFromSync(2, [
+    { revision: 2, update: 'ignored' },
+    { revision: 3, update: 'AQ==' },
+    { revision: 3, update: 'AQ==' }
+  ]);
+  assert.equal(tracker.checkpointRevision, 2);
+  assert.equal(tracker.bytesSinceCheckpoint, 4);
+  assert.equal(tracker.isLatestAuthor, false);
+  tracker.resetFromSync(1, [{ revision: 1, update: 'AQ==' }]);
+  assert.equal(tracker.checkpointRevision, 2);
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+  tracker.noteUpdate(4, 4, true, 3);
+  tracker.reset();
+  assert.equal(tracker.checkpointRevision, 0);
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+  assert.equal(tracker.isLatestAuthor, false);
 });

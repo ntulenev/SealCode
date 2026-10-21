@@ -287,9 +287,12 @@ public sealed class RoomHubTests
         yjsUpdatedCalls.Should().Be(1);
     }
 
-    [Fact(DisplayName = "CheckpointYjsAsyncShouldAcceptCurrentCheckpoint")]
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
     [Trait("Category", "Unit")]
-    public async Task CheckpointYjsAsyncShouldAcceptCurrentCheckpoint()
+    public async Task CheckpointYjsAsyncShouldAcceptCurrentCheckpoint(bool fullGuid, bool padded)
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
@@ -304,8 +307,15 @@ public sealed class RoomHubTests
             .Returns(proxy.Object).Verifiable();
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);
 
+        ShortGuid.TryParse(DefaultRoomId, out var guid).Should().BeTrue();
+        var inputRoomId = fullGuid ? guid.Value.ToString() : DefaultRoomId;
+        if (padded)
+        {
+            inputRoomId = $"  {inputRoomId}  ";
+        }
+
         var accepted = await hub.CheckpointYjsAsync(
-            DefaultRoomId,
+            inputRoomId,
             Convert.ToBase64String([3, 4]),
             "merged",
             1);
@@ -318,6 +328,42 @@ public sealed class RoomHubTests
         room.YjsCheckpointRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().BeEmpty();
         tryGetRoomCounter.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CheckpointBroadcastFailurePreservesAcceptedCheckpoint()
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
+        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        var failure = new InvalidOperationException("Broadcast failed");
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        proxy.Setup(p => p.SendCoreAsync("YjsCheckpointed",
+            It.Is<object?[]>(args => args.Length == 1 && (long)args[0]! == 1L), CancellationToken.None))
+            .ThrowsAsync(failure).Verifiable();
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        clients.Setup(c => c.GroupExcept(DefaultRoomId,
+            It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
+            .Returns(proxy.Object).Verifiable();
+        var logger = new Mock<ILogger<RoomHub>>();
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object, logger: logger.Object);
+
+        var accepted = await hub.CheckpointYjsAsync(DefaultRoomId, "AwQ=", "merged", 1);
+
+        accepted.Should().BeTrue();
+        room.Text.Value.Should().Be("merged");
+        room.YjsState.Should().Equal([3, 4]);
+        room.YjsCheckpointRevision.Value.Should().Be(1);
+        room.CreateYjsSyncState().Updates.Should().BeEmpty();
+        proxy.Verify();
+        clients.Verify();
+        logger.Verify(l => l.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains(DefaultRoomId, StringComparison.Ordinal)),
+            failure,
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [Fact(DisplayName = "CheckpointYjsAsyncShouldRejectStaleCheckpoint")]
@@ -736,6 +782,7 @@ public sealed class RoomHubTests
         IHubCallerClients? clients = null,
         IGroupManager? groups = null,
         IDictionary<object, object?>? items = null,
+        ILogger<RoomHub>? logger = null,
         CancellationToken cancellationToken = default)
     {
         roomManager ??= new Mock<IRoomManager>(MockBehavior.Strict).Object;
@@ -743,7 +790,7 @@ public sealed class RoomHubTests
         clients ??= new Mock<IHubCallerClients>(MockBehavior.Strict).Object;
         groups ??= new Mock<IGroupManager>(MockBehavior.Strict).Object;
         items ??= new Dictionary<object, object?>();
-        var logger = new Mock<ILogger<RoomHub>>().Object;
+        logger ??= new Mock<ILogger<RoomHub>>().Object;
         var context = new Mock<HubCallerContext>(MockBehavior.Strict);
         context.SetupGet(c => c.ConnectionId).Returns("conn-1");
         context.SetupGet(c => c.ConnectionAborted).Returns(cancellationToken);

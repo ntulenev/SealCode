@@ -80,6 +80,8 @@ public sealed class SealCodeApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         payload.GetProperty("CollaborativeUndoEnabled").GetBoolean().Should().BeTrue();
+        payload.GetProperty("Limits").GetProperty("CheckpointEveryRevisions").GetInt32().Should().Be(64);
+        payload.GetProperty("Limits").GetProperty("CheckpointEveryBase64Bytes").GetInt32().Should().Be(256 * 1024);
         var advertisedLimit = payload.GetProperty("MaxYjsMessageBytes").GetInt64();
         advertisedLimit.Should().Be(16 * 1024 * 1024);
         advertisedLimit.Should().Be(factory.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.SignalR.HubOptions>>()
@@ -596,12 +598,54 @@ public sealed class SealCodeApiTests
         (await SecurePostAsync(client, "/admin/login/", form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    public async Task LoginRejectsJsonWithValidAntiforgeryToken(string path)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        await RefreshTokenAsync(client);
+        using var response = await client.PostAsJsonAsync(path, new { name = "Admin", password = "pass1" });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    public async Task LoginRejectsOversizedPassword(string path)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["name"] = "Admin",
+            ["password"] = new string('a', 1025)
+        });
+        (await SecurePostAsync(client, path, form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    public async Task LoginRequiresAntiforgeryToken(string path)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["name"] = "Admin",
+            ["password"] = "pass1"
+        });
+        (await client.PostAsync(path, form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Fact]
     public async Task HubJournalLimitIsStableAndCheckpointRestoresCapacity()
     {
         using var originalFactory = CreateFactory();
         using var factory = originalFactory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
-            config.AddInMemoryCollection(new Dictionary<string, string?> { ["Limits:MaxJournalCount"] = "1" })));
+            config.AddInMemoryCollection(new Dictionary<string, string?> { ["Limits:MaxJournalCount"] = "4", ["Limits:CheckpointEveryRevisions"] = "1" })));
         using var client = factory.CreateClient(new()
         {
             AllowAutoRedirect = false
@@ -610,13 +654,16 @@ public sealed class SealCodeApiTests
         var roomId = await CreateRoomAsync(client, cookie);
         await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
         _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
-        await connection.InvokeAsync("UpdateYjs", roomId, "AQ==");
+        for (var i = 0; i < 4; i++)
+        {
+            await connection.InvokeAsync("UpdateYjs", roomId, "AQ==");
+        }
         var refusal = await Assert.ThrowsAsync<Microsoft.AspNetCore.SignalR.HubException>(() => connection.InvokeAsync("UpdateYjs", roomId, "Ag=="));
         Assert.Contains("LimitExceeded", refusal.Message, StringComparison.Ordinal);
-        Assert.Equal(1, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
-        Assert.True(await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 1L));
+        Assert.Equal(4, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
+        Assert.True(await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 4L));
         await connection.InvokeAsync("UpdateYjs", roomId, "Ag==");
-        Assert.Equal(2, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
+        Assert.Equal(5, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
     }
 
     private static async Task RefreshTokenAsync(HttpClient client)

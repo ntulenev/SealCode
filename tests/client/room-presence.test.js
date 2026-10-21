@@ -4,7 +4,10 @@ import { RevisionedRoomView } from '../../src/SealCode/wwwroot/room-presence.js'
 
 test('current language follows only accepted metadata revisions', () => {
   const applied = [];
-  const view = new RevisionedRoomView({ language: value => applied.push(value), users() {} });
+  const view = new RevisionedRoomView({
+    language: (value) => applied.push(value),
+    users() {}
+  });
   assert.equal(view.currentLanguage, undefined);
   assert.equal(view.updateLanguage('csharp', 0), true);
   assert.equal(view.currentLanguage, 'csharp');
@@ -15,6 +18,11 @@ test('current language follows only accepted metadata revisions', () => {
     assert.equal(view.currentLanguage, 'sql');
   }
   assert.deepEqual(applied, ['csharp', 'sql']);
-  view.apply({ Language: 'javascript', MetadataRevision: 3, Users: [], PresenceRevision: 0 });
+  view.apply({
+    Language: 'javascript',
+    MetadataRevision: 3,
+    Users: [],
+    PresenceRevision: 0
+  });
   assert.equal(view.currentLanguage, 'javascript');
 });
