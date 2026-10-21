@@ -598,6 +598,48 @@ public sealed class SealCodeApiTests
         (await SecurePostAsync(client, "/admin/login/", form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    public async Task LoginRejectsJsonWithValidAntiforgeryToken(string path)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        await RefreshTokenAsync(client);
+        using var response = await client.PostAsJsonAsync(path, new { name = "Admin", password = "pass1" });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    public async Task LoginRejectsOversizedPassword(string path)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["name"] = "Admin",
+            ["password"] = new string('a', 1025)
+        });
+        (await SecurePostAsync(client, path, form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData("/admin/login")]
+    [InlineData("/admin/login/")]
+    public async Task LoginRequiresAntiforgeryToken(string path)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["name"] = "Admin",
+            ["password"] = "pass1"
+        });
+        (await client.PostAsync(path, form)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Fact]
     public async Task HubJournalLimitIsStableAndCheckpointRestoresCapacity()
     {
