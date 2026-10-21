@@ -8,7 +8,10 @@ export function truncateName(name) {
 /** Renders room participants, remote carets and transient presence states. */
 export class PresenceView {
   constructor({ editor, monaco, participantsList, document }) {
-    Object.assign(this, { editor, monaco, participantsList, document });
+    this.editor = editor;
+    this.monaco = monaco;
+    this.participantsList = participantsList;
+    this.document = document;
     this.displayName = '';
     this.currentUsers = [];
     this.cursorPositions = {};

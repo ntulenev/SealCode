@@ -26,23 +26,21 @@ export class YjsSession {
     onRecovery,
     onDispose
   }) {
-    Object.assign(this, {
-      Y,
-      MonacoBinding,
-      Awareness,
-      BoundedUndoManager,
-      editor,
-      getDisplayName,
-      undoEnabled,
-      cursorPositions,
-      onRevision,
-      onRemoteChange,
-      onRemoteAuthor,
-      onUpdate,
-      onCheckpoint,
-      onRecovery,
-      onDispose
-    });
+    this.Y = Y;
+    this.MonacoBinding = MonacoBinding;
+    this.Awareness = Awareness;
+    this.BoundedUndoManager = BoundedUndoManager;
+    this.editor = editor;
+    this.getDisplayName = getDisplayName;
+    this.undoEnabled = undoEnabled;
+    this.cursorPositions = cursorPositions;
+    this.onRevision = onRevision;
+    this.onRemoteChange = onRemoteChange;
+    this.onRemoteAuthor = onRemoteAuthor;
+    this.onUpdate = onUpdate;
+    this.onCheckpoint = onCheckpoint;
+    this.onRecovery = onRecovery;
+    this.onDispose = onDispose;
     this.ydoc = null;
     this.ytext = null;
     this.awareness = null;

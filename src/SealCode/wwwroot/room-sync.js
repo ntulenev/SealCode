@@ -32,18 +32,16 @@ export class UpdateQueue {
     maxBytes = 8 * 1024 * 1024,
     maxCount = 2048
   }) {
-    Object.assign(this, {
-      send,
-      merge,
-      ready,
-      onIdle,
-      onError,
-      onSuccess,
-      setTimer,
-      clearTimer,
-      maxBytes,
-      maxCount
-    });
+    this.send = send;
+    this.merge = merge;
+    this.ready = ready;
+    this.onIdle = onIdle;
+    this.onError = onError;
+    this.onSuccess = onSuccess;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.maxBytes = maxBytes;
+    this.maxCount = maxCount;
     this.pending = [];
     this.timer = null;
     this.inFlight = false;
@@ -61,7 +59,10 @@ export class UpdateQueue {
           this.maxBytes
       ) {
         this.blocked = true;
-        this.onError(createHubError(HubErrorCode.LimitExceeded, 'Local pending queue'), true);
+        this.onError(
+          createHubError(HubErrorCode.LimitExceeded, 'Local pending queue'),
+          true
+        );
         return;
       }
       this.pending.push(update);
@@ -119,7 +120,9 @@ export class SyncScheduler {
     clearTimer = (timer) => clearTimeout(timer),
     now = () => performance.now()
   } = {}) {
-    Object.assign(this, { setTimer, clearTimer, now });
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.now = now;
     this.jobs = new Map();
     this.generation = 0;
   }
@@ -164,21 +167,19 @@ export class SnapshotRecovery {
     onSuccess,
     onError
   }) {
-    Object.assign(this, {
-      scheduler,
-      active,
-      ready,
-      capture,
-      current,
-      revisions,
-      probe,
-      snapshot,
-      begin,
-      apply,
-      end,
-      onSuccess,
-      onError
-    });
+    this.scheduler = scheduler;
+    this.active = active;
+    this.ready = ready;
+    this.capture = capture;
+    this.current = current;
+    this.revisions = revisions;
+    this.probe = probe;
+    this.snapshot = snapshot;
+    this.begin = begin;
+    this.apply = apply;
+    this.end = end;
+    this.onSuccess = onSuccess;
+    this.onError = onError;
     this.inFlight = false;
   }
   schedule(delay = 5000) {
@@ -240,18 +241,16 @@ export class CheckpointWriter {
     onSuccess,
     onError
   }) {
-    Object.assign(this, {
-      delay,
-      scheduler,
-      ready,
-      capture,
-      current,
-      revision,
-      payload,
-      send,
-      onSuccess,
-      onError
-    });
+    this.delay = delay;
+    this.scheduler = scheduler;
+    this.ready = ready;
+    this.capture = capture;
+    this.current = current;
+    this.revision = revision;
+    this.payload = payload;
+    this.send = send;
+    this.onSuccess = onSuccess;
+    this.onError = onError;
     this.inFlight = false;
     this.timer = false;
     this.skippedRevision = -1;

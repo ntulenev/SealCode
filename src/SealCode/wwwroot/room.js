@@ -5,7 +5,9 @@ import * as Y from 'yjs';
 import { MonacoBinding } from 'y-monaco';
 import { Awareness } from 'y-protocols/awareness';
 
-globalThis.MonacoEnvironment = {
+/** @type {typeof globalThis & { MonacoEnvironment: import('monaco-editor').Environment }} */ (
+  globalThis
+).MonacoEnvironment = {
   getWorker(_module, label) {
     const name =
       {
@@ -24,9 +26,12 @@ globalThis.MonacoEnvironment = {
 };
 
 // E2E tests use window.monaco to inspect the editor and exercise language workers.
-window.monaco = monaco;
+/** @type {Window & { monaco?: typeof import('monaco-editor') }} */ (window).monaco =
+  monaco;
 // E2E synchronization tests create independent probe connections through this export.
-window.signalR = signalR;
+/** @type {Window & { signalR?: typeof import('@microsoft/signalr') }} */ (
+  window
+).signalR = signalR;
 const connectionStatusEl = document.getElementById('connectionStatus');
 const roomNameEl = document.getElementById('roomName');
 const createdByEl = document.getElementById('createdBy');

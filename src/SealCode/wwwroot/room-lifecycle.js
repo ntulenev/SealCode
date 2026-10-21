@@ -35,26 +35,24 @@ export class RoomLifecycle {
     clearTimer = (timer) => clearTimeout(timer),
     rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000]
   }) {
-    Object.assign(this, {
-      connection,
-      roomId,
-      session,
-      getDisplayName,
-      start,
-      connectedState,
-      onJoinStart,
-      applyJoin,
-      onJoinSuccess,
-      onJoinError,
-      onSynchronizationEnd,
-      onClose,
-      setStatus,
-      setReadOnly,
-      resetTransport,
-      setTimer,
-      clearTimer,
-      rejoinRetryDelaysMs
-    });
+    this.connection = connection;
+    this.roomId = roomId;
+    this.session = session;
+    this.getDisplayName = getDisplayName;
+    this.start = start;
+    this.connectedState = connectedState;
+    this.onJoinStart = onJoinStart;
+    this.applyJoin = applyJoin;
+    this.onJoinSuccess = onJoinSuccess;
+    this.onJoinError = onJoinError;
+    this.onSynchronizationEnd = onSynchronizationEnd;
+    this.onClose = onClose;
+    this.setStatus = setStatus;
+    this.setReadOnly = setReadOnly;
+    this.resetTransport = resetTransport;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.rejoinRetryDelaysMs = rejoinRetryDelaysMs;
     this.closed = false;
     this.joined = false;
     this.rejoining = false;
