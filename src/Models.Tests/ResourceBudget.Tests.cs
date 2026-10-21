@@ -21,6 +21,45 @@ public sealed class ResourceBudgetTests
             limits, new(limits), [], validateAllProperties: true));
     }
 
+    [Fact]
+    public void CheckpointThresholdDefaultsAreValid()
+    {
+        var limits = new RoomLimits();
+        Assert.Equal(64, limits.CheckpointEveryRevisions);
+        Assert.Equal(256 * 1024, limits.CheckpointEveryBase64Bytes);
+        Assert.True(System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            limits, new(limits), [], validateAllProperties: true));
+    }
+
+    [Theory]
+    [InlineData(255, 786432, false)]
+    [InlineData(256, 786432, true)]
+    [InlineData(256, 786431, false)]
+    public void CheckpointThresholdsRequireJournalHeadroom(int count, int bytes, bool valid)
+    {
+        var limits = new RoomLimits { MaxJournalCount = count, MaxJournalBytes = bytes };
+        Assert.Equal(valid, System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            limits, new(limits), [], validateAllProperties: true));
+    }
+
+    [Theory]
+    [InlineData(nameof(RoomLimits.CheckpointEveryRevisions), 0, false)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryRevisions), 1, true)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryRevisions), 10000, true)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryRevisions), 10001, false)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryBase64Bytes), 1023, false)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryBase64Bytes), 1024, true)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryBase64Bytes), 4194304, true)]
+    [InlineData(nameof(RoomLimits.CheckpointEveryBase64Bytes), 4194305, false)]
+    public void CheckpointThresholdRangesAreValidated(string property, int value, bool valid)
+    {
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(new RoomLimits())
+        {
+            MemberName = property
+        };
+        Assert.Equal(valid, System.ComponentModel.DataAnnotations.Validator.TryValidateProperty(value, context, []));
+    }
+
     private static RoomState Create(RoomLimits limits) => new(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch, new("admin"), limits: limits);
 
     [Theory]

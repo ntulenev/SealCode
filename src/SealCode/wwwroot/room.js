@@ -90,6 +90,8 @@ const maxPendingBytes = 8 * 1024 * 1024;
 let yjsSession = 0;
 let currentDocumentRevision = 0;
 let highestDocumentRevisionSeen = 0;
+let checkpointEveryRevisions = 64;
+let checkpointEveryBase64Bytes = 256 * 1024;
 let knownCheckpointRevision = 0;
 let latestRevisionAuthoredLocally = false;
 const checkpointUpdateBytes = new Map();
@@ -238,6 +240,8 @@ const checkpointWriter = new CheckpointWriter({
     shouldWriteCheckpoint({
       documentRevision: currentDocumentRevision,
       checkpointRevision: knownCheckpointRevision,
+      minRevisions: checkpointEveryRevisions,
+      minBytes: checkpointEveryBase64Bytes,
       bytesSinceCheckpoint: [...checkpointUpdateBytes.values()].reduce((sum, bytes) => sum + bytes, 0),
       isLatestAuthor: latestRevisionAuthoredLocally
     }) &&
@@ -676,6 +680,15 @@ async function loadFeatures() {
     const features = await response.json();
     collaborativeUndoEnabled =
       features.CollaborativeUndoEnabled ?? features.collaborativeUndoEnabled ?? true;
+    const limits = features.Limits ?? features.limits ?? {};
+    const revisions = limits.CheckpointEveryRevisions ?? limits.checkpointEveryRevisions;
+    const bytes = limits.CheckpointEveryBase64Bytes ?? limits.checkpointEveryBase64Bytes;
+    if (Number.isSafeInteger(revisions) && revisions > 0) {
+      checkpointEveryRevisions = revisions;
+    }
+    if (Number.isSafeInteger(bytes) && bytes > 0) {
+      checkpointEveryBase64Bytes = bytes;
+    }
     const messageLimit = features.MaxYjsMessageBytes ?? features.maxYjsMessageBytes;
     if (Number.isSafeInteger(messageLimit) && messageLimit > 1024) {
       maxYjsMessageBytes = messageLimit;

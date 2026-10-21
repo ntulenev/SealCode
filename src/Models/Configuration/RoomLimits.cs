@@ -32,6 +32,18 @@ public sealed class RoomLimits : IValidatableObject
     public int MaxJournalCount { get; init; } = 2048;
 
     /// <summary>
+    /// Gets the checkpoint threshold in document revisions.
+    /// </summary>
+    [Range(1, 10000)]
+    public int CheckpointEveryRevisions { get; init; } = 64;
+
+    /// <summary>
+    /// Gets the checkpoint threshold in Base64 characters.
+    /// </summary>
+    [Range(1024, 4 * 1024 * 1024)]
+    public int CheckpointEveryBase64Bytes { get; init; } = 256 * 1024;
+
+    /// <summary>
     /// Gets the maximum number of UTF-16 characters in a text snapshot.
     /// </summary>
     [Range(500000, 4 * 1024 * 1024)]
@@ -64,6 +76,12 @@ public sealed class RoomLimits : IValidatableObject
     /// <inheritdoc />
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (4L * CheckpointEveryRevisions > MaxJournalCount
+            || 3L * CheckpointEveryBase64Bytes > MaxJournalBytes)
+        {
+            yield return new ValidationResult("Checkpoint thresholds must leave journal headroom.");
+        }
+
         // Worst-case escaped text plus Base64 journal/checkpoint and entry framing.
         var syncBudget = MaxEncodedCheckpointBytes + (4L * ((MaxJournalBytes + 2) / 3))
             + (6L * MaxSnapshotCharacters) + (80L * MaxJournalCount) + 4096;

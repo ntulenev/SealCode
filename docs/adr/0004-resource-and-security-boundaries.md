@@ -19,6 +19,12 @@ must fit the worst-case escaped 16 MiB synchronization response, including
 checkpoint, journal entry framing and text. HTTP/SignalR message limits remain
 additional boundaries, not substitutes for retained-memory limits.
 
+Checkpoint thresholds are validated at startup: `4 * CheckpointEveryRevisions <=
+MaxJournalCount` and `3 * CheckpointEveryBase64Bytes <= MaxJournalBytes`. This
+reserves headroom beyond the doubled fallback threshold for in-flight updates
+and accounts for Base64-to-decoded-byte conversion. The ranges are 1-10000
+revisions and 1024-4194304 Base64 characters, respectively.
+
 A single aggregate lock serializes membership, close, mutations, quota
 reservation and snapshots. Refusals leave revisions/timestamps/data unchanged.
 The journal uses a List, avoiding immutable-array copying on append. Checkpoint
@@ -93,9 +99,10 @@ worker execution and CSP violations. CI runs server and client tests, Chromium,
 production HTTPS, merged server coverage, separate JS coverage, and dependency
 audits. Traces/coverage contain disposable fixtures rather than user configuration.
 
-Checkpoint writers wait 1 second and compact after 64 revisions or 256 KiB of
-Base64 journal updates. The latest author writes first; other participants use
-2x thresholds if the author leaves. These thresholds remain well below the
-2048-entry / 4 MiB decoded journal budgets. Accepted checkpoints announce
+Checkpoint writers wait 1 second and compact at the server-advertised
+`Limits:CheckpointEveryRevisions` (default 64) or
+`Limits:CheckpointEveryBase64Bytes` (default 256 KiB of Base64 characters). The latest author writes first; other
+participants use 2x thresholds if the author leaves. Defaults remain well below
+the 2048-entry / 4 MiB decoded journal budgets. Accepted checkpoints announce
 `YjsCheckpointed(checkpointRevision)` to other participants; stale revisions
 are rejected before Base64 decoding, with the locked check remaining authoritative.

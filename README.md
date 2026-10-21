@@ -56,10 +56,11 @@ The checked-in `appsettings.json` contains empty `PasswordHash` placeholders. Be
 
 **Synchronization limits**
 
-Checkpoint writers wait 1 second and compact after 64 revisions or 256 KiB of
-Base64 journal updates. The latest author writes first; other participants use
-2x thresholds if the author leaves. These thresholds remain well below the
-2048-entry / 4 MiB decoded journal budgets. Accepted checkpoints announce
+Checkpoint writers wait 1 second and compact at the server-advertised
+`Limits:CheckpointEveryRevisions` (default 64) or
+`Limits:CheckpointEveryBase64Bytes` (default 256 KiB of Base64 characters). The latest author writes first; other
+participants use 2x thresholds if the author leaves. Defaults remain well below
+the 2048-entry / 4 MiB decoded journal budgets. Accepted checkpoints announce
 `YjsCheckpointed(checkpointRevision)` to other participants; stale revisions
 are rejected before Base64 decoding, with the locked check remaining authoritative.
 
@@ -163,6 +164,12 @@ A permanent refusal retains visible unsynced text and stops retries: copy it
 before reloading. A valid checkpoint frees journal capacity; accepted updates
 are never evicted for quota. Resource counters are available from the
 `SealCode.Rooms` and `SealCode.Hub` diagnostic meters without document content.
+
+Checkpoint thresholds are validated at startup: `4 * CheckpointEveryRevisions <=
+MaxJournalCount` and `3 * CheckpointEveryBase64Bytes <= MaxJournalBytes`. This
+reserves headroom beyond the doubled fallback threshold for in-flight updates
+and accounts for Base64-to-decoded-byte conversion. The ranges are 1-10000
+revisions and 1024-4194304 Base64 characters, respectively.
 
 **Local assets, publishing and verification**
 
