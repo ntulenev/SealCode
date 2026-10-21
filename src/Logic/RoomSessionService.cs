@@ -98,6 +98,16 @@ public sealed class RoomSessionService : IRoomSessionService
             ? CheckpointOutcome.Accepted : CheckpointOutcome.Stale;
     }
 
+    /// <inheritdoc />
+    public RoomLanguageChangeResult ChangeLanguage(
+        RoomState room,
+        ConnectionId connection,
+        RoomLanguage language)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+        return room.ChangeLanguage(connection, language, DateTimeOffset.UtcNow, _languages);
+    }
+
     private static byte[] Decode(string payload)
     {
         try
@@ -108,16 +118,6 @@ public sealed class RoomSessionService : IRoomSessionService
         {
             throw new ArgumentException("Invalid Yjs payload");
         }
-    }
-
-    /// <inheritdoc />
-    public RoomLanguageChangeResult ChangeLanguage(
-        RoomState room,
-        ConnectionId connection,
-        RoomLanguage language)
-    {
-        ArgumentNullException.ThrowIfNull(room);
-        return room.ChangeLanguage(connection, language, DateTimeOffset.UtcNow, _languages);
     }
 
     private readonly IRoomManager _rooms;

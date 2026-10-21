@@ -17,23 +17,6 @@ namespace SealCode.Tests;
 
 public sealed class IdleRoomCleanupServiceTests
 {
-    private static IOptions<ApplicationConfiguration> Settings(int minutes) => Options.Create(new ApplicationConfiguration
-    {
-        AdminUsers = [],
-        Languages = ["csharp"],
-        MaxUsersPerRoom = 5,
-        Limits = new RoomLimits { RoomIdleTimeoutMinutes = minutes }
-    });
-
-    private static RoomRegistry Registry(FakeTimeProvider clock, int minutes = 5)
-        => new(NullLogger<RoomRegistry>.Instance, Settings(minutes), clock);
-
-    private static IdleRoomCleanupService Service(IRoomRegistry registry, FakeTimeProvider clock, int minutes = 5)
-        => new(registry, Settings(minutes), clock, NullLogger<IdleRoomCleanupService>.Instance);
-
-    private static RoomState Room(RoomRegistry registry)
-        => registry.CreateRoom(new("Room"), new("csharp"), new("Admin"));
-
     [Fact]
     public async Task EmptyRoomExpiresAtTimeoutAndKeepsUpdatedTimestampMeaning()
     {
@@ -145,4 +128,21 @@ public sealed class IdleRoomCleanupServiceTests
         _ = room.ChangeLanguage(connection, new("sql"), DateTimeOffset.UnixEpoch, languages.Object);
         Assert.Equal(clock.GetUtcNow(), room.LastActivityUtc);
     }
+
+    private static IOptions<ApplicationConfiguration> Settings(int minutes) => Options.Create(new ApplicationConfiguration
+    {
+        AdminUsers = [],
+        Languages = ["csharp"],
+        MaxUsersPerRoom = 5,
+        Limits = new RoomLimits { RoomIdleTimeoutMinutes = minutes }
+    });
+
+    private static RoomRegistry Registry(FakeTimeProvider clock, int minutes = 5)
+        => new(NullLogger<RoomRegistry>.Instance, Settings(minutes), clock);
+
+    private static IdleRoomCleanupService Service(IRoomRegistry registry, FakeTimeProvider clock, int minutes = 5)
+        => new(registry, Settings(minutes), clock, NullLogger<IdleRoomCleanupService>.Instance);
+
+    private static RoomState Room(RoomRegistry registry)
+        => registry.CreateRoom(new("Room"), new("csharp"), new("Admin"));
 }

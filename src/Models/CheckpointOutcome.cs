@@ -9,6 +9,7 @@ public enum CheckpointOutcome
     /// The checkpoint represents the current document.
     /// </summary>
     Accepted,
+
     /// <summary>
     /// A newer document revision exists.
     /// </summary>

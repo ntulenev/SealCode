@@ -3,11 +3,22 @@ namespace SealCode.Hosting;
 /// <summary>
 /// Applies the ApiExceptionMiddleware policy to a request.
 /// </summary>
-internal sealed class ApiExceptionMiddleware(RequestDelegate next)
+internal sealed class ApiExceptionMiddleware
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ApiExceptionMiddleware"/> class.
+    /// </summary>
+    /// <param name="next">The next request handler in the pipeline.</param>
+    public ApiExceptionMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
     /// <summary>
     /// Processes the current request.
     /// </summary>
+    /// <param name="context">The current request context.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
         try
@@ -22,5 +33,5 @@ internal sealed class ApiExceptionMiddleware(RequestDelegate next)
         }
     }
 
-    private readonly RequestDelegate _next = next;
+    private readonly RequestDelegate _next;
 }

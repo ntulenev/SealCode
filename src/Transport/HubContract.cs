@@ -66,8 +66,8 @@ public static class HubContract
         /// The LeaveRoom wire name.
         /// </summary>
         public const string LeaveRoom = "LeaveRoom";
-
     }
+
     /// <summary>
     /// Defines hub events.
     /// </summary>

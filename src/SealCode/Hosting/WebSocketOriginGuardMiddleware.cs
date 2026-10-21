@@ -3,11 +3,22 @@ namespace SealCode.Hosting;
 /// <summary>
 /// Applies the WebSocketOriginGuardMiddleware policy to a request.
 /// </summary>
-internal sealed class WebSocketOriginGuardMiddleware(RequestDelegate next)
+internal sealed class WebSocketOriginGuardMiddleware
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="WebSocketOriginGuardMiddleware"/> class.
+    /// </summary>
+    /// <param name="next">The next request handler in the pipeline.</param>
+    public WebSocketOriginGuardMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
     /// <summary>
     /// Processes the current request.
     /// </summary>
+    /// <param name="context">The current request context.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
         if (context.Request.Path.StartsWithSegments("/roomHub", StringComparison.Ordinal)
@@ -22,5 +33,5 @@ internal sealed class WebSocketOriginGuardMiddleware(RequestDelegate next)
         await _next(context).ConfigureAwait(false);
     }
 
-    private readonly RequestDelegate _next = next;
+    private readonly RequestDelegate _next;
 }

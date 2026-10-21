@@ -10,18 +10,6 @@ namespace Logic.Tests;
 
 public sealed class RoomSessionServiceTests
 {
-    private readonly ConnectionId _connection = new("connection");
-
-    private (RoomState Room, RoomSessionService Service) Create()
-    {
-        var room = new RoomState(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch,
-            new("admin"), limits: new RoomLimits { MaxEncodedUpdateBytes = 4, MaxEncodedCheckpointBytes = 4, MaxSnapshotCharacters = 10 });
-        room.AddUser(_connection, new("Alice"), 5);
-        var manager = new Mock<IRoomManager>(MockBehavior.Strict);
-        manager.Setup(value => value.TryGetRoom(room.RoomId, out room)).Returns(true);
-        return (room, new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>()));
-    }
-
     [Fact]
     public void EncodedLengthIsCheckedBeforeDecoding()
     {
@@ -72,4 +60,16 @@ public sealed class RoomSessionServiceTests
         var missing = new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>());
         Assert.Throws<RoomNotFoundException>(() => missing.TryGetParticipant(RoomId.New(), _connection, out _, out _));
     }
+
+    private (RoomState Room, RoomSessionService Service) Create()
+    {
+        var room = new RoomState(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch,
+            new("admin"), limits: new RoomLimits { MaxEncodedUpdateBytes = 4, MaxEncodedCheckpointBytes = 4, MaxSnapshotCharacters = 10 });
+        room.AddUser(_connection, new("Alice"), 5);
+        var manager = new Mock<IRoomManager>(MockBehavior.Strict);
+        manager.Setup(value => value.TryGetRoom(room.RoomId, out room)).Returns(true);
+        return (room, new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>()));
+    }
+
+    private readonly ConnectionId _connection = new("connection");
 }

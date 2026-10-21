@@ -15,6 +15,7 @@ internal static class EndpointRouteBuilderExtensions
     /// <summary>
     /// Maps the public application endpoints and antiforgery token endpoint.
     /// </summary>
+    /// <param name="app">The application whose public HTTP endpoints are mapped.</param>
     public static void MapSealCodeEndpoints(this WebApplication app)
     {
         var applicationVersion = ApplicationVersion.From(typeof(Program).Assembly);

@@ -25,6 +25,9 @@ internal static class ServiceCollectionExtensions
     /// <summary>
     /// Registers configuration services.
     /// </summary>
+    /// <param name="services">The application service collection.</param>
+    /// <param name="configuration">The application configuration source.</param>
+    /// <returns>The service collection for further registration.</returns>
     public static IServiceCollection AddSealCodeConfiguration(this IServiceCollection services, IConfiguration configuration)
     {
         _ = services.AddOptions<ApplicationConfiguration>()
@@ -45,6 +48,9 @@ internal static class ServiceCollectionExtensions
     /// <summary>
     /// Registers security services.
     /// </summary>
+    /// <param name="services">The application service collection.</param>
+    /// <param name="environment">The hosting environment used to select security defaults.</param>
+    /// <returns>The service collection for further registration.</returns>
     public static IServiceCollection AddSealCodeSecurity(this IServiceCollection services, IWebHostEnvironment environment)
     {
         _ = services.AddAntiforgery(options =>
@@ -73,6 +79,8 @@ internal static class ServiceCollectionExtensions
     /// <summary>
     /// Registers room services.
     /// </summary>
+    /// <param name="services">The application service collection.</param>
+    /// <returns>The service collection for further registration.</returns>
     public static IServiceCollection AddSealCodeRooms(this IServiceCollection services)
     {
         _ = services.AddSingleton(TimeProvider.System);
@@ -88,6 +96,8 @@ internal static class ServiceCollectionExtensions
     /// <summary>
     /// Registers SignalR services.
     /// </summary>
+    /// <param name="services">The application service collection.</param>
+    /// <returns>The service collection for further registration.</returns>
     public static IServiceCollection AddSealCodeSignalR(this IServiceCollection services)
     {
         _ = services.AddSingleton<RoomResourceFilter>();

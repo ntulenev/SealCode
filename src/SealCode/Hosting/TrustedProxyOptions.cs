@@ -10,8 +10,17 @@ namespace SealCode.Hosting;
 /// <summary>
 /// Configures forwarded headers from validated application settings.
 /// </summary>
-internal sealed class TrustedProxyOptions(IOptions<ApplicationConfiguration> configuration) : IConfigureOptions<ForwardedHeadersOptions>
+internal sealed class TrustedProxyOptions : IConfigureOptions<ForwardedHeadersOptions>
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TrustedProxyOptions"/> class.
+    /// </summary>
+    /// <param name="configuration">The validated application settings.</param>
+    public TrustedProxyOptions(IOptions<ApplicationConfiguration> configuration)
+    {
+        _configuration = configuration;
+    }
+
     /// <inheritdoc />
     public void Configure(ForwardedHeadersOptions options)
     {
@@ -28,5 +37,5 @@ internal sealed class TrustedProxyOptions(IOptions<ApplicationConfiguration> con
         }
     }
 
-    private readonly IOptions<ApplicationConfiguration> _configuration = configuration;
+    private readonly IOptions<ApplicationConfiguration> _configuration;
 }

@@ -4,6 +4,15 @@ namespace Transport.Tests;
 
 internal static class RoomStateBuilder
 {
+    internal static RoomDocumentAppendResult AppendAsTestParticipant(this RoomState room, byte[] update, DateTimeOffset now)
+        => room.Append(Participant(room), update, now);
+
+    internal static bool CheckpointAsTestParticipant(this RoomState room, RoomDocumentRevision revision, byte[] state, RoomText text, DateTimeOffset now)
+        => room.Checkpoint(Participant(room), revision, state, text, now);
+
+    internal static RoomVersion ChangeLanguageAsTestParticipant(this RoomState room, RoomLanguage language, DateTimeOffset now, ILanguageValidator validator)
+        => room.ChangeLanguage(Participant(room), language, now, validator).RoomVersion;
+
     private static ConnectionId Participant(RoomState room)
     {
         if (room.ConnectedUsers.Count > 0)
@@ -14,13 +23,4 @@ internal static class RoomStateBuilder
         room.AddUser(connection, new RoomUser("Test participant"), 5);
         return connection;
     }
-
-    internal static RoomDocumentAppendResult AppendAsTestParticipant(this RoomState room, byte[] update, DateTimeOffset now)
-        => room.Append(Participant(room), update, now);
-
-    internal static bool CheckpointAsTestParticipant(this RoomState room, RoomDocumentRevision revision, byte[] state, RoomText text, DateTimeOffset now)
-        => room.Checkpoint(Participant(room), revision, state, text, now);
-
-    internal static RoomVersion ChangeLanguageAsTestParticipant(this RoomState room, RoomLanguage language, DateTimeOffset now, ILanguageValidator validator)
-        => room.ChangeLanguage(Participant(room), language, now, validator).RoomVersion;
 }
