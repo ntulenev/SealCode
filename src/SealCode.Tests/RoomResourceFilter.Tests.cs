@@ -51,7 +51,7 @@ public sealed class RoomResourceFilterTests
 
         await filter.OnConnectedAsync(contexts[0], Next);
         var error = await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(contexts[1], Next));
-        Assert.Contains("RateLimited", error.Message, StringComparison.Ordinal);
+        HubErrorAssertions.AssertHubError(error, HubErrorCode.RateLimited);
         Assert.Equal(1, accepted);
         callers[1].Verify(c => c.Abort(), Times.Once);
         await filter.OnDisconnectedAsync(contexts[0], null, (_, _) => Task.CompletedTask);
@@ -88,7 +88,7 @@ public sealed class RoomResourceFilterTests
             else
             {
                 var error = await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(context, _ => Task.CompletedTask));
-                Assert.Contains("RateLimited", error.Message, StringComparison.Ordinal);
+                HubErrorAssertions.AssertHubError(error, HubErrorCode.RateLimited);
                 caller.Verify(c => c.Abort(), Times.Once);
             }
         }

@@ -21,7 +21,8 @@ using Transport.Models;
 
 namespace SealCode.Tests;
 
-public sealed class SealCodeApiTests
+public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFactory)
+    : IClassFixture<SealCodeApiTests.SealCodeAppFactory>
 {
     [Theory]
     [InlineData(true)]
@@ -133,8 +134,7 @@ public sealed class SealCodeApiTests
     [Fact]
     public async Task GetVersionShouldReturnRunningAssemblyMetadataWithoutCaching()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
         var expected = typeof(RoomHub).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
 
         var response = await client.GetAsync("/version");
@@ -152,8 +152,7 @@ public sealed class SealCodeApiTests
     [Trait("Category", "Integration")]
     public async Task GetHealthReturnsOk()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
 
         var response = await client.GetAsync("/health");
         var payload = await response.Content.ReadFromJsonAsync<string>();
@@ -166,8 +165,7 @@ public sealed class SealCodeApiTests
     [Trait("Category", "Integration")]
     public async Task GetLanguagesReturnsConfiguredLanguages()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
 
         var response = await client.GetAsync("/languages");
         var payload = await response.Content.ReadFromJsonAsync<string[]>();
@@ -181,8 +179,7 @@ public sealed class SealCodeApiTests
     [Trait("Category", "Integration")]
     public async Task GetFeaturesReturnsCollaborativeUndoFlag()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
 
         var response = await client.GetAsync("/features");
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -193,7 +190,7 @@ public sealed class SealCodeApiTests
         payload.GetProperty("Limits").GetProperty("CheckpointEveryBase64Bytes").GetInt32().Should().Be(256 * 1024);
         var advertisedLimit = payload.GetProperty("MaxYjsMessageBytes").GetInt64();
         advertisedLimit.Should().Be(16 * 1024 * 1024);
-        advertisedLimit.Should().Be(factory.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.SignalR.HubOptions>>()
+        advertisedLimit.Should().Be(readFactory.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.SignalR.HubOptions>>()
             .Value.MaximumReceiveMessageSize);
     }
 
@@ -201,8 +198,7 @@ public sealed class SealCodeApiTests
     [Trait("Category", "Integration")]
     public async Task GetAdminRoomsWithoutCookieReturnsUnauthorized()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
 
         var response = await client.GetAsync("/admin/rooms");
 
@@ -213,8 +209,7 @@ public sealed class SealCodeApiTests
     [Trait("Category", "Integration")]
     public async Task CreateRoomWithoutCookieReturnsUnauthorized()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
 
         var response = await SecureJsonAsync(client, "/admin/rooms", new
         {
@@ -268,8 +263,7 @@ public sealed class SealCodeApiTests
     [Trait("Category", "Integration")]
     public async Task GetRoomReturnsNotFoundForMissingRoom()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
 
         var missingRoomId = RoomId.New().Value;
         var response = await client.GetAsync($"/room/{missingRoomId}");
@@ -322,9 +316,17 @@ public sealed class SealCodeApiTests
         await connection.DisposeAsync();
     }
 
-    [Fact(DisplayName = "SignalR /roomHub broadcasts room events")]
+    [Theory]
+    [InlineData("UserJoined")]
+    [InlineData("YjsUpdated")]
+    [InlineData("YjsCheckpointed")]
+    [InlineData("LanguageUpdated")]
+    [InlineData("CursorUpdated")]
+    [InlineData("UserSelection")]
+    [InlineData("UserCopy")]
+    [InlineData("UserLeft")]
     [Trait("Category", "Integration")]
-    public async Task SignalRRoomHubBroadcastsRoomEvents()
+    public async Task SignalRRoomHubBroadcastsRoomEvents(string eventName)
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -348,92 +350,109 @@ public sealed class SealCodeApiTests
         var aliceJoin = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
         aliceJoin.Users.Should().Contain(["Alice", "Bob"]);
 
-        var joinedPayload = await AwaitWithTimeout(bobJoined.Task);
+        var joinedPayload = await bobJoined.Task.WaitAsync(TimeSpan.FromSeconds(5));
         joinedPayload.name.Should().Be("Alice");
         joinedPayload.users.Should().Contain(["Alice", "Bob"]);
 
-        var yjsUpdated = new TaskCompletionSource<(string update, long documentRevision, int roomVersion, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, long, int, string>("YjsUpdated", (update, documentRevision, roomVersion, author) =>
-            yjsUpdated.TrySetResult((update, documentRevision, roomVersion, author))))
+        if (eventName is "YjsUpdated" or "YjsCheckpointed")
         {
-            var update = Convert.ToBase64String(new byte[] { 1, 2, 3 });
-            await alice.InvokeAsync("UpdateYjs", roomId, update);
+            var yjsUpdated = new TaskCompletionSource<(string update, long documentRevision, int roomVersion, string author)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (bob.On<string, long, int, string>("YjsUpdated", (update, documentRevision, roomVersion, author) =>
+                yjsUpdated.TrySetResult((update, documentRevision, roomVersion, author))))
+            {
+                var update = Convert.ToBase64String(new byte[] { 1, 2, 3 });
+                await alice.InvokeAsync("UpdateYjs", roomId, update);
 
-            var payload = await AwaitWithTimeout(yjsUpdated.Task);
-            payload.update.Should().Be(update);
-            payload.author.Should().Be("Alice");
-            payload.documentRevision.Should().Be(1);
-            payload.roomVersion.Should().BeGreaterThanOrEqualTo(2);
+                var payload = await yjsUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                payload.update.Should().Be(update);
+                payload.author.Should().Be("Alice");
+                payload.documentRevision.Should().Be(1);
+                payload.roomVersion.Should().BeGreaterThanOrEqualTo(2);
 
-            await using var charlie = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
-            var charlieJoin = await charlie.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Charlie");
-            charlieJoin.DocumentRevision.Should().Be(1);
-            charlieJoin.CheckpointRevision.Should().Be(0);
-            charlieJoin.YjsState.Should().BeNull();
-            charlieJoin.YjsUpdates.Should().ContainSingle();
-            charlieJoin.YjsUpdates[0].Update.Should().Be(update);
+                await using var charlie = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+                var charlieJoin = await charlie.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Charlie");
+                charlieJoin.DocumentRevision.Should().Be(1);
+                charlieJoin.CheckpointRevision.Should().Be(0);
+                charlieJoin.YjsState.Should().BeNull();
+                charlieJoin.YjsUpdates.Should().ContainSingle();
+                charlieJoin.YjsUpdates[0].Update.Should().Be(update);
 
-            var sync = await alice.InvokeAsync<JoinRoomResult>("SyncYjs", roomId);
-            sync.Should().BeEquivalentTo(charlieJoin);
-            (await alice.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(1);
+                var sync = await alice.InvokeAsync<JoinRoomResult>("SyncYjs", roomId);
+                sync.Should().BeEquivalentTo(charlieJoin);
+                (await alice.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(1);
 
-            var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
-            var accepted = await alice.InvokeAsync<bool>("CheckpointYjs", roomId, state, "snapshot", payload.documentRevision);
-            accepted.Should().BeTrue();
+                var checkpointed = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using var subscription = bob.On<long>("YjsCheckpointed", revision => checkpointed.TrySetResult(revision));
+                var state = Convert.ToBase64String(new byte[] { 5, 6, 7 });
+                var accepted = await alice.InvokeAsync<bool>("CheckpointYjs", roomId, state, "snapshot", payload.documentRevision);
+                accepted.Should().BeTrue();
+                (await checkpointed.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(payload.documentRevision);
 
-            var charlieJoinAfterCheckpoint = await charlie.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Charlie");
-            charlieJoinAfterCheckpoint.DocumentRevision.Should().Be(1);
-            charlieJoinAfterCheckpoint.CheckpointRevision.Should().Be(1);
-            charlieJoinAfterCheckpoint.YjsState.Should().Be(state);
-            charlieJoinAfterCheckpoint.YjsUpdates.Should().BeEmpty();
+                var charlieJoinAfterCheckpoint = await charlie.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Charlie");
+                charlieJoinAfterCheckpoint.DocumentRevision.Should().Be(1);
+                charlieJoinAfterCheckpoint.CheckpointRevision.Should().Be(1);
+                charlieJoinAfterCheckpoint.YjsState.Should().Be(state);
+                charlieJoinAfterCheckpoint.YjsUpdates.Should().BeEmpty();
+            }
+        }
+        if (eventName == "LanguageUpdated")
+        {
+            var languageUpdated = new TaskCompletionSource<(string language, int version)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (bob.On<string, int, long>("LanguageUpdated", (language, version, revision) =>
+                languageUpdated.TrySetResult((language, version))))
+            {
+                await alice.InvokeAsync("SetLanguage", roomId, "sql");
+                var payload = await languageUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                payload.language.Should().Be("sql");
+                payload.version.Should().BeGreaterThanOrEqualTo(2);
+            }
+        }
+        if (eventName == "CursorUpdated")
+        {
+            var cursorUpdated = new TaskCompletionSource<(string author, int position)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (bob.On<string, int>("CursorUpdated", (author, position) =>
+                cursorUpdated.TrySetResult((author, position))))
+            {
+                await alice.InvokeAsync("UpdateCursor", roomId, 42);
+                var payload = await cursorUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                payload.author.Should().Be("Alice");
+                payload.position.Should().Be(42);
+            }
+        }
+        if (eventName == "UserSelection")
+        {
+            var selectionUpdated = new TaskCompletionSource<(string author, bool isMultiLine)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (bob.On<string, bool>("UserSelection", (author, isMultiLine) =>
+                selectionUpdated.TrySetResult((author, isMultiLine))))
+            {
+                await alice.InvokeAsync("UpdateSelection", roomId, true);
+                var payload = await selectionUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                payload.author.Should().Be("Alice");
+                payload.isMultiLine.Should().BeTrue();
+            }
+        }
+        if (eventName == "UserCopy")
+        {
+            var copyUpdated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (bob.On<string>("UserCopy", author => copyUpdated.TrySetResult(author)))
+            {
+                await alice.InvokeAsync("UpdateCopy", roomId);
+                var author = await copyUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                author.Should().Be("Alice");
+            }
+        }
+        if (eventName == "UserLeft")
+        {
+            var leftUpdated = new TaskCompletionSource<(string author, string[] users)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (bob.On<string, string[], long>("UserLeft", (author, users, revision) =>
+                leftUpdated.TrySetResult((author, users))))
+            {
+                await alice.InvokeAsync("LeaveRoom", roomId);
+                var payload = await leftUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                payload.author.Should().Be("Alice");
+            }
         }
 
-        var languageUpdated = new TaskCompletionSource<(string language, int version)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, int, long>("LanguageUpdated", (language, version, revision) =>
-            languageUpdated.TrySetResult((language, version))))
-        {
-            await alice.InvokeAsync("SetLanguage", roomId, "sql");
-            var payload = await AwaitWithTimeout(languageUpdated.Task);
-            payload.language.Should().Be("sql");
-            payload.version.Should().BeGreaterThanOrEqualTo(2);
-        }
-
-        var cursorUpdated = new TaskCompletionSource<(string author, int position)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, int>("CursorUpdated", (author, position) =>
-            cursorUpdated.TrySetResult((author, position))))
-        {
-            await alice.InvokeAsync("UpdateCursor", roomId, 42);
-            var payload = await AwaitWithTimeout(cursorUpdated.Task);
-            payload.author.Should().Be("Alice");
-            payload.position.Should().Be(42);
-        }
-
-        var selectionUpdated = new TaskCompletionSource<(string author, bool isMultiLine)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, bool>("UserSelection", (author, isMultiLine) =>
-            selectionUpdated.TrySetResult((author, isMultiLine))))
-        {
-            await alice.InvokeAsync("UpdateSelection", roomId, true);
-            var payload = await AwaitWithTimeout(selectionUpdated.Task);
-            payload.author.Should().Be("Alice");
-            payload.isMultiLine.Should().BeTrue();
-        }
-
-        var copyUpdated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string>("UserCopy", author => copyUpdated.TrySetResult(author)))
-        {
-            await alice.InvokeAsync("UpdateCopy", roomId);
-            var author = await AwaitWithTimeout(copyUpdated.Task);
-            author.Should().Be("Alice");
-        }
-
-        var leftUpdated = new TaskCompletionSource<(string author, string[] users)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (bob.On<string, string[], long>("UserLeft", (author, users, revision) =>
-            leftUpdated.TrySetResult((author, users))))
-        {
-            await alice.InvokeAsync("LeaveRoom", roomId);
-            var payload = await AwaitWithTimeout(leftUpdated.Task);
-            payload.author.Should().Be("Alice");
-        }
     }
 
     [Fact(DisplayName = "DELETE /admin/rooms forbids non-super admins deleting others rooms")]
@@ -479,8 +498,7 @@ public sealed class SealCodeApiTests
     [Fact]
     public async Task HealthShouldPreserveSecurityHeaders()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
         using var response = await client.GetAsync("/health");
 
         response.Headers.GetValues("Content-Security-Policy").Should().Equal("default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
@@ -520,8 +538,7 @@ public sealed class SealCodeApiTests
     [Fact]
     public async Task RootShouldServeIndexHtml()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = readFactory.CreateClient();
         using var response = await client.GetAsync("/");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -702,7 +719,7 @@ public sealed class SealCodeApiTests
         var options = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
             .Get(CookieAuthenticationDefaults.AuthenticationScheme);
         var ticket = options.TicketDataFormat.Unprotect(cookie.Value)!;
-        ticket.Properties.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+        ticket.Properties.ExpiresUtc = DateTimeOffset.UnixEpoch;
         var expiredCookie = options.TicketDataFormat.Protect(ticket);
         client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={expiredCookie}");
 
@@ -832,12 +849,13 @@ public sealed class SealCodeApiTests
         {
             await connection.InvokeAsync("UpdateYjs", roomId, "AQ==");
         }
-        var refusal = await Assert.ThrowsAsync<Microsoft.AspNetCore.SignalR.HubException>(() => connection.InvokeAsync("UpdateYjs", roomId, "Ag=="));
-        Assert.Contains("LimitExceeded", refusal.Message, StringComparison.Ordinal);
-        Assert.Equal(4, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
-        Assert.True(await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 4L));
+        var refusal = (await FluentActions.Awaiting(() => connection.InvokeAsync("UpdateYjs", roomId, "Ag=="))
+            .Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>()).Which;
+        HubErrorAssertions.AssertHubError(refusal, SealCode.Hub.HubErrorCode.LimitExceeded);
+        (await connection.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(4);
+        (await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 4L)).Should().BeTrue();
         await connection.InvokeAsync("UpdateYjs", roomId, "Ag==");
-        Assert.Equal(5, await connection.InvokeAsync<long>("GetDocumentRevision", roomId));
+        (await connection.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(5);
     }
 
     private static async Task RefreshTokenAsync(HttpClient client)
@@ -943,13 +961,6 @@ public sealed class SealCodeApiTests
         return connection;
     }
 
-    private static async Task<T> AwaitWithTimeout<T>(Task<T> task)
-    {
-        var completed = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5)));
-        completed.Should().BeSameAs(task);
-        return await task;
-    }
-
     private sealed class LoopbackStartupFilter : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
@@ -966,10 +977,13 @@ public sealed class SealCodeApiTests
         }
     }
 
-    private sealed class SealCodeAppFactory : WebApplicationFactory<Program>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1034", Justification = "xUnit requires a publicly constructible fixture.")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "CA1515", Justification = "xUnit requires a publicly constructible fixture.")]
+    public sealed class SealCodeAppFactory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            ArgumentNullException.ThrowIfNull(builder);
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 var settings = new Dictionary<string, string?>

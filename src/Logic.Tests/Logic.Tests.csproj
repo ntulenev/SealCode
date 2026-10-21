@@ -33,4 +33,8 @@
 		<Using Include="Xunit" />
 	</ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\TestKit\RoomStateBuilder.cs" Link="RoomStateBuilder.cs" />
+    <Using Include="TestKit" />
+  </ItemGroup>
 </Project>

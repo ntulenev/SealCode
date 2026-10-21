@@ -38,4 +38,8 @@
 		<NoWarn>IDE0058,IDE1006,CA2234,CS1591,CA1861,IDE0042,CA2007</NoWarn>
 	</PropertyGroup>
 
+  <ItemGroup>
+    <Compile Include="..\TestKit\RoomStateBuilder.cs" Link="RoomStateBuilder.cs" />
+    <Using Include="TestKit" />
+  </ItemGroup>
 </Project>
