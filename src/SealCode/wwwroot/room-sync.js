@@ -1,10 +1,19 @@
 /** Decides whether journal growth warrants a checkpoint from this participant. */
-export function shouldWriteCheckpoint({ documentRevision, checkpointRevision, bytesSinceCheckpoint,
-  isLatestAuthor, minRevisions = 64, minBytes = 256 * 1024, fallbackFactor = 2 }) {
+export function shouldWriteCheckpoint({
+  documentRevision,
+  checkpointRevision,
+  bytesSinceCheckpoint,
+  isLatestAuthor,
+  minRevisions = 64,
+  minBytes = 256 * 1024,
+  fallbackFactor = 2
+}) {
   if (documentRevision <= checkpointRevision) return false;
   const factor = isLatestAuthor ? 1 : fallbackFactor;
-  return documentRevision - checkpointRevision >= minRevisions * factor ||
-    bytesSinceCheckpoint >= minBytes * factor;
+  return (
+    documentRevision - checkpointRevision >= minRevisions * factor ||
+    bytesSinceCheckpoint >= minBytes * factor
+  );
 }
 
 /** Bounded transport queue. No DOM, Yjs singleton, or network globals. */

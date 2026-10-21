@@ -94,8 +94,14 @@ test('oversized checkpoints are skipped without retries or lost incremental chan
   // Grow the journal to the checkpoint threshold without exceeding each edit limit.
   for (let revision = 0; revision < 64; revision++) {
     await insertText(page, revision === 0 ? 2000 : 1);
-    await expect.poll(() => page.evaluate(async (roomId) =>
-      (await probe.invoke('GetRoomRevisions', roomId)).DocumentRevision, roomId))
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async (roomId) =>
+            (await probe.invoke('GetRoomRevisions', roomId)).DocumentRevision,
+          roomId
+        )
+      )
       .toBe(revision + 1);
   }
 
@@ -151,12 +157,18 @@ test('oversized edits remain local and visible without retrying the transport', 
   await page.evaluate(() => probe.stop());
 });
 
-test('only the latest author checkpoints after the revision threshold', async ({ page, context }) => {
+test('only the latest author checkpoints after the revision threshold', async ({
+  page,
+  context
+}) => {
   const counts = [0, 0];
-  const countMessages = (target, index) => target.on('websocket', socket =>
-    socket.on('framesent', ({ payload }) => {
-      if (typeof payload === 'string' && payload.includes('"target":"CheckpointYjs"')) counts[index]++;
-    }));
+  const countMessages = (target, index) =>
+    target.on('websocket', (socket) =>
+      socket.on('framesent', ({ payload }) => {
+        if (typeof payload === 'string' && payload.includes('"target":"CheckpointYjs"'))
+          counts[index]++;
+      })
+    );
   countMessages(page, 0);
   const roomId = await createAndJoin(page);
   const observer = await context.newPage();
@@ -167,15 +179,29 @@ test('only the latest author checkpoints after the revision threshold', async ({
   await expect(observer.locator('#joinOverlay')).toHaveClass(/hidden/);
   for (let revision = 1; revision <= 65; revision++) {
     await insertText(page, 1);
-    await expect.poll(() => page.evaluate(async (roomId) =>
-      (await probe.invoke('GetRoomRevisions', roomId)).DocumentRevision, roomId)).toBe(revision);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async (roomId) =>
+            (await probe.invoke('GetRoomRevisions', roomId)).DocumentRevision,
+          roomId
+        )
+      )
+      .toBe(revision);
     if (revision === 20) {
       await page.waitForTimeout(1200);
       expect(counts).toEqual([0, 0]);
     }
   }
-  await expect.poll(() => page.evaluate(async (roomId) =>
-    (await probe.invoke('JoinRoom', roomId, 'Probe')).CheckpointRevision, roomId)).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async (roomId) =>
+          (await probe.invoke('JoinRoom', roomId, 'Probe')).CheckpointRevision,
+        roomId
+      )
+    )
+    .toBeGreaterThan(0);
   expect(counts[0]).toBeGreaterThan(0);
   expect(counts[1]).toBe(0);
   await observer.close();
@@ -215,7 +241,8 @@ async function syncState(page, roomId) {
 async function appendRevisions(author, probePage, roomId, first, last) {
   for (let revision = first; revision <= last; revision++) {
     await insertText(author, 1);
-    await expect.poll(async () => (await revisions(probePage, roomId)).DocumentRevision)
+    await expect
+      .poll(async () => (await revisions(probePage, roomId)).DocumentRevision)
       .toBe(revision);
   }
 }
@@ -228,11 +255,13 @@ async function suppressAuthorCheckpoints(page) {
       for (const record of message.split('\x1e').filter(Boolean)) {
         const frame = JSON.parse(record);
         if (frame.target === 'CheckpointYjs') {
-          route.send(JSON.stringify({
-            type: 3,
-            invocationId: frame.invocationId,
-            result: false
-          }) + '\x1e');
+          route.send(
+            JSON.stringify({
+              type: 3,
+              invocationId: frame.invocationId,
+              result: false
+            }) + '\x1e'
+          );
         } else {
           server.send(record + '\x1e');
         }
@@ -256,9 +285,13 @@ test('observer accounts for checkpoint broadcasts across another fallback window
   test.setTimeout(120_000);
   const authorCount = countCheckpoints(page);
   const roomId = await createAndJoin(page);
-  const { observer, checkpointCount: observerCount } = await joinObserver(context, roomId);
+  const { observer, checkpointCount: observerCount } = await joinObserver(
+    context,
+    roomId
+  );
   await appendRevisions(page, page, roomId, 1, 64);
-  await expect.poll(async () => (await syncState(page, roomId)).CheckpointRevision)
+  await expect
+    .poll(async () => (await syncState(page, roomId)).CheckpointRevision)
     .toBe(64);
   await appendRevisions(page, page, roomId, 65, 64 + 127);
   await page.waitForTimeout(1500);
@@ -274,7 +307,10 @@ test('observer becomes latest author and checkpoints after the previous author l
 }) => {
   await suppressAuthorCheckpoints(page);
   const roomId = await createAndJoin(page);
-  const { observer, checkpointCount: observerCount } = await joinObserver(context, roomId);
+  const { observer, checkpointCount: observerCount } = await joinObserver(
+    context,
+    roomId
+  );
   await appendRevisions(page, page, roomId, 1, 80);
   expect((await syncState(page, roomId)).CheckpointRevision).toBe(0);
   expect(observerCount()).toBe(0);
@@ -282,7 +318,8 @@ test('observer becomes latest author and checkpoints after the previous author l
   await page.close();
   await startProbe(observer, roomId);
   await appendRevisions(observer, observer, roomId, 81, 81);
-  await expect.poll(async () => (await syncState(observer, roomId)).CheckpointRevision)
+  await expect
+    .poll(async () => (await syncState(observer, roomId)).CheckpointRevision)
     .toBe(81);
   expect(observerCount()).toBe(1);
   await observer.evaluate(() => probe.stop());
@@ -295,7 +332,10 @@ test('passive observer checkpoints at the doubled threshold when the author leav
 }) => {
   await suppressAuthorCheckpoints(page);
   const roomId = await createAndJoin(page);
-  const { observer, checkpointCount: observerCount } = await joinObserver(context, roomId);
+  const { observer, checkpointCount: observerCount } = await joinObserver(
+    context,
+    roomId
+  );
   await appendRevisions(page, page, roomId, 1, 80);
   const state = await page.evaluate((roomId) => probe.invoke('SyncYjs', roomId), roomId);
   expect(state.CheckpointRevision).toBe(0);
@@ -308,7 +348,9 @@ test('passive observer checkpoints at the doubled threshold when the author leav
   }
   for (let revision = 81; revision <= 128; revision++) {
     let payload;
-    const capture = (update) => { payload = Buffer.from(update).toString('base64'); };
+    const capture = (update) => {
+      payload = Buffer.from(update).toString('base64');
+    };
     doc.on('update', capture);
     doc.getText('monaco').insert(0, 'x');
     doc.off('update', capture);
@@ -316,7 +358,8 @@ test('passive observer checkpoints at the doubled threshold when the author leav
       ({ roomId, payload }) => probe.invoke('UpdateYjs', roomId, payload),
       { roomId, payload }
     );
-    await expect.poll(async () => (await revisions(observer, roomId)).DocumentRevision)
+    await expect
+      .poll(async () => (await revisions(observer, roomId)).DocumentRevision)
       .toBe(revision);
     if (revision === 127) {
       await observer.waitForTimeout(1500);
@@ -324,7 +367,8 @@ test('passive observer checkpoints at the doubled threshold when the author leav
       expect((await syncState(observer, roomId)).CheckpointRevision).toBe(0);
     }
   }
-  await expect.poll(async () => (await syncState(observer, roomId)).CheckpointRevision)
+  await expect
+    .poll(async () => (await syncState(observer, roomId)).CheckpointRevision)
     .toBe(128);
   expect(observerCount()).toBe(1);
   doc.destroy();

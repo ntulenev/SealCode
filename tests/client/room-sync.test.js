@@ -255,8 +255,15 @@ for (const [label, revisions, bytes, author, expected] of [
   ['older revision', -1, 512 * 1024, true, false]
 ]) {
   test(`checkpoint policy: ${label}`, () => {
-    assert.equal(shouldWriteCheckpoint({ documentRevision: 10 + revisions,
-      checkpointRevision: 10, bytesSinceCheckpoint: bytes, isLatestAuthor: author }), expected);
+    assert.equal(
+      shouldWriteCheckpoint({
+        documentRevision: 10 + revisions,
+        checkpointRevision: 10,
+        bytesSinceCheckpoint: bytes,
+        isLatestAuthor: author
+      }),
+      expected
+    );
   });
 }
 
@@ -264,8 +271,13 @@ test('checkpoint writer uses its configured delay', () => {
   let actualDelay;
   const writer = new CheckpointWriter({
     delay: 1000,
-    scheduler: { schedule: (key, delay) => { actualDelay = delay; } },
-    ready: () => true, revision: () => 64
+    scheduler: {
+      schedule: (key, delay) => {
+        actualDelay = delay;
+      }
+    },
+    ready: () => true,
+    revision: () => 64
   });
   writer.schedule();
   assert.equal(actualDelay, 1000);

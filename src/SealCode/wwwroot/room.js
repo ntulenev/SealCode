@@ -1197,6 +1197,7 @@ connection.on('YjsUpdated', (updateBase64, documentRevision, roomVersion, author
 });
 
 connection.on('YjsCheckpointed', (revision) => {
+  revision = Number(revision);
   if (!Number.isSafeInteger(revision) || revision <= 0) return;
   checkpointJournal.noteCheckpoint(revision);
 });
