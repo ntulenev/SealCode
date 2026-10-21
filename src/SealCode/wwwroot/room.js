@@ -1,3 +1,11 @@
+import { base64FromUint8, uint8FromBase64 } from './encoding.js';
+import {
+  isCopyShortcut,
+  isUndoShortcut,
+  isRedoShortcut,
+  isUndoRedoShortcut,
+  isPasteShortcut
+} from './keyboard-shortcuts.js';
 import { HubMethods, HubEvents } from './hub-contract.js';
 
 import { HubErrorCode, classifyHubError, createHubError } from './hub-errors.js';
@@ -370,28 +378,6 @@ async function rejoinRoomWithRetry() {
   }, delayMs);
 }
 
-function base64FromUint8(data) {
-  if (!data || data.length === 0) return '';
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < data.length; i += chunkSize) {
-    const chunk = data.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
-function uint8FromBase64(base64) {
-  if (!base64) return new Uint8Array();
-  const binary = atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
 function truncateName(name) {
   if (!name) return '';
   if (name.length <= 10) return name;
@@ -632,41 +618,6 @@ function hasNonEmptyEditorSelection() {
     return false;
   }
   return selections.some((selection) => !selection.isEmpty());
-}
-
-function isCopyShortcutKeyboardEvent(event) {
-  if (!event) return false;
-  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-  return key === 'c' && (event.ctrlKey || event.metaKey) && !event.altKey;
-}
-
-function isUndoShortcutKeyboardEvent(event) {
-  if (!event) return false;
-  if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
-  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-  const code = typeof event.code === 'string' ? event.code.toLowerCase() : '';
-  const isUndoKey = key === 'z' || code === 'keyz';
-  return isUndoKey && !event.shiftKey;
-}
-
-function isRedoShortcutKeyboardEvent(event) {
-  if (!event) return false;
-  if (!(event.ctrlKey || event.metaKey) || event.altKey) return false;
-  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-  const code = typeof event.code === 'string' ? event.code.toLowerCase() : '';
-  const isRedoKey = key === 'y' || code === 'keyy';
-  const isShiftedUndoKey = (key === 'z' || code === 'keyz') && event.shiftKey;
-  return isRedoKey || isShiftedUndoKey;
-}
-
-function isUndoRedoShortcutKeyboardEvent(event) {
-  return isUndoShortcutKeyboardEvent(event) || isRedoShortcutKeyboardEvent(event);
-}
-
-function isPasteShortcutKeyboardEvent(event) {
-  if (!event) return false;
-  const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-  return key === 'v' && (event.ctrlKey || event.metaKey) && !event.altKey;
 }
 
 async function loadFeatures() {
@@ -951,23 +902,23 @@ function initMonaco() {
 
   editor.onKeyDown((keyboardEvent) => {
     const browserEvent = keyboardEvent.browserEvent;
-    if (isPasteShortcutKeyboardEvent(browserEvent)) {
+    if (isPasteShortcut(browserEvent)) {
       undoHistory?.stopCapturing();
       setTimeout(() => undoHistory?.stopCapturing(), 0);
     }
-    if (isUndoRedoShortcutKeyboardEvent(browserEvent)) {
+    if (isUndoRedoShortcut(browserEvent)) {
       browserEvent.preventDefault();
       browserEvent.stopImmediatePropagation();
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
-      if (isUndoShortcutKeyboardEvent(browserEvent)) {
+      if (isUndoShortcut(browserEvent)) {
         performCollaborativeUndo();
       } else {
         performCollaborativeRedo();
       }
       return;
     }
-    if (!isCopyShortcutKeyboardEvent(browserEvent)) return;
+    if (!isCopyShortcut(browserEvent)) return;
     if (hasNonEmptyEditorSelection()) return;
     browserEvent.preventDefault();
     browserEvent.stopImmediatePropagation();
