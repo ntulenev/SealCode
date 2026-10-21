@@ -1,15 +1,7 @@
 import { csrf } from './admin-token.js';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 async function createRoom(request) {
-  expect(
-    (
-      await request.post('/admin/login', {
-        headers: await csrf(request),
-        form: { name: 'BrowserAdmin', password: 'browser-pass' }
-      })
-    ).ok()
-  ).toBeTruthy();
   const response = await request.post('/admin/rooms', {
     headers: await csrf(request),
     data: { name: `Recovery ${Date.now()}`, language: 'csharp' }

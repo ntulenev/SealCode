@@ -1,8 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { csrf } from './admin-token.js';
 
 test('room runs with local assets and CSP, including a language worker', async ({
-  page
+  page,
+  baseURL
 }) => {
   const errors = [];
   const external = [];
@@ -10,8 +11,8 @@ test('room runs with local assets and CSP, including a language worker', async (
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('request', (request) => {
     if (
-      !request.url().startsWith('http://127.0.0.1:5087') &&
-      !request.url().startsWith('ws://127.0.0.1:5087')
+      !request.url().startsWith(baseURL) &&
+      !request.url().startsWith(baseURL.replace('http', 'ws'))
     )
       external.push(request.url());
   });
@@ -21,10 +22,6 @@ test('room runs with local assets and CSP, including a language worker', async (
     document.addEventListener('securitypolicyviolation', (event) =>
       window.cspViolations.push(event.violatedDirective)
     );
-  });
-  await page.request.post('/admin/login', {
-    headers: await csrf(page.request),
-    form: { name: 'BrowserAdmin', password: 'browser-pass' }
   });
   const created = await page.request.post('/admin/rooms', {
     headers: await csrf(page.request),

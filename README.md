@@ -59,7 +59,9 @@ dotnet run --project src/SealCode/SealCode.csproj
 ## Tests
 
 After `npm ci`, install Chromium once with `npx playwright install chromium`.
-Browser tests start their own isolated application instance.
+Run `npm run build:client` before browser tests. Browser tests build the server and
+start their own isolated application instance. Set `E2E_PORT` to override the HTTP
+port (5087) or the production HTTPS check port (5088).
 
 | Command | Coverage |
 | --- | --- |

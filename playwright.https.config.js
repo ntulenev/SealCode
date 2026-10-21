@@ -1,6 +1,7 @@
 import { testHostCommand } from './tests/test-host.js';
 import { defineConfig } from '@playwright/test';
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
+const baseURL = `https://localhost:${process.env.E2E_PORT || 5088}`;
 const salt = randomBytes(16);
 const header = Buffer.alloc(13);
 header[0] = 1;
@@ -18,15 +19,15 @@ export default defineConfig({
   outputDir: 'test-results/https',
   workers: 1,
   use: {
-    baseURL: 'https://localhost:5088',
+    baseURL,
     ignoreHTTPSErrors: true,
     trace: 'retain-on-failure'
   },
   webServer: {
-    command: testHostCommand('https://localhost:5088', [
+    command: testHostCommand(baseURL, [
       { Name: 'BrowserAdmin', PasswordHash: hash, IsSuperAdmin: true }
     ]),
-    url: 'https://localhost:5088/health',
+    url: `${baseURL}/health`,
     ignoreHTTPSErrors: true,
     reuseExistingServer: false,
     env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Production' }

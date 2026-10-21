@@ -1,16 +1,8 @@
 import { csrf } from './admin-token.js';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import * as Y from 'yjs';
 
 async function createAndJoin(page) {
-  expect(
-    (
-      await page.request.post('/admin/login', {
-        headers: await csrf(page.request),
-        form: { name: 'BrowserAdmin', password: 'browser-pass' }
-      })
-    ).ok()
-  ).toBeTruthy();
   const response = await page.request.post('/admin/rooms', {
     headers: await csrf(page.request),
     data: { name: 'Sync limit', language: 'csharp' }

@@ -1,15 +1,7 @@
 import { csrf } from './admin-token.js';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 async function createRoom(request) {
-  const loginResponse = await request.post('/admin/login', {
-    headers: await csrf(request),
-    form: {
-      name: 'BrowserAdmin',
-      password: 'browser-pass'
-    }
-  });
-  expect(loginResponse.ok()).toBeTruthy();
 
   const createResponse = await request.post('/admin/rooms', {
     headers: await csrf(request),
