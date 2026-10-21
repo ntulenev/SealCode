@@ -26,6 +26,7 @@ dotnet run --project src/SealCode/SealCode.csproj
 2. Open the app at `http://localhost:5000` (or the URL shown in the console).
 
 **Tests**
+- `npm run test:smoke` — a quick check of the basic room workflow after changes.
 - `dotnet test src/SealCode.slnx`
 - With Node.js 20 or newer: `npm install`, `npx playwright install chromium`,
   then `npm test` for CRDT unit tests and two-browser collaboration tests.

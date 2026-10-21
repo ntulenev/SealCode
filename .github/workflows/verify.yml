@@ -29,7 +29,9 @@ jobs:
       - name: Client tests and separate JS coverage
         run: node --test --experimental-test-coverage '--test-coverage-include=src/SealCode/wwwroot/*.js' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/client.lcov tests/client/*.test.js
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Smoke test
+        run: npm run test:smoke
+      - run: npx playwright test --grep-invert @smoke
       - name: Production HTTPS tests
         run: |
           dotnet dev-certs https

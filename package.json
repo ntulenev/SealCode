@@ -9,6 +9,7 @@
     "test": "npm run test:client && npm run test:e2e",
     "test:client": "node --test --experimental-test-coverage tests/client/*.test.js",
     "test:e2e": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
     "build:client": "node scripts/build-client.mjs"
   },
   "devDependencies": {
