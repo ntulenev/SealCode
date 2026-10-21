@@ -39,7 +39,9 @@ internal sealed class AdminHttpSecurity : IDisposable
     /// <param name="invocation">The endpoint invocation.</param>
     /// <param name="next">The next endpoint filter.</param>
     /// <returns>The endpoint result or a limit rejection.</returns>
-    public async ValueTask<object?> FilterLoginAsync(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+    public async ValueTask<object?> FilterLoginAsync(
+        EndpointFilterInvocationContext invocation,
+        EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
         var request = context.Request;
@@ -48,24 +50,28 @@ internal sealed class AdminHttpSecurity : IDisposable
             .AttemptAcquire();
         if (!sourceLease.IsAcquired)
         {
-            return Results.StatusCode(429);
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
+
         if (!request.HasFormContentType)
         {
             return Results.BadRequest();
         }
+
         var form = await request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
         var name = form["name"].ToString();
         if (name.Length > 64 || form["password"].ToString().Length > 1024)
         {
             return Results.BadRequest();
         }
+
         using var nameLease = _names[(uint)StringComparer.OrdinalIgnoreCase.GetHashCode(name.Trim()) % 256]
             .AttemptAcquire();
         if (!nameLease.IsAcquired)
         {
-            return Results.StatusCode(429);
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
+
         return await next(invocation).ConfigureAwait(false);
     }
 

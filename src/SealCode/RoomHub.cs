@@ -259,7 +259,9 @@ public sealed class RoomHub : Hub
         {
             _logger.LogDebug(
                 "Ignored stale Yjs checkpoint for {RoomId}: based on {BasedOnRevision}, current {DocumentRevision}",
-                parsedRoomId.Value, basedOnRevision, room.DocumentRevision.Value);
+                parsedRoomId.Value,
+                basedOnRevision,
+                room.DocumentRevision.Value);
             return false;
         }
 

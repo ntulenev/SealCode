@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 using Models.Configuration;
 using Models.Exceptions;
 
@@ -17,7 +19,7 @@ public sealed class ResourceBudgetTests
     public void NewConnectionLimitRejectsOutOfRangeValues(int value)
     {
         var limits = new RoomLimits { NewConnectionsPerSourcePerMinute = value };
-        Assert.False(System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+        Assert.False(Validator.TryValidateObject(
             limits, new(limits), [], validateAllProperties: true));
     }
 
@@ -27,7 +29,7 @@ public sealed class ResourceBudgetTests
         var limits = new RoomLimits();
         Assert.Equal(64, limits.CheckpointEveryRevisions);
         Assert.Equal(256 * 1024, limits.CheckpointEveryBase64Bytes);
-        Assert.True(System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+        Assert.True(Validator.TryValidateObject(
             limits, new(limits), [], validateAllProperties: true));
     }
 
@@ -38,7 +40,7 @@ public sealed class ResourceBudgetTests
     public void CheckpointThresholdsRequireJournalHeadroom(int count, int bytes, bool valid)
     {
         var limits = new RoomLimits { MaxJournalCount = count, MaxJournalBytes = bytes };
-        Assert.Equal(valid, System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+        Assert.Equal(valid, Validator.TryValidateObject(
             limits, new(limits), [], validateAllProperties: true));
     }
 
@@ -53,11 +55,11 @@ public sealed class ResourceBudgetTests
     [InlineData(nameof(RoomLimits.CheckpointEveryBase64Bytes), 4194305, false)]
     public void CheckpointThresholdRangesAreValidated(string property, int value, bool valid)
     {
-        var context = new System.ComponentModel.DataAnnotations.ValidationContext(new RoomLimits())
+        var context = new ValidationContext(new RoomLimits())
         {
             MemberName = property
         };
-        Assert.Equal(valid, System.ComponentModel.DataAnnotations.Validator.TryValidateProperty(value, context, []));
+        Assert.Equal(valid, Validator.TryValidateProperty(value, context, []));
     }
 
     private static RoomState Create(RoomLimits limits) => new(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch, new("admin"), limits: limits);
