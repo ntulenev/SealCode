@@ -8,6 +8,12 @@ namespace Models.Configuration;
 public sealed class RoomLimits : IValidatableObject
 {
     /// <summary>
+    /// Maximum size in bytes of a SignalR message.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "Named public contract required by the hosting configuration.")]
+    public const int MaxSignalRMessageBytes = 16 * 1024 * 1024;
+
+    /// <summary>
     /// Gets the maximum update size in Base64 characters.
     /// </summary>
     [Range(1024, 12 * 1024 * 1024)]

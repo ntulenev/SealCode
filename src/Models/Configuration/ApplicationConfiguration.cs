@@ -8,6 +8,11 @@ namespace Models.Configuration;
 public sealed class ApplicationConfiguration
 {
     /// <summary>
+    /// Gets trusted reverse proxy IP addresses.
+    /// </summary>
+    public string[] TrustedProxies { get; init; } = [];
+
+    /// <summary>
     /// Gets resource budgets.
     /// </summary>
     public RoomLimits Limits { get; init; } = new();

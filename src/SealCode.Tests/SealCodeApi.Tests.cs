@@ -408,6 +408,30 @@ public sealed class SealCodeApiTests
         problem.GetProperty("title").GetString().Should().Be("LimitExceeded");
     }
 
+    [Fact]
+    public async Task RootShouldServeIndexHtml()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("<!doctype html>");
+    }
+
+    [Fact]
+    public void InvalidTrustedProxyShouldFailStartupWithValidationMessage()
+    {
+        using var originalFactory = CreateFactory();
+        using var factory = originalFactory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
+            config.AddInMemoryCollection(new Dictionary<string, string?> { ["TrustedProxies:0"] = "not-an-ip" })));
+
+        var action = () => factory.CreateClient();
+
+        action.Should().Throw<OptionsValidationException>().WithMessage("*TrustedProxies contains an invalid IP address: not-an-ip*");
+    }
+
     private static SealCodeAppFactory CreateFactory() => new();
 
     [Fact]

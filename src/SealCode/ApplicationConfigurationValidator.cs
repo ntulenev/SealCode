@@ -28,6 +28,13 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
     public ValidateOptionsResult Validate(string? name, ApplicationConfiguration options)
     {
         var errors = new List<string>();
+        foreach (var proxy in options.TrustedProxies)
+        {
+            if (!System.Net.IPAddress.TryParse(proxy, out _))
+            {
+                errors.Add($"TrustedProxies contains an invalid IP address: {proxy}");
+            }
+        }
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var admin in options.AdminUsers ?? [])
         {
