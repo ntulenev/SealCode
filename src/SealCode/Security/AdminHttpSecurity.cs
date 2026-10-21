@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
 
+using SealCode.Hosting;
+
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace SealCode.Security;
@@ -45,7 +47,7 @@ internal sealed class AdminHttpSecurity : IDisposable
     {
         var context = invocation.HttpContext;
         var request = context.Request;
-        var source = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var source = ConnectionSource.From(context.Connection.RemoteIpAddress);
         using var sourceLease = _sources[(uint)StringComparer.Ordinal.GetHashCode(source) % 256]
             .AttemptAcquire();
         if (!sourceLease.IsAcquired)

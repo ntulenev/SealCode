@@ -116,6 +116,7 @@ export function createRoomApplication({
     session: yjs,
     getDisplayName: () => displayName,
     start: () => ensureConnectionStarted(),
+    stop: () => connection.stop(),
     connectedState: signalR.HubConnectionState.Connected,
     onJoinStart: () => joinError.classList.add('hidden'),
     applyJoin: (result) => {
@@ -735,6 +736,7 @@ export function createRoomApplication({
     setStatus('connected');
     setLanguageReadOnly(true);
     const joined = await lifecycle.joinRoom();
+    if (!joined && !lifecycle.joined) await connection.stop();
     if (joined) {
       setEditorReadOnly(false);
       setLanguageReadOnly(false);

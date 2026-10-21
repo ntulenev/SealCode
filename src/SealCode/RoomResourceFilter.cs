@@ -8,6 +8,7 @@ using Models.Configuration;
 using Models.Exceptions;
 
 using SealCode.Hub;
+using SealCode.Hosting;
 
 namespace SealCode;
 
@@ -20,11 +21,13 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
     /// Initializes a new instance of the <see cref="RoomResourceFilter"/> class.
     /// </summary>
     /// <param name="settings">The application settings.</param>
+    /// <param name="timeProvider">The connection deadline clock.</param>
     /// <exception cref="ArgumentNullException">Thrown when the settings are null.</exception>
-    public RoomResourceFilter(IOptions<ApplicationConfiguration> settings)
+    public RoomResourceFilter(IOptions<ApplicationConfiguration> settings, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _limits = settings.Value.Limits;
         _sources = [.. Enumerable.Range(0, 256).Select(_ => Limiter(_limits.NewConnectionsPerSourcePerMinute, 60))];
         _connections = new SemaphoreSlim(_limits.MaxConnections);
@@ -35,7 +38,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         HubLifetimeContext context,
         Func<HubLifetimeContext, Task> next)
     {
-        var address = context.Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var address = ConnectionSource.From(context.Context.GetHttpContext()?.Connection.RemoteIpAddress);
         using var lease = _sources[(uint)StringComparer.Ordinal.GetHashCode(address) % 256].AttemptAcquire();
         if (!lease.IsAcquired || !_connections.Wait(0))
         {
@@ -43,6 +46,26 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
             context.Context.Abort();
             throw HubErrors.Create(HubErrorCode.RateLimited, "Connection capacity reached");
         }
+        lock (_sourceLock)
+        {
+            var count = _activeSources.GetValueOrDefault(address);
+            if (count >= _limits.MaxConnectionsPerSource)
+            {
+                _ = _connections.Release();
+                _throttled.Add(1);
+                context.Context.Abort();
+                throw HubErrors.Create(HubErrorCode.RateLimited, "Connection capacity reached");
+            }
+            _activeSources[address] = count + 1;
+        }
+        context.Context.Items["connectionSource"] = address;
+        context.Context.Items["unjoinedTimer"] = _timeProvider.CreateTimer(_ =>
+        {
+            if (context.Context.GetActiveRoomId() is null)
+            {
+                context.Context.Abort();
+            }
+        }, null, TimeSpan.FromSeconds(_limits.UnjoinedConnectionTimeoutSeconds), Timeout.InfiniteTimeSpan);
         context.Context.Items["invocationLimiter"] = Limiter(_limits.InvocationsPerSecond, 1);
         context.Context.Items["connectionPermit"] = true;
         try
@@ -106,6 +129,21 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
 
     private void Release(HubLifetimeContext context)
     {
+        if (context.Context.Items.Remove("unjoinedTimer", out var timer))
+        {
+            ((ITimer)timer!).Dispose();
+        }
+        if (context.Context.Items.Remove("connectionSource", out var source))
+        {
+            lock (_sourceLock)
+            {
+                var key = (string)source!;
+                if (--_activeSources[key] == 0)
+                {
+                    _ = _activeSources.Remove(key);
+                }
+            }
+        }
         if (context.Context.Items.Remove("connectionPermit"))
         {
             _ = _connections.Release();
@@ -117,6 +155,20 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         }
     }
 
+    internal int TrackedSourceCount
+    {
+        get
+        {
+            lock (_sourceLock)
+            {
+                return _activeSources.Count;
+            }
+        }
+    }
+
+    private readonly Lock _sourceLock = new();
+    private readonly Dictionary<string, int> _activeSources = new(StringComparer.Ordinal);
+    private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _connections;
     private readonly RoomLimits _limits;
     // Fixed buckets bound anonymous-source limiter memory even under rotating addresses.

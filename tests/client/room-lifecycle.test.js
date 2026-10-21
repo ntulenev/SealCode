@@ -161,3 +161,13 @@ test('a missing room ends rejoin without scheduling another attempt', async () =
   assert.equal(reason, 'Room not found.');
   assert.equal(jobs.size, 0);
 });
+
+test('closing a room stops its transport exactly once', async () => {
+  const { lifecycle } = create();
+  let stops = 0;
+  lifecycle.stop = async () => { stops++; };
+  lifecycle.closeRoom('closed');
+  lifecycle.closeRoom('closed again');
+  await new Promise(setImmediate);
+  assert.equal(stops, 1);
+});

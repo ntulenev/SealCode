@@ -62,6 +62,28 @@ public sealed class ResourceBudgetTests
         Assert.Equal(valid, Validator.TryValidateProperty(value, context, []));
     }
 
+    [Theory]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 0, false)]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 1, true)]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 10000, true)]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 10001, false)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 4, false)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 5, true)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 3600, true)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 3601, false)]
+    public void ConnectionBudgetRangesAreValidated(string property, int value, bool valid)
+    {
+        var context = new ValidationContext(new RoomLimits()) { MemberName = property };
+        Assert.Equal(valid, Validator.TryValidateProperty(value, context, []));
+    }
+
+    [Fact]
+    public void SourceBudgetMustFitTotalCapacity()
+    {
+        var limits = new RoomLimits { MaxConnections = 10, MaxConnectionsPerSource = 11 };
+        Assert.False(Validator.TryValidateObject(limits, new(limits), [], validateAllProperties: true));
+    }
+
     private static RoomState Create(RoomLimits limits) => new(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch, new("admin"), limits: limits);
 
     [Theory]

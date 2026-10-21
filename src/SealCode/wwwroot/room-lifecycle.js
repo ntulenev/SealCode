@@ -21,6 +21,7 @@ export class RoomLifecycle {
     session,
     getDisplayName,
     start,
+    stop = async () => {},
     connectedState = 'Connected',
     onJoinStart,
     applyJoin,
@@ -40,6 +41,7 @@ export class RoomLifecycle {
     this.session = session;
     this.getDisplayName = getDisplayName;
     this.start = start;
+    this.stop = stop;
     this.connectedState = connectedState;
     this.onJoinStart = onJoinStart;
     this.applyJoin = applyJoin;
@@ -132,6 +134,7 @@ export class RoomLifecycle {
   }
 
   closeRoom(reason) {
+    if (this.closed) return;
     this.closed = true;
     this.joined = false;
     this.session.synchronizationEpoch += 1;
@@ -140,6 +143,9 @@ export class RoomLifecycle {
     this.clearRejoinRetryTimer();
     this.setReadOnly(true);
     this.onClose(reason);
+    Promise.resolve().then(() => this.stop()).catch((error) =>
+      console.warn('Failed to stop connection.', error)
+    );
   }
 
   pause(status) {
