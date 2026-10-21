@@ -30,6 +30,7 @@ export class UpdateQueue {
     setTimer = (fn, delay) => setTimeout(fn, delay),
     clearTimer = (timer) => clearTimeout(timer),
     maxBytes = 8 * 1024 * 1024,
+    maxEncodedBytes = 4 * 1024 * 1024,
     maxCount = 2048
   }) {
     this.send = send;
@@ -41,6 +42,8 @@ export class UpdateQueue {
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.maxBytes = maxBytes;
+    this.maxEncodedBytes = maxEncodedBytes;
+    this.singleUpdates = false;
     this.maxCount = maxCount;
     this.pending = [];
     this.timer = null;
@@ -79,18 +82,34 @@ export class UpdateQueue {
   async flush() {
     if (this.blocked || this.inFlight || !this.pending.length || !this.ready()) return;
     const generation = this.generation;
-    const updates = this.pending.splice(0);
+    let count = 1;
+    let estimate = 4 * Math.ceil(this.pending[0].length / 3);
+    while (!this.singleUpdates && count < this.pending.length) {
+      const next = 4 * Math.ceil(this.pending[count].length / 3);
+      if (estimate + next > this.maxEncodedBytes) break;
+      estimate += next;
+      count++;
+    }
+    let payload =
+      count === 1 ? this.pending[0] : this.merge(this.pending.slice(0, count));
+    while (count > 1 && 4 * Math.ceil(payload.length / 3) > this.maxEncodedBytes) {
+      count = Math.max(1, Math.floor(count / 2));
+      payload = count === 1 ? this.pending[0] : this.merge(this.pending.slice(0, count));
+    }
+    const updates = this.pending.splice(0, count);
     this.flight = updates;
     this.inFlight = true;
     let retryDelay = 60;
     try {
-      await this.send(updates.length === 1 ? updates[0] : this.merge(updates));
+      await this.send(payload);
       if (generation !== this.generation) return;
       this.onSuccess();
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
-      this.blocked = classifyHubError(error) === HubErrorCode.LimitExceeded;
+      const limited = classifyHubError(error) === HubErrorCode.LimitExceeded;
+      if (limited && updates.length > 1) this.singleUpdates = true;
+      this.blocked = limited && updates.length === 1;
       retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
     } finally {
@@ -104,6 +123,7 @@ export class UpdateQueue {
   }
   reset() {
     this.generation++;
+    this.singleUpdates = false;
     if (this.timer) this.clearTimer(this.timer);
     this.pending = [];
     this.flight = [];
@@ -231,6 +251,7 @@ export class SnapshotRecovery {
 export class CheckpointWriter {
   constructor({
     delay = 400,
+    retryAfterRevisions = 1,
     scheduler,
     ready,
     capture,
@@ -242,6 +263,7 @@ export class CheckpointWriter {
     onError
   }) {
     this.delay = delay;
+    this.retryAfterRevisions = retryAfterRevisions;
     this.scheduler = scheduler;
     this.ready = ready;
     this.capture = capture;
@@ -260,7 +282,8 @@ export class CheckpointWriter {
       !this.ready() ||
       this.inFlight ||
       this.timer ||
-      this.revision() === this.skippedRevision
+      (this.skippedRevision >= 0 &&
+        this.revision() < this.skippedRevision + this.retryAfterRevisions)
     )
       return;
     this.timer = true;

@@ -342,3 +342,93 @@ test('checkpoint tracker rebuilds sync accounting and resets the document sessio
   assert.equal(tracker.bytesSinceCheckpoint, 0);
   assert.equal(tracker.isLatestAuthor, false);
 });
+
+test('queue splits batches within the encoded limit and retains the tail', async () => {
+  const sent = [];
+  const f = fixture((update) => sent.push([...update]), { maxEncodedBytes: 8 });
+  for (let i = 1; i <= 3; i++) f.queue.enqueue(Uint8Array.of(i, i, i));
+  while (f.queue.pending.length) await f.tick();
+  assert.deepEqual(sent, [
+    [1, 1, 1, 2, 2, 2],
+    [3, 3, 3]
+  ]);
+  assert.equal(f.queue.blocked, false);
+});
+
+test('a rejected batch retries singly but an oversized single update blocks', async () => {
+  const sent = [];
+  const f = fixture((update) => {
+    sent.push([...update]);
+    if (sent.length === 1) throw new Error('LimitExceeded');
+  });
+  f.queue.enqueue(Uint8Array.of(1));
+  f.queue.enqueue(Uint8Array.of(2));
+  await f.tick();
+  assert.equal(f.queue.blocked, false);
+  await f.tick();
+  await f.tick();
+  assert.deepEqual(sent, [[1, 2], [1], [2]]);
+  const single = fixture(
+    () => {
+      throw new Error('LimitExceeded');
+    },
+    { maxEncodedBytes: 1 }
+  );
+  single.queue.enqueue(Uint8Array.of(1, 2));
+  await single.tick();
+  assert.equal(single.queue.blocked, true);
+});
+
+test('checkpoint size refusal waits for the revision retry interval', async () => {
+  let revision = 10;
+  let schedules = 0;
+  let sends = 0;
+  let permanent;
+  const writer = new CheckpointWriter({
+    retryAfterRevisions: 64,
+    scheduler: {
+      schedule() {
+        schedules++;
+      },
+      cancel() {}
+    },
+    ready: () => true,
+    capture: () => 1,
+    current: () => true,
+    revision: () => revision,
+    payload() {
+      throw new Error('LimitExceeded: Checkpoint size');
+    },
+    send() {
+      sends++;
+    },
+    onSuccess() {},
+    onError(error, value) {
+      permanent = value;
+    }
+  });
+  await writer.run();
+  assert.equal(sends, 0);
+  assert.equal(permanent, true);
+  revision = 73;
+  writer.schedule();
+  assert.equal(schedules, 0);
+  revision = 74;
+  writer.schedule();
+  assert.equal(schedules, 1);
+});
+
+test('an unexpectedly large merge halves the prefix without dropping its tail', async () => {
+  const sent = [];
+  const f = fixture((update) => sent.push([...update]), {
+    maxEncodedBytes: 8,
+    merge: () => new Uint8Array(9)
+  });
+  f.queue.enqueue(Uint8Array.of(1));
+  f.queue.enqueue(Uint8Array.of(2));
+  await f.tick();
+  assert.deepEqual(sent, [[1]]);
+  assert.equal(f.queue.pending.length, 1);
+  await f.tick();
+  assert.deepEqual(sent, [[1], [2]]);
+});

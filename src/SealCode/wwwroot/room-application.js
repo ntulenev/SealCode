@@ -24,6 +24,7 @@ import {
 } from './room-sync.js';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
+import { readClientLimits } from './client-limits.js';
 
 /** Creates the room controllers and wires their UI and transport callbacks. */
 export function createRoomApplication({
@@ -53,6 +54,8 @@ export function createRoomApplication({
   } = elements;
   let collaborativeUndoEnabled = true;
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
+  let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
+  let maxSnapshotCharacters = 1024 * 1024;
 
   let displayName = '';
   const presence = new PresenceView({ editor: null, monaco, participantsList, document });
@@ -329,7 +332,11 @@ export function createRoomApplication({
         yjs.ytext.toString(),
         revision
       ];
-      if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
+      if (
+        args[1].length > maxEncodedCheckpointBytes ||
+        args[2].length > maxSnapshotCharacters ||
+        !fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes)
+      )
         throw createHubError(HubErrorCode.LimitExceeded, 'Checkpoint size');
       return args;
     },
@@ -495,21 +502,14 @@ export function createRoomApplication({
       const features = await response.json();
       collaborativeUndoEnabled =
         features.CollaborativeUndoEnabled ?? features.collaborativeUndoEnabled ?? true;
-      const limits = features.Limits ?? features.limits ?? {};
-      const revisions =
-        limits.CheckpointEveryRevisions ?? limits.checkpointEveryRevisions;
-      const bytes =
-        limits.CheckpointEveryBase64Bytes ?? limits.checkpointEveryBase64Bytes;
-      if (Number.isSafeInteger(revisions) && revisions > 0) {
-        checkpointEveryRevisions = revisions;
-      }
-      if (Number.isSafeInteger(bytes) && bytes > 0) {
-        checkpointEveryBase64Bytes = bytes;
-      }
-      const messageLimit = features.MaxYjsMessageBytes ?? features.maxYjsMessageBytes;
-      if (Number.isSafeInteger(messageLimit) && messageLimit > 1024) {
-        maxYjsMessageBytes = messageLimit;
-      }
+      const limits = readClientLimits(features);
+      checkpointEveryRevisions = limits.checkpointEveryRevisions;
+      checkpointEveryBase64Bytes = limits.checkpointEveryBase64Bytes;
+      maxYjsMessageBytes = limits.maxYjsMessageBytes;
+      maxEncodedCheckpointBytes = limits.maxEncodedCheckpointBytes;
+      maxSnapshotCharacters = limits.maxSnapshotCharacters;
+      updateSender.maxEncodedBytes = limits.maxEncodedUpdateBytes;
+      checkpointWriter.retryAfterRevisions = checkpointEveryRevisions;
     } catch (err) {
       console.warn(
         'Failed to load feature flags; collaborative undo remains enabled.',

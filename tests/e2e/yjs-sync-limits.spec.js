@@ -1,6 +1,7 @@
 import { csrf } from './admin-token.js';
 import { expect, test } from './fixtures.js';
 import * as Y from 'yjs';
+import { startIsolatedHost } from '../isolated-host.js';
 
 async function createAndJoin(page) {
   const response = await page.request.post('/admin/rooms', {
@@ -366,4 +367,44 @@ test('passive observer checkpoints at the doubled threshold when the author leav
   doc.destroy();
   await observer.evaluate(() => probe.stop());
   await observer.close();
+});
+
+test('offline edits are split to the server update budget after reconnect', async ({
+  browser
+}) => {
+  const host = await startIsolatedHost({ Limits: { MaxEncodedUpdateBytes: 64 * 1024 } });
+  const context = await browser.newContext({ baseURL: host.baseURL });
+  try {
+    const page = await context.newPage();
+    const login = await page.request.post('/admin/login', {
+      headers: await csrf(page.request),
+      form: { name: 'BrowserAdmin', password: 'browser-pass' }
+    });
+    expect(login.ok()).toBeTruthy();
+    const roomId = await createAndJoin(page);
+    const observerContext = await browser.newContext({ baseURL: host.baseURL });
+    try {
+      const observer = await observerContext.newPage();
+      await observer.goto(`/room/${roomId}`);
+      await observer.locator('#displayNameInput').fill('Bob');
+      await observer.locator('#joinBtn').click();
+      await expect(observer.locator('#joinOverlay')).toHaveClass(/hidden/);
+      await context.setOffline(true);
+      await insertText(page, 40000);
+      await insertText(page, 40000);
+      await context.setOffline(false);
+      await expect
+        .poll(
+          () => observer.evaluate(() => monaco.editor.getModels()[0].getValueLength()),
+          { timeout: 30000 }
+        )
+        .toBe(80000);
+      await expect(page.locator('#syncError')).toHaveClass(/hidden/);
+    } finally {
+      await observerContext.close();
+    }
+  } finally {
+    await context.close();
+    await host.stop();
+  }
 });
