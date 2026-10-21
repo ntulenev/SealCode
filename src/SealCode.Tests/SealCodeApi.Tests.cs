@@ -7,6 +7,8 @@ using FluentAssertions;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +23,87 @@ namespace SealCode.Tests;
 
 public sealed class SealCodeApiTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OnlyTrustedProxiesCanChangeLoginSource(bool trusted)
+    {
+        using var original = CreateFactory();
+        using var factory = original.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["TrustedProxies:0"] = trusted ? "127.0.0.1" : "127.0.0.2" }));
+            builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(new LoopbackStartupFilter()));
+        });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", "198.51.100.1");
+        for (var index = 0; index < 30; index++)
+        {
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["name"] = $"proxy-user-{index}",
+                ["password"] = "wrong"
+            });
+            using var response = await SecurePostAsync(client, "/admin/login", content);
+            response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        }
+        var firstBucket = (uint)StringComparer.Ordinal.GetHashCode("198.51.100.1") % 256;
+        var other = Enumerable.Range(2, 200).Select(index => $"198.51.100.{index}").First(address =>
+            (uint)StringComparer.Ordinal.GetHashCode(address) % 256 != firstBucket);
+        client.DefaultRequestHeaders.Remove("X-Forwarded-For");
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", other);
+        using var lastContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["name"] = "proxy-final-user",
+            ["password"] = "wrong"
+        });
+        using var last = await SecurePostAsync(client, "/admin/login", lastContent);
+        last.StatusCode.Should().Be(trusted ? HttpStatusCode.Redirect : HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task AdminValidationDefaultsAndMissingRoomResponsesAreExplicit()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var unauthorized = await client.GetAsync("/admin");
+        unauthorized.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        unauthorized.Headers.Location!.OriginalString.Should().Be("/admin/login");
+        _ = await LoginAsAdminAsync(client);
+        using var invalid = await SecureJsonAsync(client, "/admin/rooms", new { Name = "" });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await invalid.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("title").GetString().Should().Be("InvalidInput");
+        using var created = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Default language" });
+        var payload = await created.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("Language").GetString().Should().Be("csharp");
+        using var missing = await SecureDeleteAsync(client, $"/admin/rooms/{RoomId.New().Value}");
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var own = await SecureDeleteAsync(client, $"/admin/rooms/{payload.GetProperty("RoomId").GetString()}");
+        own.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task AllAdminsSeeAllRoomsWithRoleSpecificDeleteRights()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var owner = await LoginAsAdminAsync(client);
+        var ownId = await CreateRoomAsync(client, owner);
+        var root = await LoginAsync(client, "Root", "pass2");
+        var otherId = await CreateRoomAsync(client, root);
+        var rootRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
+        rootRooms.Should().HaveCount(2);
+        rootRooms!.All(room => room.GetProperty("CanDelete").GetBoolean()).Should().BeTrue();
+        owner = await LoginAsAdminAsync(client);
+        client.DefaultRequestHeaders.Remove("Cookie");
+        client.DefaultRequestHeaders.Add("Cookie", $"{owner.Name}={owner.Value}");
+        var rooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
+        rooms.Should().HaveCount(2);
+        rooms!.Single(room => room.GetProperty("RoomId").GetString() == ownId).GetProperty("CanDelete").GetBoolean().Should().BeTrue();
+        rooms.Single(room => room.GetProperty("RoomId").GetString() == otherId).GetProperty("CanDelete").GetBoolean().Should().BeFalse();
+    }
+
     [Fact]
     public async Task StaticFilesRevalidateEntryPointsAndCacheHashedAssets()
     {
@@ -865,6 +948,22 @@ public sealed class SealCodeApiTests
         var completed = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5)));
         completed.Should().BeSameAs(task);
         return await task;
+    }
+
+    private sealed class LoopbackStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+        {
+            return app =>
+            {
+                app.Use((context, proceed) =>
+                {
+                    context.Connection.RemoteIpAddress = IPAddress.Loopback;
+                    return proceed(context);
+                });
+                next(app);
+            };
+        }
     }
 
     private sealed class SealCodeAppFactory : WebApplicationFactory<Program>

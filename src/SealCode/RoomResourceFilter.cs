@@ -21,14 +21,17 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
     /// </summary>
     /// <param name="settings">The application settings.</param>
     /// <param name="timeProvider">The connection deadline clock.</param>
+    /// <param name="limiterFactory">An optional limiter factory for deterministic tests.</param>
     /// <exception cref="ArgumentNullException">Thrown when the settings are null.</exception>
-    public RoomResourceFilter(IOptions<ApplicationConfiguration> settings, TimeProvider? timeProvider = null)
+    public RoomResourceFilter(IOptions<ApplicationConfiguration> settings, TimeProvider? timeProvider = null,
+        Func<int, TimeSpan, RateLimiter>? limiterFactory = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        _limiterFactory = limiterFactory ?? Limiter;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _limits = settings.Value.Limits;
-        _sources = [.. Enumerable.Range(0, 256).Select(_ => Limiter(_limits.NewConnectionsPerSourcePerMinute, 60))];
+        _sources = [.. Enumerable.Range(0, 256).Select(_ => _limiterFactory(_limits.NewConnectionsPerSourcePerMinute, TimeSpan.FromMinutes(1)))];
         _connections = new SemaphoreSlim(_limits.MaxConnections);
     }
 
@@ -65,7 +68,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
                 context.Context.Abort();
             }
         }, null, TimeSpan.FromSeconds(_limits.UnjoinedConnectionTimeoutSeconds), Timeout.InfiniteTimeSpan);
-        context.Context.Items["invocationLimiter"] = Limiter(_limits.InvocationsPerSecond, 1);
+        context.Context.Items["invocationLimiter"] = _limiterFactory(_limits.InvocationsPerSecond, TimeSpan.FromSeconds(1));
         context.Context.Items["connectionPermit"] = true;
         try
         {
@@ -91,7 +94,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
     {
         if (context.Context.Items.TryGetValue("invocationLimiter", out var value))
         {
-            using var lease = ((FixedWindowRateLimiter)value!).AttemptAcquire();
+            using var lease = ((RateLimiter)value!).AttemptAcquire();
             if (!lease.IsAcquired)
             {
                 _throttled.Add(1);
@@ -118,10 +121,10 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         }
     }
 
-    private static FixedWindowRateLimiter Limiter(int permits, int seconds) => new(new FixedWindowRateLimiterOptions
+    private static FixedWindowRateLimiter Limiter(int permits, TimeSpan window) => new(new FixedWindowRateLimiterOptions
     {
         PermitLimit = permits,
-        Window = TimeSpan.FromSeconds(seconds),
+        Window = window,
         QueueLimit = 0,
         AutoReplenishment = true
     });
@@ -171,7 +174,8 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
     private readonly SemaphoreSlim _connections;
     private readonly RoomLimits _limits;
     // Fixed buckets bound anonymous-source limiter memory even under rotating addresses.
-    private readonly FixedWindowRateLimiter[] _sources;
+    private readonly RateLimiter[] _sources;
+    private readonly Func<int, TimeSpan, RateLimiter> _limiterFactory;
     private static readonly Meter _meter = new("SealCode.Hub");
     private static readonly Counter<long> _throttled = _meter.CreateCounter<long>("hub.throttled");
 }

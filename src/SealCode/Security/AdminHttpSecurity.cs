@@ -13,6 +13,17 @@ internal sealed class AdminHttpSecurity : IDisposable
 {
 
     /// <summary>
+    /// Initializes bounded login limiters.
+    /// </summary>
+    /// <param name="limiterFactory">An optional limiter factory for deterministic tests.</param>
+    public AdminHttpSecurity(Func<int, TimeSpan, RateLimiter>? limiterFactory = null)
+    {
+        limiterFactory ??= CreateLimiter;
+        _sources = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(30, TimeSpan.FromMinutes(1)))];
+        _names = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(10, TimeSpan.FromMinutes(1)))];
+    }
+
+    /// <summary>
     /// Validates an admin mutation before passing the request to the next handler.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
@@ -85,12 +96,15 @@ internal sealed class AdminHttpSecurity : IDisposable
             limiter.Dispose();
         }
     }
-    private static FixedWindowRateLimiter[] CreateLimiters(int permits)
-        => [.. Enumerable.Range(0, 256).Select(_ => new FixedWindowRateLimiter(new()
+    private static FixedWindowRateLimiter CreateLimiter(int permits, TimeSpan window) => new(new()
     {
-        PermitLimit = permits, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true
-    }))];
+        PermitLimit = permits,
+        Window = window,
+        QueueLimit = 0,
+        AutoReplenishment = true
+    });
+
     // Hash buckets bound limiter state for arbitrary names/addresses.
-    private readonly FixedWindowRateLimiter[] _sources = CreateLimiters(30);
-    private readonly FixedWindowRateLimiter[] _names = CreateLimiters(10);
+    private readonly RateLimiter[] _sources;
+    private readonly RateLimiter[] _names;
 }

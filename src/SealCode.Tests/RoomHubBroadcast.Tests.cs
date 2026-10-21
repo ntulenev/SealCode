@@ -16,6 +16,27 @@ namespace SealCode.Tests;
 public sealed class RoomHubBroadcastTests
 {
     [Theory]
+    [InlineData(null)]
+    [InlineData("invalid")]
+    [InlineData("missing")]
+    public async Task DisconnectWithoutAnExistingRoomIsHarmless(string? state)
+    {
+        var room = CreateRoom();
+        var manager = new Mock<IRoomManager>();
+        using var hub = CreateHub(room, manager, new Mock<IClientProxy>(), new Mock<IGroupManager>());
+        if (state is null)
+        {
+            hub.Context.ClearActiveRoom();
+        }
+        else
+        {
+            hub.Context.SetActiveRoom(state == "missing" ? room.RoomId.Value : state, "Alice");
+        }
+        await hub.OnDisconnectedAsync(null);
+        Assert.Equal(1, room.ConnectedUserCount);
+    }
+
+    [Theory]
     [InlineData("update")]
     [InlineData("language")]
     [InlineData("disconnect")]
