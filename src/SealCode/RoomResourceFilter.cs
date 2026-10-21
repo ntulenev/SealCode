@@ -7,6 +7,8 @@ using Microsoft.Extensions.Options;
 using Models.Configuration;
 using Models.Exceptions;
 
+using SealCode.Hub;
+
 namespace SealCode;
 
 /// <summary>
@@ -39,7 +41,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         {
             _throttled.Add(1);
             context.Context.Abort();
-            throw new HubException("RateLimited: Connection capacity reached");
+            throw HubErrors.Create(HubErrorCode.RateLimited, "Connection capacity reached");
         }
         context.Context.Items["invocationLimiter"] = Limiter(_limits.InvocationsPerSecond, 1);
         context.Context.Items["connectionPermit"] = true;
@@ -71,17 +73,17 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
             if (!lease.IsAcquired)
             {
                 _throttled.Add(1);
-                throw new HubException("RateLimited: Try again later");
+                throw HubErrors.Create(HubErrorCode.RateLimited, "Try again later");
             }
         }
         try
         {
             return await next(context).ConfigureAwait(false);
         }
-        catch (UnauthorizedAccessException ex) { throw new HubException(ex.Message); }
-        catch (ArgumentException) { throw new HubException("InvalidInput: Invalid room input"); }
-        catch (RoomNotFoundException ex) { throw new HubException(ex.Message); }
-        catch (RoomLimitException ex) { throw new HubException(ex.Message); }
+        catch (UnauthorizedAccessException) { throw HubErrors.Create(HubErrorCode.NotParticipant, ""); }
+        catch (ArgumentException) { throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid room input"); }
+        catch (RoomNotFoundException) { throw HubErrors.Create(HubErrorCode.RoomNotFound, ""); }
+        catch (RoomLimitException ex) { throw HubErrors.Create(HubErrorCode.LimitExceeded, ex.Message["LimitExceeded: ".Length..]); }
     }
 
     /// <inheritdoc />

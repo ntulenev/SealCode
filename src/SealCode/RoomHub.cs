@@ -7,13 +7,17 @@ using Models.Exceptions;
 
 using Transport.Models;
 
+using SealCode.Hub;
+
+using SignalRHub = Microsoft.AspNetCore.SignalR.Hub;
+
 namespace SealCode;
 
 /// <summary>
 /// SignalR hub for room interactions.
 /// </summary>
 #pragma warning disable CA1515 // Need for testing in mocks
-public sealed class RoomHub : Hub
+public sealed class RoomHub : SignalRHub
 #pragma warning restore CA1515 
 {
     /// <summary>
@@ -52,7 +56,7 @@ public sealed class RoomHub : Hub
             && activeRoom is string activeRoomId
             && !string.Equals(activeRoomId, parsedRoomId.Value, StringComparison.Ordinal))
         {
-            throw new HubException("Leave the current room before joining another room");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Leave the current room before joining another room", legacyInput: true);
         }
 
         var wasMember = Context.Items.ContainsKey("roomId");
@@ -70,15 +74,15 @@ public sealed class RoomHub : Hub
         }
         catch (ArgumentException)
         {
-            throw new HubException("InvalidInput: Invalid display name");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid display name");
         }
-        catch (RoomNotFoundException ex)
+        catch (RoomNotFoundException)
         {
-            throw new HubException(ex.Message);
+            throw HubErrors.Create(HubErrorCode.RoomNotFound, "");
         }
         catch (AddRoomUserException ex)
         {
-            throw new HubException(ex.Message);
+            throw HubErrors.Create(HubErrorCode.InvalidInput, ex.Message, legacyInput: true);
         }
 
         displayName = roomUser.Value;
@@ -141,14 +145,14 @@ public sealed class RoomHub : Hub
 
         if (string.IsNullOrWhiteSpace(updateBase64))
         {
-            throw new HubException("Update payload required");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Update payload required", legacyInput: true);
         }
 
         var room = GetRoomForParticipant(parsedRoomId, out var user);
 
         if (updateBase64.Length > room.Limits.MaxEncodedUpdateBytes)
         {
-            throw new HubException("LimitExceeded: Update size");
+            throw HubErrors.Create(HubErrorCode.LimitExceeded, "Update size");
         }
 
         byte[] update;
@@ -158,7 +162,7 @@ public sealed class RoomHub : Hub
         }
         catch (FormatException)
         {
-            throw new HubException("Invalid Yjs payload");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid Yjs payload", legacyInput: true);
         }
 
         var author = user.Value;
@@ -239,12 +243,12 @@ public sealed class RoomHub : Hub
         }
         catch (ArgumentException)
         {
-            throw new HubException("Invalid document revision");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid document revision", legacyInput: true);
         }
 
         if (string.IsNullOrWhiteSpace(stateBase64))
         {
-            throw new HubException("State payload required");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "State payload required", legacyInput: true);
         }
 
         var room = GetRoomForParticipant(parsedRoomId, out _);
@@ -252,7 +256,7 @@ public sealed class RoomHub : Hub
         if (stateBase64.Length > room.Limits.MaxEncodedCheckpointBytes
             || (textSnapshot?.Length ?? 0) > room.Limits.MaxSnapshotCharacters)
         {
-            throw new HubException("LimitExceeded: Checkpoint size");
+            throw HubErrors.Create(HubErrorCode.LimitExceeded, "Checkpoint size");
         }
 
         if (revision != room.DocumentRevision)
@@ -272,7 +276,7 @@ public sealed class RoomHub : Hub
         }
         catch (FormatException)
         {
-            throw new HubException("Invalid Yjs payload");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid Yjs payload", legacyInput: true);
         }
 
         var accepted = _sessions.Checkpoint(
@@ -332,7 +336,7 @@ public sealed class RoomHub : Hub
         }
         catch (ArgumentException)
         {
-            throw new HubException("Invalid language");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }
 
         await Clients.Group(parsedRoomId.Value)
@@ -359,12 +363,12 @@ public sealed class RoomHub : Hub
 
         if (position < 0)
         {
-            throw new HubException("Invalid cursor position");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid cursor position", legacyInput: true);
         }
 
         if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
         {
-            throw new HubException("Room not found");
+            throw HubErrors.Create(HubErrorCode.RoomNotFound, "");
         }
 
         if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user))
@@ -393,7 +397,7 @@ public sealed class RoomHub : Hub
 
         if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
         {
-            throw new HubException("Room not found");
+            throw HubErrors.Create(HubErrorCode.RoomNotFound, "");
         }
 
         if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user))
@@ -419,7 +423,7 @@ public sealed class RoomHub : Hub
 
         if (!_roomManager.TryGetRoom(parsedRoomId, out var room))
         {
-            throw new HubException("Room not found");
+            throw HubErrors.Create(HubErrorCode.RoomNotFound, "");
         }
 
         if (!room.TryGetRoomUser(new ConnectionId(Context.ConnectionId), out var user))
@@ -525,15 +529,15 @@ public sealed class RoomHub : Hub
         {
             return _sessions.GetParticipant(roomId, new(Context.ConnectionId), out user);
         }
-        catch (RoomNotFoundException ex) { throw new HubException(ex.Message); }
-        catch (UnauthorizedAccessException ex) { throw new HubException(ex.Message); }
+        catch (RoomNotFoundException) { throw HubErrors.Create(HubErrorCode.RoomNotFound, ""); }
+        catch (UnauthorizedAccessException) { throw HubErrors.Create(HubErrorCode.NotParticipant, ""); }
     }
 
     private static RoomId ParseRoomIdOrThrow(string roomId)
     {
         if (!RoomId.TryParse(roomId, out var parsedRoomId))
         {
-            throw new HubException("Invalid room id");
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid room id", legacyInput: true);
         }
 
         return parsedRoomId;

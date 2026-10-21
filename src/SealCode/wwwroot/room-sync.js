@@ -1,3 +1,5 @@
+import { HubErrorCode, classifyHubError, createHubError } from './hub-errors.js';
+
 /** Decides whether journal growth warrants a checkpoint from this participant. */
 export function shouldWriteCheckpoint({
   documentRevision,
@@ -59,7 +61,7 @@ export class UpdateQueue {
           this.maxBytes
       ) {
         this.blocked = true;
-        this.onError(new Error('LimitExceeded: Local pending queue'), true);
+        this.onError(createHubError(HubErrorCode.LimitExceeded, 'Local pending queue'), true);
         return;
       }
       this.pending.push(update);
@@ -87,8 +89,8 @@ export class UpdateQueue {
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
-      this.blocked = /LimitExceeded|too large/.test(String(error));
-      retryDelay = /RateLimited/.test(String(error)) ? 1100 : 500;
+      this.blocked = classifyHubError(error) === HubErrorCode.LimitExceeded;
+      retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
     } finally {
       if (generation === this.generation) {
@@ -277,7 +279,7 @@ export class CheckpointWriter {
       if (this.current(context) && accepted) this.onSuccess(revision);
     } catch (error) {
       if (!this.current(context)) return;
-      const permanent = /LimitExceeded|too large/.test(String(error));
+      const permanent = classifyHubError(error) === HubErrorCode.LimitExceeded;
       if (permanent) this.skippedRevision = revision;
       retry = !permanent;
       this.onError(error, permanent);

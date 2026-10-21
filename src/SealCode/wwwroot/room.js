@@ -1,3 +1,5 @@
+import { HubErrorCode, classifyHubError, createHubError } from './hub-errors.js';
+
 import { createMonacoAdapter } from './monaco-adapter.js';
 import { createRoomConnection } from './room-connection.js';
 import { RevisionedRoomView } from './room-presence.js';
@@ -128,7 +130,7 @@ const updateSender = new UpdateQueue({
   send: (update) => {
     const args = [roomId, base64FromUint8(update)];
     if (!fitsYjsMessage('UpdateYjs', args, maxYjsMessageBytes))
-      throw new Error('LimitExceeded: An edit is too large to send');
+      throw createHubError(HubErrorCode.LimitExceeded, 'An edit is too large to send');
     return connection.invoke('UpdateYjs', ...args);
   },
   onSuccess: () => {
@@ -249,7 +251,7 @@ const checkpointWriter = new CheckpointWriter({
       revision
     ];
     if (!fitsYjsMessage('CheckpointYjs', args, maxYjsMessageBytes))
-      throw new Error('LimitExceeded: Checkpoint size');
+      throw createHubError(HubErrorCode.LimitExceeded, 'Checkpoint size');
     return args;
   },
   send: (args) => connection.invoke('CheckpointYjs', ...args),
@@ -1226,7 +1228,7 @@ connection.on('UserCopy', (name) => {
 });
 
 function isRoomNotFound(error) {
-  return /\bRoom not found\b/.test(error?.message ?? '');
+  return classifyHubError(error) === HubErrorCode.RoomNotFound;
 }
 
 function closeRoom(reason) {
