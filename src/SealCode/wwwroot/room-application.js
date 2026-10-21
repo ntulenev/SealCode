@@ -163,6 +163,7 @@ export function createRoomApplication({
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
+      clearSyncError('rejoin');
       lastSentSelectionMultiLine = undefined;
       scheduleYjsRecovery();
       joinOverlay.classList.add('hidden');
@@ -172,6 +173,8 @@ export function createRoomApplication({
       joinError.textContent = error?.message || 'Failed to join room.';
       joinError.classList.remove('hidden');
     },
+    onRejoinError: (error) =>
+      showSyncError('rejoin', error?.message || 'Failed to rejoin room.'),
     onSynchronizationEnd: () => {
       yjs.flushBufferedYjsMessages();
       scheduleYjsUpdateSend();
@@ -201,6 +204,7 @@ export function createRoomApplication({
     merge: (updates) => Y.mergeUpdates(updates),
     ready: () =>
       !lifecycle.closed &&
+      lifecycle.participating &&
       yjs.ydoc &&
       !yjs.isSynchronizingYjs &&
       connection.state === signalR.HubConnectionState.Connected,
@@ -241,6 +245,7 @@ export function createRoomApplication({
   function isCurrentSyncContext(context) {
     return (
       !lifecycle.closed &&
+      lifecycle.participating &&
       yjs.ydoc === context.document &&
       yjs.yjsSession === context.session &&
       connection.connectionId === context.connectionId
@@ -248,7 +253,8 @@ export function createRoomApplication({
   }
   const recoveryController = new SnapshotRecovery({
     scheduler: syncScheduler,
-    active: () => !lifecycle.closed && lifecycle.joined && !!yjs.ydoc,
+    active: () =>
+      !lifecycle.closed && lifecycle.joined && lifecycle.participating && !!yjs.ydoc,
     ready: () =>
       !yjs.isSynchronizingYjs &&
       connection.state === signalR.HubConnectionState.Connected,
@@ -304,6 +310,7 @@ export function createRoomApplication({
     ready: () =>
       !lifecycle.closed &&
       lifecycle.joined &&
+      lifecycle.participating &&
       !!yjs.ydoc &&
       !!yjs.ytext &&
       yjs.currentDocumentRevision > 0 &&

@@ -165,9 +165,54 @@ test('a missing room ends rejoin without scheduling another attempt', async () =
 test('closing a room stops its transport exactly once', async () => {
   const { lifecycle } = create();
   let stops = 0;
-  lifecycle.stop = async () => { stops++; };
+  lifecycle.stop = async () => {
+    stops++;
+  };
   lifecycle.closeRoom('closed');
   lifecycle.closeRoom('closed again');
   await new Promise(setImmediate);
   assert.equal(stops, 1);
+});
+
+test('participation is restored only after a successful rejoin', async () => {
+  const { lifecycle, connection, jobs } = create();
+  let initialErrors = 0;
+  let rejoinErrors = 0;
+  lifecycle.onJoinError = () => {
+    initialErrors++;
+  };
+  lifecycle.onRejoinError = () => {
+    rejoinErrors++;
+  };
+  lifecycle.participating = true;
+  lifecycle.pause('reconnecting');
+  assert.equal(lifecycle.participating, false);
+  await lifecycle.rejoinRoomWithRetry();
+  assert.equal(initialErrors, 0);
+  assert.equal(rejoinErrors, 1);
+  assert.equal(jobs.size, 1);
+  connection.invoke = async () => ({});
+  await lifecycle.rejoinRoomWithRetry();
+  assert.equal(lifecycle.participating, true);
+});
+
+test('online with a live transport rejoins before enabling editing', async () => {
+  const { lifecycle, connection } = create();
+  const events = new Map();
+  const readOnly = [];
+  connection.onreconnected = connection.onreconnecting = connection.onclose = () => {};
+  lifecycle.setReadOnly = (value) => readOnly.push(value);
+  lifecycle.registerConnectivity({
+    addEventListener: (name, fn) => events.set(name, fn)
+  });
+  events.get('online')();
+  await new Promise(setImmediate);
+  assert.equal(lifecycle.participating, false);
+  assert.ok(!readOnly.includes(false));
+  connection.invoke = async () => ({});
+  events.get('online')();
+  await new Promise(setImmediate);
+  assert.equal(lifecycle.participating, true);
+  assert.equal(readOnly.at(-1), false);
+  lifecycle.closeRoom('done');
 });
