@@ -21,16 +21,19 @@ public sealed class RoomRegistry : IRoomRegistry
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="settings">Resource budgets.</param>
+    /// <param name="timeProvider">The clock used for room creation and activity.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
     public RoomRegistry(
         ILogger<RoomRegistry> logger,
-        IOptions<ApplicationConfiguration> settings)
+        IOptions<ApplicationConfiguration> settings,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
 
         ArgumentNullException.ThrowIfNull(settings);
 
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _limits = settings.Value.Limits;
     }
 
@@ -56,8 +59,8 @@ public sealed class RoomRegistry : IRoomRegistry
                 language,
                 new RoomText(string.Empty),
                 new RoomVersion(1),
-                DateTimeOffset.UtcNow,
-                createdBy, limits: _limits);
+                _timeProvider.GetUtcNow(),
+                createdBy, limits: _limits, timeProvider: _timeProvider);
 
             _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
 
@@ -93,8 +96,21 @@ public sealed class RoomRegistry : IRoomRegistry
         return Task.FromResult(true);
     }
 
+    /// <inheritdoc />
+    public Task<bool> DeleteRoomAsync(RoomId roomId, RoomDeletionReason reason, DateTimeOffset idleCutoff, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_rooms.TryGetValue(roomId, out var room) || !room.TryCloseIfIdle(idleCutoff))
+        {
+            return Task.FromResult(false);
+        }
+        // Once closed, finish removal even if shutdown cancellation arrives during the commit.
+        return DeleteRoomAsync(roomId, reason, CancellationToken.None);
+    }
+
     private readonly Lock _capacityGuard = new();
     private readonly RoomLimits _limits;
+    private readonly TimeProvider _timeProvider;
     private ImmutableDictionary<RoomId, RoomState> _rooms = [];
     private readonly ILogger<RoomRegistry> _logger;
 }

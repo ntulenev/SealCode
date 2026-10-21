@@ -1,6 +1,3 @@
-using System.Collections.Immutable;
-using System.Diagnostics.Metrics;
-
 using Models.Configuration;
 using Models.Exceptions;
 
@@ -23,6 +20,7 @@ public sealed class RoomState
     /// <param name="createdBy">The admin that created the room.</param>
     /// <param name="yjsState">The serialized Yjs document state (full update).</param>
     /// <param name="limits">Resource budgets.</param>
+    /// <param name="timeProvider">The clock used for activity timestamps.</param>
     public RoomState(
         RoomId roomId,
         RoomName name,
@@ -32,9 +30,12 @@ public sealed class RoomState
         DateTimeOffset lastUpdatedUtc,
         AdminUser createdBy,
         byte[]? yjsState = null,
-        RoomLimits? limits = null)
+        RoomLimits? limits = null,
+        TimeProvider? timeProvider = null)
     {
         _limits = limits ?? new RoomLimits();
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _lastActivityUtc = _timeProvider.GetUtcNow();
         RoomId = roomId;
         Name = name;
         Language = language;
@@ -42,7 +43,7 @@ public sealed class RoomState
         Version = version;
         LastUpdatedUtc = lastUpdatedUtc;
         CreatedBy = createdBy;
-        YjsState = yjsState is null ? [] : [.. yjsState];
+        _journal = new RoomDocumentJournal(_limits, yjsState);
     }
 
     /// <summary>
@@ -77,8 +78,13 @@ public sealed class RoomState
     /// </summary>
     public byte[] YjsState
     {
-        get => [.. _yjsState];
-        private set => _yjsState = value;
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _journal.State;
+            }
+        }
     }
 
     /// <summary>
@@ -90,7 +96,7 @@ public sealed class RoomState
         {
             lock (_versionGuard)
             {
-                return _journalBytes;
+                return _journal.Bytes;
             }
         }
     }
@@ -104,7 +110,7 @@ public sealed class RoomState
         {
             lock (_versionGuard)
             {
-                return _yjsUpdates.Count;
+                return _journal.Count;
             }
         }
     }
@@ -112,17 +118,49 @@ public sealed class RoomState
     /// <summary>
     /// Gets the latest CRDT document revision.
     /// </summary>
-    public RoomDocumentRevision DocumentRevision { get; private set; }
+    public RoomDocumentRevision DocumentRevision
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _journal.DocumentRevision;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the document revision represented by <see cref="YjsState"/>.
     /// </summary>
-    public RoomDocumentRevision YjsCheckpointRevision { get; private set; }
+    public RoomDocumentRevision YjsCheckpointRevision
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _journal.YjsCheckpointRevision;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the last updated timestamp in UTC.
     /// </summary>
     public DateTimeOffset LastUpdatedUtc { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent successful mutation, including participant joins and departures.
+    /// </summary>
+    public DateTimeOffset LastActivityUtc
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _lastActivityUtc;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the admin that created the room.
@@ -132,12 +170,12 @@ public sealed class RoomState
     /// <summary>
     /// Gets the connected users keyed by connection id.
     /// </summary>
-    public IReadOnlyDictionary<ConnectionId, RoomUser> ConnectedUsers => _connectedUsers;
+    public IReadOnlyDictionary<ConnectionId, RoomUser> ConnectedUsers => _membership.Users;
 
     /// <summary>
     /// Gets the number of connected users.
     /// </summary>
-    public int ConnectedUserCount => _connectedUsers.Count;
+    public int ConnectedUserCount => _membership.Count;
 
     /// <summary>
     /// Gets the language revision, independent of document changes.
@@ -147,7 +185,7 @@ public sealed class RoomState
     /// <summary>
     /// Gets the membership revision.
     /// </summary>
-    public long PresenceRevision { get; private set; }
+    public long PresenceRevision => _membership.PresenceRevision;
 
     /// <summary>
     /// Gets the room resource budgets.
@@ -175,7 +213,7 @@ public sealed class RoomState
     /// </summary>
     /// <returns>Connected room users sorted case-insensitively.</returns>
     public RoomUser[] CreateUsersSnapshot()
-        => [.. _connectedUsers.Values.OrderBy(name => name.Value, StringComparer.OrdinalIgnoreCase)];
+        => _membership.Snapshot();
 
     /// <summary>
     /// Checks if a room user name is already in use by another connection.
@@ -184,8 +222,7 @@ public sealed class RoomState
     /// <param name="roomUser">The room user name to check.</param>
     /// <returns>True when the room user name is in use by another connection; otherwise false.</returns>
     public bool IsRoomUserInUse(ConnectionId connectionId, RoomUser roomUser)
-        => _connectedUsers.Any(entry => entry.Key != connectionId
-            && string.Equals(entry.Value.Value, roomUser.Value, StringComparison.OrdinalIgnoreCase));
+        => _membership.IsInUse(connectionId, roomUser);
 
     /// <summary>
     /// Adds or updates a connected room user with room capacity and name checks.
@@ -199,28 +236,8 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             EnsureOpen();
-            var alreadyInRoom = HasUser(connectionId);
-            if (alreadyInRoom)
-            {
-                if (_connectedUsers[connectionId] != roomUser)
-                {
-                    throw new AddRoomUserException("Leave the room before changing display name.");
-                }
-
-                return;
-            }
-            if (!alreadyInRoom && _connectedUsers.Count >= maxUsers)
-            {
-                throw new AddRoomUserException($"Room is full (max {maxUsers})");
-            }
-
-            if (IsRoomUserInUse(connectionId, roomUser))
-            {
-                throw new AddRoomUserException("Display name already in use. Choose another name.");
-            }
-
-            AddOrUpdateUser(connectionId, roomUser);
-            PresenceRevision++;
+            _membership.Add(connectionId, roomUser, maxUsers);
+            _lastActivityUtc = _timeProvider.GetUtcNow();
         }
     }
 
@@ -230,144 +247,7 @@ public sealed class RoomState
     /// <param name="connectionId">The connection identifier.</param>
     /// <param name="roomUser">The room user name.</param>
     /// <returns>True when found; otherwise false.</returns>
-    public bool TryGetRoomUser(ConnectionId connectionId, out RoomUser roomUser) => _connectedUsers.TryGetValue(connectionId, out roomUser);
-
-    /// <summary>
-    /// Removes a connected room user.
-    /// </summary>
-    /// <param name="connectionId">The connection identifier.</param>
-    /// <param name="roomUser">The removed room user name.</param>
-    /// <returns>True when removed; otherwise false.</returns>
-    public bool RemoveUser(ConnectionId connectionId, out RoomUser roomUser)
-    {
-        lock (_versionGuard)
-        {
-            if (!ImmutableInterlocked.TryRemove(ref _connectedUsers, connectionId, out roomUser))
-            {
-                return false;
-            }
-
-            PresenceRevision++;
-            return true;
-        }
-    }
-
-    /// <summary>
-    /// Updates the room language and bumps the version.
-    /// </summary>
-    /// <param name="language">The new language.</param>
-    /// <param name="updatedUtc">The update timestamp in UTC.</param>
-    /// <param name="languageValidator">The language validator.</param>
-    /// <returns>The new room version.</returns>
-    /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
-    /// <exception cref="ArgumentNullException">Thrown when the validator is null.</exception>
-    public RoomVersion UpdateLanguage(
-        RoomLanguage language,
-        DateTimeOffset updatedUtc,
-        ILanguageValidator languageValidator)
-    {
-        ArgumentNullException.ThrowIfNull(languageValidator);
-
-        if (!languageValidator.IsValid(language))
-        {
-            throw new ArgumentException("Invalid language", nameof(language));
-        }
-
-        lock (_versionGuard)
-        {
-            EnsureOpen();
-            Language = language;
-            MetadataRevision++;
-            Version = Version.Next();
-            LastUpdatedUtc = updatedUtc;
-            return Version;
-        }
-    }
-
-    /// <summary>
-    /// Appends an opaque incremental Yjs update and bumps both document and room revisions.
-    /// </summary>
-    /// <param name="update">The serialized incremental Yjs update.</param>
-    /// <param name="updatedUtc">The update timestamp in UTC.</param>
-    /// <returns>The assigned document revision and resulting room version.</returns>
-    /// <exception cref="ArgumentException">Thrown when the update is empty.</exception>
-    /// <exception cref="ArgumentNullException">Thrown when the update is null.</exception>
-    public RoomDocumentAppendResult AppendYjsUpdate(
-        byte[] update,
-        DateTimeOffset updatedUtc)
-    {
-        ArgumentNullException.ThrowIfNull(update);
-        if (update.Length == 0)
-        {
-            throw new ArgumentException("Document update cannot be empty.", nameof(update));
-        }
-
-        lock (_versionGuard)
-        {
-            EnsureOpen();
-            if (4L * ((update.Length + 2) / 3) > _limits.MaxEncodedUpdateBytes
-                || _journalBytes + update.Length > _limits.MaxJournalBytes
-                || _yjsUpdates.Count >= _limits.MaxJournalCount)
-            {
-                _rejectedUpdates.Add(1);
-                throw new RoomLimitException();
-            }
-            DocumentRevision = DocumentRevision.Next();
-            _yjsUpdates.Add(new RoomDocumentUpdate(DocumentRevision, update));
-            _journalBytes += update.Length;
-            _journalSize.Add(update.Length);
-            _journalEntries.Add(1);
-            Version = Version.Next();
-            LastUpdatedUtc = updatedUtc;
-            return new RoomDocumentAppendResult(DocumentRevision, Version);
-        }
-    }
-
-    /// <summary>
-    /// Tries to replace the checkpoint and clear all updates represented by it.
-    /// </summary>
-    /// <param name="basedOnRevision">The latest revision contained in the checkpoint.</param>
-    /// <param name="state">The serialized full Yjs document state.</param>
-    /// <param name="text">The corresponding plain text snapshot.</param>
-    /// <param name="updatedUtc">The checkpoint timestamp in UTC.</param>
-    /// <returns>True when the checkpoint was current and accepted; otherwise false.</returns>
-    public bool TryCreateYjsCheckpoint(
-        RoomDocumentRevision basedOnRevision,
-        byte[] state,
-        RoomText text,
-        DateTimeOffset updatedUtc)
-    {
-        ArgumentNullException.ThrowIfNull(state);
-        if (state.Length == 0)
-        {
-            throw new ArgumentException("Document checkpoint cannot be empty.", nameof(state));
-        }
-
-        lock (_versionGuard)
-        {
-            EnsureOpen();
-            if (basedOnRevision != DocumentRevision)
-            {
-                return false;
-            }
-
-            if (4L * ((state.Length + 2) / 3) > _limits.MaxEncodedCheckpointBytes
-                || text.Value.Length > _limits.MaxSnapshotCharacters)
-            {
-                throw new RoomLimitException();
-            }
-
-            YjsState = [.. state];
-            YjsCheckpointRevision = basedOnRevision;
-            _journalSize.Add(-_journalBytes);
-            _journalEntries.Add(-_yjsUpdates.Count);
-            _yjsUpdates.Clear();
-            _journalBytes = 0;
-            Text = text;
-            LastUpdatedUtc = updatedUtc;
-            return true;
-        }
-    }
+    public bool TryGetRoomUser(ConnectionId connectionId, out RoomUser roomUser) => _membership.TryGet(connectionId, out roomUser);
 
     /// <summary>
     /// Creates an atomic CRDT synchronization snapshot.
@@ -378,11 +258,7 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             EnsureOpen();
-            return new RoomDocumentSyncState(
-                DocumentRevision,
-                YjsCheckpointRevision,
-                [.. YjsState],
-                [.. _yjsUpdates])
+            return _journal.CreateSnapshot() with
             {
                 Language = Language,
                 Text = Text,
@@ -395,27 +271,6 @@ public sealed class RoomState
     }
 
     /// <summary>
-    /// Changes language and captures its exact revision atomically.
-    /// </summary>
-    /// <param name="language">The new room language.</param>
-    /// <param name="now">The update timestamp in UTC.</param>
-    /// <param name="validator">The language validator.</param>
-    /// <returns>The new room version and language metadata revision.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when the validator is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
-    /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
-    public RoomLanguageChangeResult ChangeLanguage(
-        RoomLanguage language,
-        DateTimeOffset now,
-        ILanguageValidator validator)
-    {
-        lock (_versionGuard)
-        {
-            return new RoomLanguageChangeResult(UpdateLanguage(language, now, validator), MetadataRevision);
-        }
-    }
-
-    /// <summary>
     /// Closes the aggregate; retained references cannot accept mutations.
     /// </summary>
     public void Close()
@@ -423,10 +278,8 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             _closed = true;
-            _journalSize.Add(-_journalBytes);
-            _journalEntries.Add(-_yjsUpdates.Count);
-            _journalBytes = 0;
-            _yjsUpdates.Clear();
+            _lastActivityUtc = _timeProvider.GetUtcNow();
+            _journal.Clear();
         }
     }
 
@@ -442,7 +295,7 @@ public sealed class RoomState
     /// <exception cref="ArgumentNullException">Thrown when the update is null.</exception>
     /// <exception cref="ArgumentException">Thrown when the update is empty.</exception>
     /// <exception cref="RoomLimitException">Thrown when a resource budget is exceeded.</exception>
-    public RoomDocumentAppendResult AppendForParticipant(
+    public RoomDocumentAppendResult Append(
         ConnectionId connection,
         byte[] update,
         DateTimeOffset now)
@@ -450,7 +303,11 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             RequireParticipant(connection);
-            return AppendYjsUpdate(update, now);
+            var revision = _journal.Append(update);
+            Version = Version.Next();
+            LastUpdatedUtc = now;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
+            return new RoomDocumentAppendResult(revision, Version);
         }
     }
 
@@ -468,7 +325,7 @@ public sealed class RoomState
     /// <exception cref="ArgumentNullException">Thrown when the checkpoint is null.</exception>
     /// <exception cref="ArgumentException">Thrown when the checkpoint is empty.</exception>
     /// <exception cref="RoomLimitException">Thrown when a resource budget is exceeded.</exception>
-    public bool CheckpointForParticipant(
+    public bool Checkpoint(
         ConnectionId connection,
         RoomDocumentRevision revision,
         byte[] state,
@@ -478,7 +335,14 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             RequireParticipant(connection);
-            return TryCreateYjsCheckpoint(revision, state, text, now);
+            if (!_journal.TryCheckpoint(revision, state, text))
+            {
+                return false;
+            }
+            Text = text;
+            LastUpdatedUtc = now;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
+            return true;
         }
     }
 
@@ -494,7 +358,7 @@ public sealed class RoomState
     /// <exception cref="RoomNotFoundException">Thrown when the room is closed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the validator is null.</exception>
     /// <exception cref="ArgumentException">Thrown when the language is invalid.</exception>
-    public RoomLanguageChangeResult LanguageForParticipant(
+    public RoomLanguageChangeResult ChangeLanguage(
         ConnectionId connection,
         RoomLanguage language,
         DateTimeOffset now,
@@ -503,7 +367,17 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             RequireParticipant(connection);
-            return ChangeLanguage(language, now, validator);
+            ArgumentNullException.ThrowIfNull(validator);
+            if (!validator.IsValid(language))
+            {
+                throw new ArgumentException("Invalid language", nameof(language));
+            }
+            Language = language;
+            MetadataRevision++;
+            Version = Version.Next();
+            LastUpdatedUtc = now;
+            _lastActivityUtc = _timeProvider.GetUtcNow();
+            return new RoomLanguageChangeResult(Version, MetadataRevision);
         }
     }
 
@@ -530,19 +404,34 @@ public sealed class RoomState
     {
         lock (_versionGuard)
         {
-            var removed = RemoveUser(connection, out var user);
+            var removed = _membership.Remove(connection, out var user);
+            if (removed)
+            {
+                _lastActivityUtc = _timeProvider.GetUtcNow();
+            }
             return new RoomLeaveResult(removed, user, CreateUsersSnapshot(), PresenceRevision);
         }
     }
 
-    private void AddOrUpdateUser(ConnectionId connectionId, RoomUser roomUser)
-        => ImmutableInterlocked.AddOrUpdate(
-            ref _connectedUsers,
-            connectionId,
-            roomUser,
-            static (_, value) => value);
+    /// <summary>
+    /// Atomically closes an empty room only if its activity is at or before the cutoff.
+    /// </summary>
+    /// <param name="idleCutoff">The latest eligible activity timestamp.</param>
+    /// <returns>Whether the room was closed for expiration.</returns>
+    public bool TryCloseIfIdle(DateTimeOffset idleCutoff)
+    {
+        lock (_versionGuard)
+        {
+            if (_closed || _membership.Count != 0 || _lastActivityUtc > idleCutoff)
+            {
+                return false;
+            }
+            Close();
+            return true;
+        }
+    }
 
-    private bool HasUser(ConnectionId connectionId) => _connectedUsers.ContainsKey(connectionId);
+    private bool HasUser(ConnectionId connection) => _membership.Contains(connection);
 
     private void RequireParticipant(ConnectionId connection)
     {
@@ -561,16 +450,11 @@ public sealed class RoomState
         }
     }
 
-    private byte[] _yjsState = [];
     private bool _closed;
+    private DateTimeOffset _lastActivityUtc;
+    private readonly TimeProvider _timeProvider;
     private readonly Lock _versionGuard = new();
-    private ImmutableDictionary<ConnectionId, RoomUser> _connectedUsers = [];
-    private readonly List<RoomDocumentUpdate> _yjsUpdates = [];
+    private readonly RoomDocumentJournal _journal;
+    private readonly RoomMembership _membership = new();
     private readonly RoomLimits _limits;
-    private long _journalBytes;
-    private static readonly Meter _resourceMeter = new("SealCode.Rooms");
-    private static readonly Counter<long> _rejectedUpdates = _resourceMeter.CreateCounter<long>("room.updates.rejected");
-    private static readonly UpDownCounter<long> _journalSize = _resourceMeter.CreateUpDownCounter<long>("room.journal.bytes");
-    private static readonly UpDownCounter<long> _journalEntries = _resourceMeter.CreateUpDownCounter<long>("room.journal.count");
 }
-

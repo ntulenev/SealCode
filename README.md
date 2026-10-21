@@ -150,6 +150,15 @@ are trimmed and limited to 64 characters.
 
 **Resource budgets**
 
+Empty room expiration is opt-in: `Limits:RoomIdleTimeoutMinutes` defaults to `0`
+(disabled), with a validated range of 0–525600 minutes. When enabled, a background
+service checks once per minute and deletes empty rooms whose last activity is at
+least the configured timeout old, using the reason `Room expired`. Every successful
+mutation, including joining and leaving, updates `LastActivityUtc`; `LastUpdatedUtc`
+keeps its existing document/metadata meaning. Eligibility is checked again under
+the aggregate lock before deletion, so a concurrent participant join preserves
+the room if it wins that lock. A room expires at the first sweep after its timeout.
+
 The `Limits` section accepts `MaxEncodedUpdateBytes` and
 `MaxEncodedCheckpointBytes` (4 MiB Base64 characters each), `MaxJournalBytes`
 (4 MiB decoded), `MaxJournalCount` (2048), `MaxSnapshotCharacters` (1,048,576),

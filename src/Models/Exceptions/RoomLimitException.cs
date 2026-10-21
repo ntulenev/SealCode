@@ -13,4 +13,13 @@ public sealed class RoomLimitException : Exception
         : base("LimitExceeded: Room resource budget reached. Copy unsynced text before reloading.")
     {
     }
+
+    /// <summary>
+    /// Initializes a refusal for a specific resource budget.
+    /// </summary>
+    /// <param name="resource">The stable resource label.</param>
+    public RoomLimitException(string resource)
+        : base($"LimitExceeded: {resource}")
+    {
+    }
 }

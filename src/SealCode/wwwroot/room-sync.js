@@ -1,3 +1,5 @@
+import { HubErrorCode, classifyHubError, createHubError } from './hub-errors.js';
+
 /** Decides whether journal growth warrants a checkpoint from this participant. */
 export function shouldWriteCheckpoint({
   documentRevision,
@@ -30,18 +32,16 @@ export class UpdateQueue {
     maxBytes = 8 * 1024 * 1024,
     maxCount = 2048
   }) {
-    Object.assign(this, {
-      send,
-      merge,
-      ready,
-      onIdle,
-      onError,
-      onSuccess,
-      setTimer,
-      clearTimer,
-      maxBytes,
-      maxCount
-    });
+    this.send = send;
+    this.merge = merge;
+    this.ready = ready;
+    this.onIdle = onIdle;
+    this.onError = onError;
+    this.onSuccess = onSuccess;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.maxBytes = maxBytes;
+    this.maxCount = maxCount;
     this.pending = [];
     this.timer = null;
     this.inFlight = false;
@@ -59,7 +59,10 @@ export class UpdateQueue {
           this.maxBytes
       ) {
         this.blocked = true;
-        this.onError(new Error('LimitExceeded: Local pending queue'), true);
+        this.onError(
+          createHubError(HubErrorCode.LimitExceeded, 'Local pending queue'),
+          true
+        );
         return;
       }
       this.pending.push(update);
@@ -87,8 +90,8 @@ export class UpdateQueue {
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
-      this.blocked = /LimitExceeded|too large/.test(String(error));
-      retryDelay = /RateLimited/.test(String(error)) ? 1100 : 500;
+      this.blocked = classifyHubError(error) === HubErrorCode.LimitExceeded;
+      retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
     } finally {
       if (generation === this.generation) {
@@ -117,7 +120,9 @@ export class SyncScheduler {
     clearTimer = (timer) => clearTimeout(timer),
     now = () => performance.now()
   } = {}) {
-    Object.assign(this, { setTimer, clearTimer, now });
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.now = now;
     this.jobs = new Map();
     this.generation = 0;
   }
@@ -162,21 +167,19 @@ export class SnapshotRecovery {
     onSuccess,
     onError
   }) {
-    Object.assign(this, {
-      scheduler,
-      active,
-      ready,
-      capture,
-      current,
-      revisions,
-      probe,
-      snapshot,
-      begin,
-      apply,
-      end,
-      onSuccess,
-      onError
-    });
+    this.scheduler = scheduler;
+    this.active = active;
+    this.ready = ready;
+    this.capture = capture;
+    this.current = current;
+    this.revisions = revisions;
+    this.probe = probe;
+    this.snapshot = snapshot;
+    this.begin = begin;
+    this.apply = apply;
+    this.end = end;
+    this.onSuccess = onSuccess;
+    this.onError = onError;
     this.inFlight = false;
   }
   schedule(delay = 5000) {
@@ -238,18 +241,16 @@ export class CheckpointWriter {
     onSuccess,
     onError
   }) {
-    Object.assign(this, {
-      delay,
-      scheduler,
-      ready,
-      capture,
-      current,
-      revision,
-      payload,
-      send,
-      onSuccess,
-      onError
-    });
+    this.delay = delay;
+    this.scheduler = scheduler;
+    this.ready = ready;
+    this.capture = capture;
+    this.current = current;
+    this.revision = revision;
+    this.payload = payload;
+    this.send = send;
+    this.onSuccess = onSuccess;
+    this.onError = onError;
     this.inFlight = false;
     this.timer = false;
     this.skippedRevision = -1;
@@ -277,7 +278,7 @@ export class CheckpointWriter {
       if (this.current(context) && accepted) this.onSuccess(revision);
     } catch (error) {
       if (!this.current(context)) return;
-      const permanent = /LimitExceeded|too large/.test(String(error));
+      const permanent = classifyHubError(error) === HubErrorCode.LimitExceeded;
       if (permanent) this.skippedRevision = revision;
       retry = !permanent;
       this.onError(error, permanent);

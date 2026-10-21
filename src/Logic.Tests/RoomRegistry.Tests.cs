@@ -111,6 +111,7 @@ public sealed class RoomRegistryTests
             .Callback(() => request.Cancel()).ThrowsAsync(new IOException("delivery failed"));
         var registry = CreateRegistry();
         var room = registry.CreateRoom(new("Room"), new("csharp"), new("admin"));
+        _ = RoomStateBuilder.Participant(room);
         var manager = new RoomManager(
             registry,
             CreateSettings(),
@@ -118,7 +119,7 @@ public sealed class RoomRegistryTests
             new Mock<ILogger<RoomManager>>().Object);
         Assert.Equal(RoomDeletionResult.Deleted, await manager.DeleteRoomAsync(room.RoomId, new("admin"), request.Token));
         Assert.False(registry.TryGetRoom(room.RoomId, out _));
-        Assert.Throws<RoomNotFoundException>(() => room.AppendYjsUpdate([1], DateTimeOffset.UtcNow));
+        Assert.Throws<RoomNotFoundException>(() => room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow));
         Assert.Throws<RoomNotFoundException>(() => room.AddUser(new("connection"), new("Alice"), 5));
         Assert.False(await registry.DeleteRoomAsync(room.RoomId, new("closed"), CancellationToken.None));
     }

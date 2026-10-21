@@ -1,8 +1,10 @@
 import { token } from './admin-token.js';
 const roomsEl = document.getElementById('rooms');
 const createBtn = document.getElementById('createRoom');
-const nameInput = document.getElementById('roomName');
-const langInput = document.getElementById('roomLanguage');
+const nameInput = /** @type {HTMLInputElement} */ (document.getElementById('roomName'));
+const langInput = /** @type {HTMLSelectElement} */ (
+  document.getElementById('roomLanguage')
+);
 const resultEl = document.getElementById('createResult');
 
 function setLanguageOptions(selectEl, languages, selected) {

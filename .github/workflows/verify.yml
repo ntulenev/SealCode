@@ -20,6 +20,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: dotnet restore src/SealCode.slnx --source https://api.nuget.org/v3/index.json
       - run: dotnet test src/SealCode.slnx --no-restore --collect:"XPlat Code Coverage" --results-directory coverage/server
       - name: Merge server coverage by source lines

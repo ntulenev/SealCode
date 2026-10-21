@@ -151,7 +151,9 @@ public sealed class RoomStateTests
 
         state.AddUser(connectionId, displayName, 5);
 
-        var removed = state.RemoveUser(connectionId, out var removedName);
+        var leave = state.Leave(connectionId);
+        var removed = leave.Removed;
+        var removedName = leave.User;
 
         removed.Should().BeTrue();
         removedName.Should().Be(displayName);
@@ -166,7 +168,7 @@ public sealed class RoomStateTests
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
         var validator = new AllowAllLanguageValidator();
 
-        var version = state.UpdateLanguage(new RoomLanguage("sql"), updatedUtc, validator);
+        var version = state.ChangeLanguageAsTestParticipant(new RoomLanguage("sql"), updatedUtc, validator);
 
         version.Value.Should().Be(2);
         state.Language.Value.Should().Be("sql");
@@ -181,7 +183,7 @@ public sealed class RoomStateTests
         var state = CreateState();
         var validator = new DenyAllLanguageValidator();
 
-        var action = () => state.UpdateLanguage(new RoomLanguage("python"), DateTimeOffset.UtcNow, validator);
+        var action = () => state.ChangeLanguageAsTestParticipant(new RoomLanguage("python"), DateTimeOffset.UtcNow, validator);
 
         action.Should().Throw<ArgumentException>();
     }
@@ -193,7 +195,7 @@ public sealed class RoomStateTests
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
         var state = CreateState([9]);
 
-        var result = state.AppendYjsUpdate([1, 2], updatedUtc);
+        var result = state.AppendAsTestParticipant([1, 2], updatedUtc);
         var syncState = state.CreateYjsSyncState();
 
         result.DocumentRevision.Value.Should().Be(1);
@@ -213,10 +215,10 @@ public sealed class RoomStateTests
     {
         var updatedUtc = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
         var state = CreateState();
-        state.AppendYjsUpdate([1], updatedUtc);
-        state.AppendYjsUpdate([2], updatedUtc);
+        state.AppendAsTestParticipant([1], updatedUtc);
+        state.AppendAsTestParticipant([2], updatedUtc);
 
-        var result = state.TryCreateYjsCheckpoint(
+        var result = state.CheckpointAsTestParticipant(
             new RoomDocumentRevision(2),
             [7, 8],
             new RoomText("updated"),
@@ -237,10 +239,10 @@ public sealed class RoomStateTests
     public void TryCreateYjsCheckpointShouldRejectStaleRevisionWithoutLosingTail()
     {
         var state = CreateState();
-        state.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
-        state.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
+        state.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
+        state.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
 
-        var result = state.TryCreateYjsCheckpoint(
+        var result = state.CheckpointAsTestParticipant(
             new RoomDocumentRevision(1),
             [9],
             new RoomText("stale"),

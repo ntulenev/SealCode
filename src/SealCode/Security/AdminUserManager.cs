@@ -21,16 +21,16 @@ internal sealed class AdminUserManager : IAdminUserManager
     /// Initializes a new instance of the <see cref="AdminUserManager"/> class.
     /// </summary>
     /// <param name="settings">The application configuration.</param>
-    /// <param name="context">The HTTP context.</param>
+    /// <param name="accessor">The current HTTP context accessor.</param>
     public AdminUserManager(
         IOptions<ApplicationConfiguration> settings,
-        HttpContext context)
+        IHttpContextAccessor accessor)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(accessor);
 
         _settings = settings.Value;
-        _context = context;
+        _accessor = accessor;
     }
 
     /// <inheritdoc />
@@ -39,16 +39,17 @@ internal sealed class AdminUserManager : IAdminUserManager
     /// <inheritdoc />
     public bool TryGetAdminUser(out AdminUser adminUser)
     {
+        var context = Context;
         adminUser = default;
-        if (_context.User.Identity?.IsAuthenticated != true
-            || string.IsNullOrWhiteSpace(_context.User.Identity.Name))
+        if (context.User.Identity?.IsAuthenticated != true
+            || string.IsNullOrWhiteSpace(context.User.Identity.Name))
         {
             return false;
         }
 
         var user = _settings.AdminUsers.FirstOrDefault(user =>
-            string.Equals(user.Name.Trim(), _context.User.Identity.Name, StringComparison.OrdinalIgnoreCase));
-        if (user is null || _context.User.FindFirstValue("credential") != CredentialStamp(user))
+            string.Equals(user.Name.Trim(), context.User.Identity.Name, StringComparison.OrdinalIgnoreCase));
+        if (user is null || context.User.FindFirstValue("credential") != CredentialStamp(user))
         {
             return false;
         }
@@ -60,7 +61,8 @@ internal sealed class AdminUserManager : IAdminUserManager
     /// <inheritdoc />
     public async Task<bool> TrySetCurrentUserAsync(CancellationToken cancellationToken)
     {
-        var form = await _context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+        var context = Context;
+        var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
         var name = form["name"].ToString().Trim();
         var password = form["password"].ToString();
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(password))
@@ -92,7 +94,7 @@ internal sealed class AdminUserManager : IAdminUserManager
         var identity = new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, user.Name.Trim()), new Claim("credential", CredentialStamp(user))],
             CookieAuthenticationDefaults.AuthenticationScheme);
-        await _context.SignInAsync(
+        await context.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(identity)).ConfigureAwait(false);
 
@@ -101,7 +103,7 @@ internal sealed class AdminUserManager : IAdminUserManager
 
     /// <inheritdoc />
     public Task ClearCurrentAdminUserAsync()
-        => _context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        => Context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
     /// <summary>
     /// Creates the credential fingerprint bound to an admin authentication ticket.
@@ -113,5 +115,8 @@ internal sealed class AdminUserManager : IAdminUserManager
 
     private static readonly string _dummyHash = new PasswordHasher<AdminUserConfiguration>().HashPassword(new() { Name = "unknown" }, Guid.NewGuid().ToString());
     private readonly ApplicationConfiguration _settings;
-    private readonly HttpContext _context;
+    private HttpContext Context => _accessor.HttpContext
+        ?? throw new InvalidOperationException("HttpContext is not available outside an HTTP request.");
+
+    private readonly IHttpContextAccessor _accessor;
 }

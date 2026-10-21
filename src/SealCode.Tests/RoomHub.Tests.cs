@@ -16,6 +16,119 @@ namespace SealCode.Tests;
 
 public sealed class RoomHubTests
 {
+    [Theory]
+    [InlineData("JoinRoom")]
+    [InlineData("UpdateYjs")]
+    [InlineData("CheckpointYjs")]
+    [InlineData("SyncYjs")]
+    [InlineData("GetDocumentRevision")]
+    [InlineData("GetRoomRevisions")]
+    [InlineData("SetLanguage")]
+    [InlineData("UpdateCursor")]
+    [InlineData("UpdateSelection")]
+    [InlineData("UpdateCopy")]
+    [InlineData("LeaveRoom")]
+    public async Task InvalidRoomIdShouldPreserveExactMessageAcrossMethods(string method)
+    {
+        using var hub = CreateHub();
+        var exception = await Assert.ThrowsAsync<HubException>(async () =>
+        {
+            switch (method)
+            {
+                case "JoinRoom":
+                    _ = await hub.JoinRoomAsync("invalid", "Alice");
+                    break;
+                case "UpdateYjs":
+                    await hub.UpdateYjsAsync("invalid", "AQ==");
+                    break;
+                case "CheckpointYjs":
+                    _ = await hub.CheckpointYjsAsync("invalid", "AQ==", "", 0);
+                    break;
+                case "SyncYjs":
+                    _ = hub.SyncYjs("invalid");
+                    break;
+                case "GetDocumentRevision":
+                    _ = hub.GetDocumentRevision("invalid");
+                    break;
+                case "GetRoomRevisions":
+                    _ = hub.GetRoomRevisions("invalid");
+                    break;
+                case "SetLanguage":
+                    await hub.SetLanguageAsync("invalid", "sql");
+                    break;
+                case "UpdateCursor":
+                    await hub.UpdateCursorAsync("invalid", 0);
+                    break;
+                case "UpdateSelection":
+                    await hub.UpdateSelectionAsync("invalid", false);
+                    break;
+                case "UpdateCopy":
+                    await hub.UpdateCopyAsync("invalid");
+                    break;
+                case "LeaveRoom":
+                    await hub.LeaveRoomAsync("invalid");
+                    break;
+                default:
+                    throw new ArgumentException("Unknown test method", nameof(method));
+            }
+        });
+        exception.Message.Should().Be("Invalid room id");
+    }
+
+    [Theory]
+    [InlineData("UpdateYjs", "!", "Invalid Yjs payload")]
+    [InlineData("UpdateYjs", "", "Update payload required")]
+    [InlineData("CheckpointYjs", "!", "Invalid Yjs payload")]
+    [InlineData("CheckpointYjs", "", "State payload required")]
+    public async Task PayloadErrorsShouldPreserveExactMessages(string method, string payload, string expected)
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
+        _ = SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        using var hub = CreateHub(roomManager: manager.Object);
+
+        var exception = await Assert.ThrowsAsync<HubException>(async () =>
+        {
+            if (method == "UpdateYjs")
+            {
+                await hub.UpdateYjsAsync(DefaultRoomId, payload);
+            }
+            else
+            {
+                _ = await hub.CheckpointYjsAsync(DefaultRoomId, payload, "", 0);
+            }
+        });
+
+        exception.Message.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Cursor")]
+    [InlineData("Selection")]
+    [InlineData("Copy")]
+    public async Task PresenceFromNonParticipantShouldBeSilent(string operation)
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        _ = SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        using var hub = CreateHub(roomManager: manager.Object, clients: clients.Object);
+        switch (operation)
+        {
+            case "Cursor":
+                await hub.UpdateCursorAsync(DefaultRoomId, 0);
+                break;
+            case "Selection":
+                await hub.UpdateSelectionAsync(DefaultRoomId, false);
+                break;
+            case "Copy":
+                await hub.UpdateCopyAsync(DefaultRoomId);
+                break;
+            default:
+                throw new ArgumentException("Unknown presence operation", nameof(operation));
+        }
+        clients.VerifyNoOtherCalls();
+    }
+
     private static readonly string DefaultRoomId = RoomId.New().Value;
 
     [Fact(DisplayName = "CtorShouldThrowWhenRoomManagerIsNull")]
@@ -173,7 +286,7 @@ public sealed class RoomHubTests
         var room = CreateRoomState(DefaultRoomId);
         if (reconnect)
         {
-            room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
+            room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
         }
 
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
@@ -203,7 +316,7 @@ public sealed class RoomHubTests
 
         var joinTask = hub.JoinRoomAsync(DefaultRoomId, "Alice");
         await subscriptionStarted.Task;
-        var appended = room.AppendYjsUpdate([2, 3], DateTimeOffset.UtcNow);
+        var appended = room.AppendAsTestParticipant([2, 3], DateTimeOffset.UtcNow);
         subscriptionCompleted.SetResult();
         var result = await joinTask;
 
@@ -296,7 +409,7 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
         var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync("YjsCheckpointed",
@@ -335,7 +448,7 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var failure = new InvalidOperationException("Broadcast failed");
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -372,8 +485,8 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendYjsUpdate([1], DateTimeOffset.UtcNow);
-        room.AppendYjsUpdate([2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);

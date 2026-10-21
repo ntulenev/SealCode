@@ -3,7 +3,9 @@ export async function token() {
   if (!response.ok) throw new Error('Could not load security token');
   return (await response.json()).Token;
 }
-for (const form of document.querySelectorAll('form[action^="/admin/"]')) {
+for (const form of /** @type {NodeListOf<HTMLFormElement>} */ (
+  document.querySelectorAll('form[action^="/admin/"]')
+)) {
   form.addEventListener('submit', async (event) => {
     if (form.dataset.secured) return;
     event.preventDefault();

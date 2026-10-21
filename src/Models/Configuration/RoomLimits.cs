@@ -8,6 +8,12 @@ namespace Models.Configuration;
 public sealed class RoomLimits : IValidatableObject
 {
     /// <summary>
+    /// Maximum size in bytes of a SignalR message.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "Named public contract required by the hosting configuration.")]
+    public const int MaxSignalRMessageBytes = 16 * 1024 * 1024;
+
+    /// <summary>
     /// Gets the maximum update size in Base64 characters.
     /// </summary>
     [Range(1024, 12 * 1024 * 1024)]
@@ -56,6 +62,12 @@ public sealed class RoomLimits : IValidatableObject
     public int MaxRooms { get; init; } = 32;
 
     /// <summary>
+    /// Gets the empty room idle timeout in minutes; 0 disables automatic deletion.
+    /// </summary>
+    [Range(0, 525600)]
+    public int RoomIdleTimeoutMinutes { get; init; }
+
+    /// <summary>
     /// Gets the maximum number of concurrent anonymous hub connections.
     /// </summary>
     [Range(1, 10000)]
@@ -83,7 +95,7 @@ public sealed class RoomLimits : IValidatableObject
         }
 
         // Worst-case escaped text plus Base64 journal/checkpoint and entry framing.
-        var syncBudget = MaxEncodedCheckpointBytes + (4L * ((MaxJournalBytes + 2) / 3))
+        var syncBudget = MaxEncodedCheckpointBytes + Base64Size.EncodedLength(MaxJournalBytes)
             + (6L * MaxSnapshotCharacters) + (80L * MaxJournalCount) + 4096;
         if (syncBudget > 16 * 1024 * 1024)
         {
