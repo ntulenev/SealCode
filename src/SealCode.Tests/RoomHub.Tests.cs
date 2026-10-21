@@ -98,6 +98,33 @@ public sealed class RoomHubTests
         exception.Message.Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("Cursor")]
+    [InlineData("Selection")]
+    [InlineData("Copy")]
+    public async Task PresenceFromNonParticipantShouldBeSilent(string operation)
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        _ = SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        using var hub = CreateHub(roomManager: manager.Object, clients: clients.Object);
+        switch (operation)
+        {
+            case "Cursor":
+                await hub.UpdateCursorAsync(DefaultRoomId, 0);
+                break;
+            case "Selection":
+                await hub.UpdateSelectionAsync(DefaultRoomId, false);
+                break;
+            case "Copy":
+                await hub.UpdateCopyAsync(DefaultRoomId);
+                break;
+            default:
+                throw new ArgumentException("Unknown presence operation", nameof(operation));
+        }
+        clients.VerifyNoOtherCalls();
+    }
+
     private static readonly string DefaultRoomId = RoomId.New().Value;
 
     [Fact(DisplayName = "CtorShouldThrowWhenRoomManagerIsNull")]

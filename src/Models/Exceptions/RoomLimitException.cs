@@ -7,6 +7,15 @@ namespace Models.Exceptions;
 public sealed class RoomLimitException : Exception
 {
     /// <summary>
+    /// Initializes a refusal for a specific resource budget.
+    /// </summary>
+    /// <param name="resource">The stable resource label.</param>
+    public RoomLimitException(string resource)
+        : base($"LimitExceeded: {resource}")
+    {
+    }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="RoomLimitException"/> class.
     /// </summary>
     public RoomLimitException()

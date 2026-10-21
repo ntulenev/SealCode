@@ -31,39 +31,83 @@ public sealed class RoomSessionService : IRoomSessionService
         ConnectionId connection,
         out RoomUser user)
     {
-        if (!_rooms.TryGetRoom(roomId, out var room))
-        {
-            throw new RoomNotFoundException();
-        }
-
-        if (!room.TryGetRoomUser(connection, out user))
+        if (!TryGetParticipant(roomId, connection, out var room, out user))
         {
             throw new UnauthorizedAccessException("Join the room before changing it");
         }
-
         return room;
     }
 
     /// <inheritdoc />
-    public RoomDocumentAppendResult Append(
-        RoomId roomId,
-        ConnectionId connection,
-        byte[] update)
+    public bool TryGetParticipant(RoomId roomId, ConnectionId connection, out RoomState room, out RoomUser user)
     {
-        var room = GetParticipant(roomId, connection, out _);
-        return room.AppendForParticipant(connection, update, DateTimeOffset.UtcNow);
+        if (!_rooms.TryGetRoom(roomId, out room))
+        {
+            throw new RoomNotFoundException();
+        }
+        return room.TryGetRoomUser(connection, out user);
     }
 
     /// <inheritdoc />
-    public bool Checkpoint(
-        RoomId roomId,
-        ConnectionId connection,
-        RoomDocumentRevision revision,
-        byte[] state,
-        RoomText text)
+    public RoomSessionAppendResult Append(RoomId roomId, ConnectionId connection, string updateBase64)
     {
+        if (string.IsNullOrWhiteSpace(updateBase64))
+        {
+            throw new ArgumentException("Update payload required");
+        }
+        var room = GetParticipant(roomId, connection, out var author);
+        if (updateBase64.Length > room.Limits.MaxEncodedUpdateBytes)
+        {
+            throw new RoomLimitException("Update size");
+        }
+        var update = Decode(updateBase64);
+        room = GetParticipant(roomId, connection, out _);
+        var result = room.AppendForParticipant(connection, update, DateTimeOffset.UtcNow);
+        return new RoomSessionAppendResult(result.DocumentRevision, result.RoomVersion, author);
+    }
+
+    /// <inheritdoc />
+    public CheckpointOutcome Checkpoint(RoomId roomId, ConnectionId connection, string stateBase64, string? textSnapshot, long basedOnRevision)
+    {
+        RoomDocumentRevision revision;
+        try
+        {
+            revision = new(basedOnRevision);
+        }
+        catch (ArgumentException)
+        {
+            throw new ArgumentException("Invalid document revision");
+        }
+        if (string.IsNullOrWhiteSpace(stateBase64))
+        {
+            throw new ArgumentException("State payload required");
+        }
         var room = GetParticipant(roomId, connection, out _);
-        return room.CheckpointForParticipant(connection, revision, state, text, DateTimeOffset.UtcNow);
+        if (stateBase64.Length > room.Limits.MaxEncodedCheckpointBytes
+            || (textSnapshot?.Length ?? 0) > room.Limits.MaxSnapshotCharacters)
+        {
+            throw new RoomLimitException("Checkpoint size");
+        }
+        if (revision != room.DocumentRevision)
+        {
+            return CheckpointOutcome.Stale;
+        }
+        var state = Decode(stateBase64);
+        room = GetParticipant(roomId, connection, out _);
+        return room.CheckpointForParticipant(connection, revision, state, new RoomText(textSnapshot ?? string.Empty), DateTimeOffset.UtcNow)
+            ? CheckpointOutcome.Accepted : CheckpointOutcome.Stale;
+    }
+
+    private static byte[] Decode(string payload)
+    {
+        try
+        {
+            return Convert.FromBase64String(payload);
+        }
+        catch (FormatException)
+        {
+            throw new ArgumentException("Invalid Yjs payload");
+        }
     }
 
     /// <inheritdoc />
