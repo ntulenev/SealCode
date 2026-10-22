@@ -268,7 +268,7 @@ Configure these values in the `Limits` section:
 | `MaxSnapshotCharacters` | 1,048,576 | UTF-16 characters per text snapshot |
 | `MaxRooms` | 32 | Rooms per process |
 | `MaxConnections` | 160 | Concurrent hub connections |
-| `MaxConnectionsPerSource` | 20 | Concurrent connections per normalized source (1-10000; no greater than `MaxConnections`) |
+| `MaxConnectionsPerSource` | `min(20, MaxConnections)` | Concurrent connections per normalized source (1-10000; no greater than `MaxConnections`) |
 | `UnjoinedConnectionTimeoutSeconds` | 60 | Deadline to join a room (5-3600 seconds) |
 | `NewConnectionsPerSourcePerMinute` | 30 | New connections per source per minute; range 1–10000 |
 | `InvocationsPerSecond` | 100 | Hub invocations per connection per second |

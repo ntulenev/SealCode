@@ -671,7 +671,8 @@ public sealed class RoomHubTests
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
+        clients.Setup(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(excluded => excluded.Count == 1 && excluded[0] == "conn-1")))
             .Returns(proxy.Object);
 
         using var hub = CreateHub(
@@ -684,7 +685,8 @@ public sealed class RoomHubTests
 
         room.ConnectedUserCount.Should().Be(1);
         roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
-        clients.Verify(c => c.Group(It.Is<string>(group => group == DefaultRoomId)), Times.Once);
+        clients.Verify(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(excluded => excluded.Count == 1 && excluded[0] == "conn-1")), Times.Once);
         groups.Verify(g => g.RemoveFromGroupAsync(
                 It.Is<string>(conn => conn == "conn-1"),
                 It.Is<string>(group => group == DefaultRoomId),

@@ -81,9 +81,14 @@ internal static class HubErrors
         {
             return invoke();
         }
-        catch (Exception ex) when (Translate(ex) is not null)
+        catch (Exception ex)
         {
-            throw Translate(ex)!;
+            var translated = Translate(ex);
+            if (translated is not null)
+            {
+                throw translated;
+            }
+            throw;
         }
     }
 

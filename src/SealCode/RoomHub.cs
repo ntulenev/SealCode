@@ -306,7 +306,7 @@ public sealed class RoomHub : SignalRHub
         }
         if (notify && displayName is not null)
         {
-            await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
+            await BroadcastAfterCommitAsync(() => Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
                 .SendAsync(HubContract.Events.UserLeft, displayName, usersSnapshot, result.PresenceRevision, CancellationToken.None),
                 "Presence notification failed for {RoomId}", parsedRoomId).ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
