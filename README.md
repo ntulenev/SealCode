@@ -4,6 +4,8 @@ SealCode is a self-hosted collaborative code editor for small, trusted groups, s
 
 The backend uses ASP.NET Core Minimal API and SignalR on .NET 10; the browser uses Monaco Editor and Yjs for CRDT synchronization. Rooms live entirely in server memory. This is a personal project intended for private use.
 
+For a description of how the backend and real-time collaboration work, see [Backend architecture](docs/backend.md).
+
 ![Screenshot](Room.png)
 
 ## Features
@@ -357,5 +359,6 @@ The browser test client ignores certificate trust only for that local test certi
 
 ### Further details
 
+- [Backend architecture](docs/backend.md) — backend mechanisms and real-time collaboration.
 - [ADR 0004: Resource and security boundaries](docs/adr/0004-resource-and-security-boundaries.md) — contracts and constraints.
 - [Implementation audit](docs/audit-implementation.md) — validation evidence.
