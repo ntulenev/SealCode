@@ -7,7 +7,7 @@
   },
   "scripts": {
     "test": "npm run test:client && npm run test:e2e",
-    "test:client": "c8 --all --include=src/SealCode/wwwroot/*.js --exclude=src/SealCode/wwwroot/client-types.js --exclude=src/SealCode/wwwroot/*-main.js --exclude=src/SealCode/wwwroot/room.js --exclude=src/SealCode/wwwroot/version.js --check-coverage --lines=68 --branches=86 --functions=87 --reporter=text --reporter=lcov --reports-dir=coverage/client node --test tests/client/*.test.js",
+    "test:client": "c8 --all --include=src/SealCode/wwwroot/*.js --exclude=src/SealCode/wwwroot/client-types.js --exclude=src/SealCode/wwwroot/*-main.js --exclude=src/SealCode/wwwroot/room.js --exclude=src/SealCode/wwwroot/version.js --check-coverage --lines=68 --branches=87 --functions=90 --reporter=text --reporter=lcov --reports-dir=coverage/client node --test tests/client/*.test.js",
     "test:e2e": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
     "build:client": "node scripts/build-client.mjs",
