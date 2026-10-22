@@ -24,6 +24,43 @@ namespace SealCode.Tests;
 public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFactory)
     : IClassFixture<SealCodeApiTests.SealCodeAppFactory>
 {
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ConnectionCapacityRejectionClosesClientAndReleasesPermit()
+    {
+        using var original = CreateFactory();
+        using var factory = original.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Limits:MaxConnections"] = "1" })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie);
+        await using var first = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await first.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+        await using var rejected = new HubConnectionBuilder()
+            .WithUrl(new Uri(client.BaseAddress!, "/roomHub"), options =>
+                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler())
+            .Build();
+        var closed = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rejected.Closed += error =>
+        {
+            closed.TrySetResult(error);
+            return Task.CompletedTask;
+        };
+        var rejection = await Record.ExceptionAsync(() => rejected.StartAsync());
+        rejection ??= await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        rejection.Should().NotBeNull();
+        rejection!.Message.Should().Contain("RateLimited");
+        rejected.State.Should().Be(HubConnectionState.Disconnected);
+        await FluentActions.Awaiting(() => rejected.InvokeAsync<RoomRevisions>("GetRoomRevisions", roomId))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        await first.StopAsync();
+        await using var replacement = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        var joined = await replacement.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Bob");
+        joined.Users.Should().ContainSingle().Which.Should().Be("Bob");
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
