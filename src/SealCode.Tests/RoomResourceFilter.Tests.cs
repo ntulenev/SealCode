@@ -113,7 +113,8 @@ public sealed class RoomResourceFilterTests
             return new(caller.Object, services, hub);
         }
         await filter.OnConnectedAsync(Context(first), _ => Task.CompletedTask);
-        await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(Context(same), _ => Task.CompletedTask));
+        var error = await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(Context(same), _ => Task.CompletedTask));
+        HubErrorAssertions.AssertHubError(error, HubErrorCode.RateLimited);
         await filter.OnConnectedAsync(Context(other), _ => Task.CompletedTask);
         Assert.Equal(2, filter.TrackedSourceCount);
         await filter.OnDisconnectedAsync(Context(first), null, (_, _) => Task.CompletedTask);

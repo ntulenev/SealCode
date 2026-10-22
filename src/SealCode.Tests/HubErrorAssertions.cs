@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 using FluentAssertions;
 
 using Microsoft.AspNetCore.SignalR;
@@ -6,26 +8,38 @@ using SealCode.Hub;
 
 namespace SealCode.Tests;
 
-internal static class HubErrorAssertions
+internal static partial class HubErrorAssertions
 {
-    internal static void AssertHubError(HubException error, HubErrorCode expected)
+    internal static void AssertHubError(HubException error, HubErrorCode? expected)
     {
         var message = error.Message;
-        HubErrorCode? actual = message.Contains("LimitExceeded", StringComparison.Ordinal)
-            || message.Contains("too large", StringComparison.Ordinal) ? HubErrorCode.LimitExceeded
-            : message.Contains("RateLimited", StringComparison.Ordinal) ? HubErrorCode.RateLimited
-            : message.Contains("Room not found", StringComparison.Ordinal) ? HubErrorCode.RoomNotFound
-            : message.Contains("Join the room before changing it", StringComparison.Ordinal) ? HubErrorCode.NotParticipant
-            : message.StartsWith("InvalidInput:", StringComparison.Ordinal) ? HubErrorCode.InvalidInput
+        HubErrorCode? actual = Limit().IsMatch(message) ? HubErrorCode.LimitExceeded
+            : Rate().IsMatch(message) ? HubErrorCode.RateLimited
+            : Invalid().IsMatch(message) ? HubErrorCode.InvalidInput
+            : Missing().IsMatch(message) ? HubErrorCode.RoomNotFound
+            : Participant().IsMatch(message) ? HubErrorCode.NotParticipant
             : null;
-        // Legacy input errors deliberately retain their unprefixed wire text.
-        if (actual is null && (message.StartsWith("Invalid ", StringComparison.Ordinal)
-            || message.StartsWith("Display name", StringComparison.Ordinal)
-            || message.StartsWith("Room is full", StringComparison.Ordinal)
-            || message.EndsWith("payload required", StringComparison.Ordinal)))
-        {
-            actual = HubErrorCode.InvalidInput;
-        }
         actual.Should().Be(expected);
     }
+
+    internal static void AssertLegacyHubError(HubException error, string exactMessage)
+    {
+        AssertHubError(error, null);
+        error.Message.Should().Be(exactMessage);
+    }
+
+    [GeneratedRegex("LimitExceeded|too large", RegexOptions.ECMAScript | RegexOptions.CultureInvariant)]
+    private static partial Regex Limit();
+
+    [GeneratedRegex("RateLimited", RegexOptions.ECMAScript | RegexOptions.CultureInvariant)]
+    private static partial Regex Rate();
+
+    [GeneratedRegex("InvalidInput", RegexOptions.ECMAScript | RegexOptions.CultureInvariant)]
+    private static partial Regex Invalid();
+
+    [GeneratedRegex(@"\bRoom not found\b", RegexOptions.ECMAScript | RegexOptions.CultureInvariant)]
+    private static partial Regex Missing();
+
+    [GeneratedRegex("Join the room before changing it", RegexOptions.ECMAScript | RegexOptions.CultureInvariant)]
+    private static partial Regex Participant();
 }
