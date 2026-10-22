@@ -47,6 +47,47 @@ function create(
   return { lifecycle, jobs, delays, callbacks, connection };
 }
 
+test('offline invalidates a pending rejoin and online starts a fresh join', async () => {
+  let resolve;
+  let joins = 0;
+  const { lifecycle, connection, jobs } = create(() => {
+    joins++;
+    if (joins > 1) return Promise.resolve({});
+    return new Promise((done) => {
+      resolve = done;
+    });
+  });
+  const events = new Map();
+  const readOnly = [];
+  const statuses = [];
+  let applied = 0;
+  connection.onreconnected = connection.onreconnecting = connection.onclose = () => {};
+  lifecycle.setReadOnly = (value) => readOnly.push(value);
+  lifecycle.setStatus = (value) => statuses.push(value);
+  lifecycle.applyJoin = () => applied++;
+  lifecycle.registerConnectivity({
+    addEventListener: (name, handler) => events.set(name, handler)
+  });
+  const pending = lifecycle.rejoinRoomWithRetry();
+  assert.equal(lifecycle.session.isSynchronizingYjs, true);
+  events.get('offline')();
+  assert.equal(lifecycle.session.isSynchronizingYjs, false);
+  resolve({});
+  await pending;
+  assert.equal(lifecycle.participating, false);
+  assert.equal(lifecycle.rejoining, false);
+  assert.equal(applied, 0);
+  assert.ok(readOnly.every((value) => value));
+  assert.equal(statuses.at(-1), 'reconnecting');
+  assert.equal(jobs.size, 0);
+  events.get('online')();
+  await new Promise(setImmediate);
+  assert.equal(joins, 2);
+  assert.equal(applied, 1);
+  assert.equal(lifecycle.participating, true);
+  assert.equal(readOnly.at(-1), false);
+});
+
 test('rejoin backs off through every configured delay and caps at the last', async () => {
   const { lifecycle, jobs, delays } = create();
   await lifecycle.rejoinRoomWithRetry();

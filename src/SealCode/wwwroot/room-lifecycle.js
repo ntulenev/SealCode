@@ -198,10 +198,9 @@ export class RoomLifecycle {
     this.connection.onclose(() => this.pause('disconnected'));
     events.addEventListener('offline', () => {
       if (!this.joined || this.closed) return;
-      this.participating = false;
-      this.resetTransport();
-      this.setStatus('reconnecting');
-      this.setReadOnly(true);
+      this.session.synchronizationEpoch += 1;
+      this.session.isSynchronizingYjs = false;
+      this.pause('reconnecting');
     });
     events.addEventListener('online', () => {
       if (!this.joined || this.closed) return;
