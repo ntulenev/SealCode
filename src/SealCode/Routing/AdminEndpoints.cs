@@ -3,6 +3,7 @@ using Abstractions;
 using Models;
 
 using SealCode.Security;
+using SealCode.Hosting;
 
 using Transport.Models;
 
@@ -19,9 +20,10 @@ internal static class AdminEndpoints
     /// <param name="app">The application to configure.</param>
     public static void MapAdminEndpoints(this WebApplication app)
     {
-        _ = app.MapGet("/admin/login", (IWebHostEnvironment env) =>
+        _ = app.MapGet("/admin/login", (IWebHostEnvironment env, HttpContext context) =>
         {
             var path = Path.Combine(env.WebRootPath, "admin-login.html");
+            StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
         });
 
@@ -40,7 +42,7 @@ internal static class AdminEndpoints
             return Results.Redirect("/admin/login");
         });
 
-        _ = app.MapGet("/admin", (IWebHostEnvironment env, IAdminUserManager adminUserManager) =>
+        _ = app.MapGet("/admin", (IWebHostEnvironment env, IAdminUserManager adminUserManager, HttpContext context) =>
         {
             if (!adminUserManager.IsAdmin())
             {
@@ -48,6 +50,7 @@ internal static class AdminEndpoints
             }
 
             var path = Path.Combine(env.WebRootPath, "admin.html");
+            StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
         });
 

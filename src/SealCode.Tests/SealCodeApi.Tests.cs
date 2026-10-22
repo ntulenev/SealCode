@@ -113,6 +113,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         try
         {
             await File.WriteAllTextAsync(Path.Combine(root, "room.html"), "room");
+            await File.WriteAllTextAsync(Path.Combine(root, "room-ABCDEFGH.html"), "room");
             await File.WriteAllTextAsync(Path.Combine(root, "chunk-ABCDEFGH.js"), "export {};");
             using var baseFactory = CreateFactory();
             using var factory = baseFactory.WithWebHostBuilder(builder => builder.UseWebRoot(root));
@@ -124,10 +125,31 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
             chunk.StatusCode.Should().Be(HttpStatusCode.OK);
             chunk.Headers.CacheControl!.ToString().Should().Contain("immutable");
             chunk.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromDays(365));
+            using var hashedHtml = await client.GetAsync("/room-ABCDEFGH.html");
+            hashedHtml.StatusCode.Should().Be(HttpStatusCode.OK);
+            hashedHtml.Headers.CacheControl!.NoCache.Should().BeTrue();
         }
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RoutedHtmlPagesAlwaysRevalidate()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var login = await client.GetAsync("/admin/login");
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+        login.Headers.CacheControl!.NoCache.Should().BeTrue();
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie);
+        foreach (var path in new[] { "/admin", $"/room/{roomId}" })
+        {
+            using var response = await client.GetAsync(path);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.CacheControl!.NoCache.Should().BeTrue();
         }
     }
 
