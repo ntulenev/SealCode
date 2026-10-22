@@ -53,7 +53,7 @@ public sealed class RoomResourceFilterTests
         var error = await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(contexts[1], Next));
         HubErrorAssertions.AssertHubError(error, HubErrorCode.RateLimited);
         Assert.Equal(1, accepted);
-        callers[1].Verify(c => c.Abort(), Times.Once);
+        callers[1].Verify(c => c.Abort(), Times.Never);
         await filter.OnDisconnectedAsync(contexts[0], null, (_, _) => Task.CompletedTask);
         await filter.OnConnectedAsync(contexts[2], Next);
         Assert.Equal(2, accepted);
@@ -89,7 +89,7 @@ public sealed class RoomResourceFilterTests
             {
                 var error = await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(context, _ => Task.CompletedTask));
                 HubErrorAssertions.AssertHubError(error, HubErrorCode.RateLimited);
-                caller.Verify(c => c.Abort(), Times.Once);
+                caller.Verify(c => c.Abort(), Times.Never);
             }
         }
     }
@@ -113,7 +113,8 @@ public sealed class RoomResourceFilterTests
             return new(caller.Object, services, hub);
         }
         await filter.OnConnectedAsync(Context(first), _ => Task.CompletedTask);
-        await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(Context(same), _ => Task.CompletedTask));
+        var error = await Assert.ThrowsAsync<HubException>(() => filter.OnConnectedAsync(Context(same), _ => Task.CompletedTask));
+        HubErrorAssertions.AssertHubError(error, HubErrorCode.RateLimited);
         await filter.OnConnectedAsync(Context(other), _ => Task.CompletedTask);
         Assert.Equal(2, filter.TrackedSourceCount);
         await filter.OnDisconnectedAsync(Context(first), null, (_, _) => Task.CompletedTask);
@@ -148,6 +149,7 @@ public sealed class RoomResourceFilterTests
             await filter.OnConnectedAsync(Context(caller), _ => Task.CompletedTask);
         }
         joined.Object.SetActiveRoom("room", "Alice");
+        joined.Object.ClearActiveRoom();
         await filter.OnDisconnectedAsync(Context(released), null, (_, _) => Task.CompletedTask);
         clock.Advance(TimeSpan.FromSeconds(5));
         unjoined.Verify(c => c.Abort(), Times.Once);
@@ -155,6 +157,42 @@ public sealed class RoomResourceFilterTests
         released.Verify(c => c.Abort(), Times.Never);
         await filter.OnDisconnectedAsync(Context(unjoined), null, (_, _) => Task.CompletedTask);
         await filter.OnDisconnectedAsync(Context(joined), null, (_, _) => Task.CompletedTask);
+    }
+
+    [Fact]
+    public async Task LimiterCreationFailureReleasesSourceAndGlobalPermit()
+    {
+        var fail = true;
+        using var filter = new RoomResourceFilter(Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers = [],
+            Languages = [],
+            Limits = new RoomLimits { MaxConnections = 1 }
+        }), new FakeTimeProvider(), (permits, window) =>
+        {
+            if (window == TimeSpan.FromSeconds(1) && fail)
+            {
+                throw new InvalidOperationException("limiter creation failed");
+            }
+            return new System.Threading.RateLimiting.FixedWindowRateLimiter(new()
+            {
+                PermitLimit = permits,
+                Window = window,
+                AutoReplenishment = false
+            });
+        });
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>());
+        var caller = Caller("192.0.2.1");
+        var context = new HubLifetimeContext(caller.Object, services, hub);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => filter.OnConnectedAsync(context, _ => Task.CompletedTask));
+        Assert.Equal(0, filter.TrackedSourceCount);
+        Assert.Empty(caller.Object.Items);
+        fail = false;
+        await filter.OnConnectedAsync(context, _ => Task.CompletedTask);
+        Assert.Equal(1, filter.TrackedSourceCount);
+        await filter.OnDisconnectedAsync(context, null, (_, _) => Task.CompletedTask);
+        Assert.Equal(0, filter.TrackedSourceCount);
     }
 
     private static Mock<HubCallerContext> Caller(string address)

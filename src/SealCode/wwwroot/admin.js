@@ -5,7 +5,9 @@ import { setLanguageOptions } from './language-options.js';
 /** @param {{document: Document, window: Window, fetch: typeof fetch, confirm: (message: string) => boolean, clipboard: Pick<Clipboard, "writeText">}} options */
 export function createAdminPage({ document, window, fetch, confirm, clipboard }) {
   const roomsEl = document.getElementById('rooms');
-  const createBtn = document.getElementById('createRoom');
+  const createBtn = /** @type {HTMLButtonElement} */ (
+    document.getElementById('createRoom')
+  );
   const nameInput = /** @type {HTMLInputElement} */ (document.getElementById('roomName'));
   const langInput = /** @type {HTMLSelectElement} */ (
     document.getElementById('roomLanguage')
@@ -32,7 +34,6 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
       if (!res.ok || res.redirected) {
         throw requestError(res);
       }
-      if (res.redirected) throw requestError(res);
       const rooms = await res.json();
       renderRooms(rooms);
     } catch (error) {
@@ -126,6 +127,8 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
   }
 
   createBtn.addEventListener('click', async () => {
+    if (createBtn.disabled) return;
+    createBtn.disabled = true;
     try {
       const name = nameInput.value.trim();
       const language = langInput.value;
@@ -158,6 +161,8 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
       await fetchRooms();
     } catch (error) {
       showError(error);
+    } finally {
+      createBtn.disabled = false;
     }
   });
 

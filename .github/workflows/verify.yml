@@ -30,6 +30,8 @@ jobs:
       - name: Client tests and separate JS coverage
         run: npm run test:client
       - run: npx playwright install --with-deps chromium
+      - name: Build client assets for browser tests
+        run: npm run build:client
       - name: Smoke test
         run: npm run test:smoke
       - run: npx playwright test --grep-invert @smoke

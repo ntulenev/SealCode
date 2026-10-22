@@ -77,7 +77,13 @@ public sealed class RoomLimits : IValidatableObject
     /// Gets the maximum concurrent connections from one normalized source.
     /// </summary>
     [Range(1, 10000)]
-    public int MaxConnectionsPerSource { get; init; } = 20;
+    public int MaxConnectionsPerSource
+    {
+        get => _maxConnectionsPerSource ?? Math.Min(20, MaxConnections);
+        init => _maxConnectionsPerSource = value;
+    }
+
+    private readonly int? _maxConnectionsPerSource;
 
     /// <summary>
     /// Gets the deadline in seconds for a connection to join a room.

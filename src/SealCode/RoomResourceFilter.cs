@@ -45,7 +45,6 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         if (!lease.IsAcquired || !_connections.Wait(0))
         {
             _throttled.Add(1);
-            context.Context.Abort();
             throw HubErrors.Create(HubErrorCode.RateLimited, "Connection capacity reached");
         }
         lock (_sourceLock)
@@ -55,23 +54,22 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
             {
                 _ = _connections.Release();
                 _throttled.Add(1);
-                context.Context.Abort();
                 throw HubErrors.Create(HubErrorCode.RateLimited, "Connection capacity reached");
             }
             _activeSources[address] = count + 1;
         }
         context.Context.Items["connectionSource"] = address;
-        context.Context.Items["unjoinedTimer"] = _timeProvider.CreateTimer(_ =>
-        {
-            if (context.Context.GetActiveRoomId() is null)
-            {
-                context.Context.Abort();
-            }
-        }, null, TimeSpan.FromSeconds(_limits.UnjoinedConnectionTimeoutSeconds), Timeout.InfiniteTimeSpan);
-        context.Context.Items["invocationLimiter"] = _limiterFactory(_limits.InvocationsPerSecond, TimeSpan.FromSeconds(1));
         context.Context.Items["connectionPermit"] = true;
         try
         {
+            context.Context.Items["unjoinedTimer"] = _timeProvider.CreateTimer(_ =>
+            {
+                if (!context.Context.HasJoinedRoom())
+                {
+                    context.Context.Abort();
+                }
+            }, null, TimeSpan.FromSeconds(_limits.UnjoinedConnectionTimeoutSeconds), Timeout.InfiniteTimeSpan);
+            context.Context.Items["invocationLimiter"] = _limiterFactory(_limits.InvocationsPerSecond, TimeSpan.FromSeconds(1));
             await next(context).ConfigureAwait(false);
         }
         catch { Release(context); throw; }
@@ -105,9 +103,14 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         {
             return await next(context).ConfigureAwait(false);
         }
-        catch (Exception ex) when (HubErrors.Translate(ex) is not null)
+        catch (Exception ex)
         {
-            throw HubErrors.Translate(ex)!;
+            var translated = HubErrors.Translate(ex);
+            if (translated is not null)
+            {
+                throw translated;
+            }
+            throw;
         }
     }
 

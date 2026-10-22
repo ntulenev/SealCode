@@ -22,18 +22,38 @@ public sealed class RoomHubBroadcastTests
     public async Task DisconnectWithoutAnExistingRoomIsHarmless(string? state)
     {
         var room = CreateRoom();
-        var manager = new Mock<IRoomManager>();
-        using var hub = CreateHub(room, manager, new Mock<IClientProxy>(), new Mock<IGroupManager>());
+        var manager = Manager(room);
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        using var hub = CreateHub(room, manager, proxy, new Mock<IGroupManager>());
         if (state is null)
         {
             hub.Context.ClearActiveRoom();
         }
         else
         {
-            hub.Context.SetActiveRoom(state == "missing" ? room.RoomId.Value : state, "Alice");
+            hub.Context.SetActiveRoom(state == "missing" ? RoomId.New().Value : state, "Alice");
         }
         await hub.OnDisconnectedAsync(null);
         Assert.Equal(1, room.ConnectedUserCount);
+        if (state != "invalid")
+        {
+            Assert.Null(hub.Context.GetActiveRoomId());
+        }
+        proxy.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task DisconnectOfAbsentParticipantClearsContextWithoutBroadcasting()
+    {
+        var room = CreateRoom();
+        room.Leave(new("connection"));
+        room.AddUser(new("bob"), new("Bob"), 5);
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        using var hub = CreateHub(room, Manager(room), proxy, new Mock<IGroupManager>());
+        await hub.OnDisconnectedAsync(null);
+        Assert.Null(hub.Context.GetActiveRoomId());
+        Assert.Equal("Bob", Assert.Single(room.CreateUsersSnapshot()).Value);
+        proxy.VerifyNoOtherCalls();
     }
 
     [Theory]
@@ -106,6 +126,7 @@ public sealed class RoomHubBroadcastTests
         context.Object.SetActiveRoom(room.RoomId.Value, "Alice");
         var clients = new Mock<IHubCallerClients>();
         clients.Setup(c => c.Group(It.IsAny<string>())).Returns(proxy.Object);
+        clients.Setup(c => c.GroupExcept(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(proxy.Object);
         var languages = new Mock<ILanguageValidator>();
         languages.Setup(l => l.IsValid(It.IsAny<RoomLanguage>())).Returns(true);
         return new RoomHub(manager.Object, new RoomSessionService(manager.Object, languages.Object), NullLogger<RoomHub>.Instance)

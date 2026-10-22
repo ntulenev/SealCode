@@ -69,6 +69,7 @@ export class RoomLifecycle {
     this.joined = false;
     this.participating = false;
     this.rejoining = false;
+    this.rejoinToken = 0;
     this.retryTimer = null;
     this.retryAttempt = 0;
   }
@@ -118,6 +119,8 @@ export class RoomLifecycle {
   async rejoinRoomWithRetry() {
     if (!this.joined || !this.getDisplayName() || this.closed) return;
     if (this.connection.state !== this.connectedState || this.rejoining) return;
+    this.resetTransport();
+    const token = ++this.rejoinToken;
     this.rejoining = true;
     this.clearRejoinRetryTimer();
     this.setStatus('reconnecting');
@@ -126,8 +129,9 @@ export class RoomLifecycle {
     try {
       joined = await this.joinRoom();
     } finally {
-      this.rejoining = false;
+      if (token === this.rejoinToken) this.rejoining = false;
     }
+    if (token !== this.rejoinToken) return;
     if (joined) {
       this.retryAttempt = 0;
       this.setStatus('connected');
@@ -173,6 +177,7 @@ export class RoomLifecycle {
     this.participating = false;
     this.resetTransport();
     this.clearRejoinRetryTimer();
+    this.rejoinToken++;
     this.rejoining = false;
     this.setStatus(status);
     this.setReadOnly(true);
@@ -194,6 +199,7 @@ export class RoomLifecycle {
     events.addEventListener('offline', () => {
       if (!this.joined || this.closed) return;
       this.participating = false;
+      this.resetTransport();
       this.setStatus('reconnecting');
       this.setReadOnly(true);
     });

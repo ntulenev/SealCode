@@ -20,20 +20,18 @@ public sealed class RoomRegistryTests
     {
         var registry = new RoomRegistry(Mock.Of<ILogger<RoomRegistry>>(), Options.Create(new ApplicationConfiguration
         {
-            AdminUsers = [], Languages = [], Limits = new RoomLimits { MaxRooms = 2 }
+            AdminUsers = [],
+            Languages = [],
+            Limits = new RoomLimits { MaxRooms = 2 }
         }));
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var tasks = Enumerable.Range(0, 32).Select(index => Task.Run(async () =>
+        await Concurrency.RunTogether(Enumerable.Range(0, 32).Select<int, Action>(index => () =>
         {
-            await gate.Task;
             try
             {
                 registry.CreateRoom(new($"Room-{index}"), new("csharp"), new("admin"));
             }
             catch (RoomLimitException) { }
-        })).ToArray();
-        gate.SetResult();
-        await Task.WhenAll(tasks);
+        }).ToArray());
         registry.GetRoomsSnapshot().Should().HaveCount(2);
     }
 

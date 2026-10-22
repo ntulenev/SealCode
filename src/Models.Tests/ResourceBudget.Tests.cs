@@ -8,6 +8,16 @@ namespace Models.Tests;
 public sealed class ResourceBudgetTests
 {
     [Fact]
+    public void DefaultSourceCapacityFitsSmallGlobalCapacity()
+    {
+        var limits = new RoomLimits { MaxConnections = 10 };
+        Assert.Equal(10, limits.MaxConnectionsPerSource);
+        Assert.True(Validator.TryValidateObject(limits, new(limits), [], validateAllProperties: true));
+        var explicitLimit = new RoomLimits { MaxConnections = 10, MaxConnectionsPerSource = 20 };
+        Assert.False(Validator.TryValidateObject(explicitLimit, new(explicitLimit), [], validateAllProperties: true));
+    }
+
+    [Fact]
     public void NewConnectionLimitDefaultsToThirty()
     {
         Assert.Equal(30, new RoomLimits().NewConnectionsPerSourcePerMinute);

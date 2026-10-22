@@ -156,7 +156,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.JoinRoomAsync(" ", "Alice");
 
-        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        HubErrorAssertions.AssertLegacyHubError((await action.Should().ThrowAsync<HubException>()).Which, "Invalid room id");
     }
 
     [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenRoomIsNotFound")]
@@ -324,7 +324,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, "Alice");
 
-        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        HubErrorAssertions.AssertLegacyHubError((await action.Should().ThrowAsync<HubException>()).Which, "Display name already in use. Choose another name.");
         roomManager.Verify(m => m.RegisterUserInRoom(
                 It.IsAny<RoomId>(),
                 It.IsAny<ConnectionId>(),
@@ -342,7 +342,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.UpdateYjsAsync(DefaultRoomId, "not-base64");
 
-        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        HubErrorAssertions.AssertLegacyHubError((await action.Should().ThrowAsync<HubException>()).Which, "Invalid Yjs payload");
         roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
     }
 
@@ -505,7 +505,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.SetLanguageAsync(DefaultRoomId, language);
 
-        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        HubErrorAssertions.AssertLegacyHubError((await action.Should().ThrowAsync<HubException>()).Which, "Invalid language");
         roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
         validator.Verify(v => v.IsValid(It.IsAny<RoomLanguage>()), Times.Once);
     }
@@ -518,7 +518,7 @@ public sealed class RoomHubTests
         room.AddUser(new("conn-1"), new("Alice"), 5);
         SetupTryGetRoom(DefaultRoomId, room, out var manager);
         var validator = new Mock<ILanguageValidator>();
-        validator.Setup(v => v.IsValid(It.IsAny<RoomLanguage>())).Returns(true);
+        validator.Setup(v => v.IsValid(It.Is<RoomLanguage>(language => language.Value == "javascript"))).Returns(true);
         using var harness = new HubHarness(manager.Object, validator.Object);
         await harness.Hub.SetLanguageAsync(DefaultRoomId, "JavaScript");
         room.Language.Value.Should().Be("javascript");
@@ -526,7 +526,7 @@ public sealed class RoomHubTests
         harness.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(
             new SentEvent("LanguageUpdated", ["javascript", 2, 1L]));
         manager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Once);
-        validator.Verify(v => v.IsValid(It.IsAny<RoomLanguage>()), Times.Once);
+        validator.Verify(v => v.IsValid(It.Is<RoomLanguage>(language => language.Value == "javascript")), Times.Once);
     }
 
     [Fact(DisplayName = "UpdateCursorAsyncShouldReturnWhenUserNotFound")]
@@ -671,7 +671,8 @@ public sealed class RoomHubTests
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
+        clients.Setup(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(excluded => excluded.Count == 1 && excluded[0] == "conn-1")))
             .Returns(proxy.Object);
 
         using var hub = CreateHub(
@@ -684,7 +685,8 @@ public sealed class RoomHubTests
 
         room.ConnectedUserCount.Should().Be(1);
         roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
-        clients.Verify(c => c.Group(It.Is<string>(group => group == DefaultRoomId)), Times.Once);
+        clients.Verify(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(excluded => excluded.Count == 1 && excluded[0] == "conn-1")), Times.Once);
         groups.Verify(g => g.RemoveFromGroupAsync(
                 It.Is<string>(conn => conn == "conn-1"),
                 It.Is<string>(group => group == DefaultRoomId),
@@ -720,7 +722,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.CheckpointYjsAsync(DefaultRoomId, "AQ==", "", revision);
 
-        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        HubErrorAssertions.AssertLegacyHubError((await action.Should().ThrowAsync<HubException>()).Which, "Invalid document revision");
     }
 
     private static bool MatchUserJoinedArgs(object?[] args, string user, string[] users)

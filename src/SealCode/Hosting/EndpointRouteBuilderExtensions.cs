@@ -39,7 +39,7 @@ internal static class EndpointRouteBuilderExtensions
                 settings.Value.Limits
             }));
 
-        _ = app.MapGet("/room/{roomId:ShortGuid}", (RoomId roomId, IRoomRegistry registry, IWebHostEnvironment env) =>
+        _ = app.MapGet("/room/{roomId:ShortGuid}", (RoomId roomId, IRoomRegistry registry, IWebHostEnvironment env, HttpContext context) =>
         {
             if (!registry.TryGetRoom(roomId, out _))
             {
@@ -47,6 +47,7 @@ internal static class EndpointRouteBuilderExtensions
             }
 
             var path = Path.Combine(env.WebRootPath, "room.html");
+            StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
         });
 

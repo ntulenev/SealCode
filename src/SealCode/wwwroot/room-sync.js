@@ -47,7 +47,7 @@ export class UpdateQueue {
     this.clearTimer = clearTimer;
     this.maxBytes = maxBytes;
     this.maxEncodedBytes = maxEncodedBytes;
-    this.singleUpdates = false;
+    this.singleRemaining = 0;
     this.maxCount = maxCount;
     /** @type {Uint8Array[]} */
     this.pending = [];
@@ -96,31 +96,35 @@ export class UpdateQueue {
     const generation = this.generation;
     let count = 1;
     let estimate = 4 * Math.ceil(this.pending[0].length / 3);
-    while (!this.singleUpdates && count < this.pending.length) {
+    while (this.singleRemaining === 0 && count < this.pending.length) {
       const next = 4 * Math.ceil(this.pending[count].length / 3);
       if (estimate + next > this.maxEncodedBytes) break;
       estimate += next;
       count++;
     }
-    let payload =
-      count === 1 ? this.pending[0] : this.merge(this.pending.slice(0, count));
-    while (count > 1 && 4 * Math.ceil(payload.length / 3) > this.maxEncodedBytes) {
-      count = Math.max(1, Math.floor(count / 2));
-      payload = count === 1 ? this.pending[0] : this.merge(this.pending.slice(0, count));
-    }
     const updates = this.pending.splice(0, count);
     this.flight = updates;
     this.inFlight = true;
     let retryDelay = 60;
+    let merging = true;
     try {
+      let payload = count === 1 ? updates[0] : this.merge(updates);
+      while (count > 1 && 4 * Math.ceil(payload.length / 3) > this.maxEncodedBytes) {
+        count = Math.max(1, Math.floor(count / 2));
+        this.pending.unshift(...updates.splice(count));
+        payload = count === 1 ? updates[0] : this.merge(updates);
+      }
+      merging = false;
       await this.send(payload);
       if (generation !== this.generation) return;
+      if (this.singleRemaining > 0) this.singleRemaining--;
       this.onSuccess();
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
-      const limited = classifyHubError(error) === HubErrorCode.LimitExceeded;
-      if (limited && updates.length > 1) this.singleUpdates = true;
+      const limited = !merging && classifyHubError(error) === HubErrorCode.LimitExceeded;
+      if ((merging || limited) && updates.length > 1)
+        this.singleRemaining = updates.length;
       this.blocked = limited && updates.length === 1;
       retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
@@ -135,7 +139,7 @@ export class UpdateQueue {
   }
   reset() {
     this.generation++;
-    this.singleUpdates = false;
+    this.singleRemaining = 0;
     if (this.timer) this.clearTimer(this.timer);
     this.pending = [];
     this.flight = [];
@@ -219,6 +223,7 @@ export class SnapshotRecovery {
     this.onSuccess = onSuccess;
     this.onError = onError;
     this.inFlight = false;
+    this.generation = 0;
   }
   schedule(delay = 5000) {
     if (this.active()) this.scheduler.schedule('recovery', delay, () => this.run());
@@ -229,12 +234,14 @@ export class SnapshotRecovery {
       this.schedule();
       return;
     }
+    const generation = this.generation;
     const context = this.capture();
     let token;
     this.inFlight = true;
     try {
       const remote = await this.probe();
-      if (!this.current(context) || !this.ready()) return;
+      if (generation !== this.generation || !this.current(context) || !this.ready())
+        return;
       const local = this.revisions();
       if (
         remote.DocumentRevision <= local.DocumentRevision &&
@@ -246,20 +253,21 @@ export class SnapshotRecovery {
       }
       token = this.begin();
       const result = await this.snapshot();
-      if (!this.current(context)) return;
+      if (generation !== this.generation || !this.current(context)) return;
       this.apply(result);
       this.onSuccess();
     } catch (error) {
-      if (this.current(context)) this.onError(error);
+      if (generation === this.generation && this.current(context)) this.onError(error);
     } finally {
-      if (this.current(context)) {
+      if (generation === this.generation) {
         this.inFlight = false;
         if (token !== undefined) this.end(token);
-        this.schedule();
+        if (this.current(context)) this.schedule();
       }
     }
   }
   reset() {
+    this.generation++;
     this.inFlight = false;
     this.scheduler.cancel('recovery');
   }
@@ -270,7 +278,7 @@ export class CheckpointWriter {
   /** @param {import('./client-types.js').CheckpointWriterOptions} options */
   constructor({
     delay = 400,
-    retryAfterRevisions = 1,
+    retryAfterRevisions = 64,
     scheduler,
     ready,
     capture,
@@ -295,6 +303,7 @@ export class CheckpointWriter {
     this.inFlight = false;
     this.timer = false;
     this.skippedRevision = -1;
+    this.generation = 0;
   }
   schedule() {
     if (
@@ -311,30 +320,35 @@ export class CheckpointWriter {
   async run() {
     this.timer = false;
     if (!this.ready()) return;
+    const generation = this.generation;
     const context = this.capture();
     const revision = this.revision();
     let retry = false;
     this.inFlight = true;
     try {
       const accepted = await this.send(this.payload(revision));
-      if (this.current(context) && accepted) this.onSuccess(revision);
+      if (generation === this.generation && this.current(context) && accepted)
+        this.onSuccess(revision);
     } catch (error) {
-      if (!this.current(context)) return;
+      if (generation !== this.generation || !this.current(context)) return;
       const permanent = classifyHubError(error) === HubErrorCode.LimitExceeded;
       if (permanent) this.skippedRevision = revision;
       retry = !permanent;
       this.onError(error, permanent);
     } finally {
-      if (this.current(context)) {
+      if (generation === this.generation) {
         this.inFlight = false;
-        if (retry || this.revision() > revision) this.schedule();
+        if (this.current(context) && (retry || this.revision() > revision))
+          this.schedule();
       }
     }
   }
-  reset() {
+  /** @param {{keepSkipped?: boolean}} [options] */
+  reset({ keepSkipped = false } = {}) {
+    this.generation++;
     this.inFlight = false;
     this.timer = false;
-    this.skippedRevision = -1;
+    if (!keepSkipped) this.skippedRevision = -1;
     this.scheduler.cancel('checkpoint');
   }
 }

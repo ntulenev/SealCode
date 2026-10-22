@@ -191,11 +191,21 @@ public sealed class RoomHub : SignalRHub
         try
         {
             normalized = new RoomLanguage(language);
-            var changed = HubErrors.Invoke(() => _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized));
+            var changed = HubErrors.Invoke(() =>
+            {
+                try
+                {
+                    return _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized);
+                }
+                catch (ArgumentException ex) when (ex is not ArgumentNullException)
+                {
+                    throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
+                }
+            });
             newVersion = changed.RoomVersion.Value;
             metadataRevision = changed.MetadataRevision;
         }
-        catch (ArgumentException)
+        catch (ArgumentException ex) when (ex is not ArgumentNullException)
         {
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }
@@ -296,7 +306,7 @@ public sealed class RoomHub : SignalRHub
         }
         if (notify && displayName is not null)
         {
-            await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
+            await BroadcastAfterCommitAsync(() => Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
                 .SendAsync(HubContract.Events.UserLeft, displayName, usersSnapshot, result.PresenceRevision, CancellationToken.None),
                 "Presence notification failed for {RoomId}", parsedRoomId).ConfigureAwait(false);
             _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);

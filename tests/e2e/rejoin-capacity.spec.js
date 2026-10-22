@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 import { csrf } from './admin-token.js';
-import { startIsolatedHost } from '../isolated-host.js';
 
 async function join(page, roomId, name) {
   await page.goto(`/room/${roomId}`);
@@ -10,17 +9,20 @@ async function join(page, roomId, name) {
 }
 
 test('a full room makes a failed rejoin visible and keeps the editor read-only', async ({
-  browser
+  browser,
+  isolatedHost
 }) => {
-  const host = await startIsolatedHost({ MaxUsersPerRoom: 2 });
+  const host = await isolatedHost({ MaxUsersPerRoom: 2 });
   const aliceContext = await browser.newContext({ baseURL: host.baseURL });
   const others = await browser.newContext({ baseURL: host.baseURL });
   try {
     const alice = await aliceContext.newPage();
-    await alice.request.post('/admin/login', {
+    const login = await alice.request.post('/admin/login', {
       headers: await csrf(alice.request),
       form: { name: 'BrowserAdmin', password: 'browser-pass' }
     });
+    expect(login.ok()).toBeTruthy();
+    expect(new URL(login.url()).pathname).toBe('/admin');
     const response = await alice.request.post('/admin/rooms', {
       headers: await csrf(alice.request),
       data: { name: 'Capacity', language: 'csharp' }
@@ -55,6 +57,5 @@ test('a full room makes a failed rejoin visible and keeps the editor read-only',
   } finally {
     await aliceContext.close();
     await others.close();
-    await host.stop();
   }
 });

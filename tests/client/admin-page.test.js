@@ -35,7 +35,8 @@ function find(root, text) {
 async function fixture({
   tokenStatus = 200,
   clipboard = async () => {},
-  rooms = []
+  rooms = [],
+  post
 } = {}) {
   const elements = Object.fromEntries(
     ['rooms', 'createRoom', 'roomName', 'roomLanguage', 'createResult'].map((id) => [
@@ -43,16 +44,19 @@ async function fixture({
       element()
     ])
   );
-  const fetch = async (url) => ({
-    ok: url !== '/admin/token' || tokenStatus === 200,
-    status: url === '/admin/token' ? tokenStatus : 200,
-    json: async () =>
-      url === '/admin/rooms'
-        ? rooms
-        : url === '/languages'
-          ? ['csharp']
-          : { Token: 'token' }
-  });
+  const fetch = async (url, options) =>
+    options?.method === 'POST' && post
+      ? post()
+      : {
+          ok: url !== '/admin/token' || tokenStatus === 200,
+          status: url === '/admin/token' ? tokenStatus : 200,
+          json: async () =>
+            url === '/admin/rooms'
+              ? rooms
+              : url === '/languages'
+                ? ['csharp']
+                : { Token: 'token' }
+        };
   const page = createAdminPage({
     document: { getElementById: (id) => elements[id], createElement: element },
     window: { location: { origin: 'https://example.com' } },
@@ -92,4 +96,27 @@ test('null and untrusted names render as text without dropping other rows', asyn
   assert.equal(elements.rooms.children.length, 2);
   assert.equal(elements.rooms.children[0].children[0].children[0].textContent, '');
   assert.ok(find(elements.rooms, '<img onerror=alert(1)>'));
+});
+
+test('create ignores a second click while the first request is pending', async () => {
+  let finish;
+  let posts = 0;
+  const elements = await fixture({
+    post: () => {
+      posts++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    }
+  });
+  elements.roomName.value = 'Room';
+  elements.roomLanguage.value = 'csharp';
+  const first = elements.createRoom.handlers.click();
+  await elements.createRoom.handlers.click();
+  await new Promise(setImmediate);
+  assert.equal(posts, 1);
+  assert.equal(elements.createRoom.disabled, true);
+  finish({ ok: true, json: async () => ({ RoomId: 'id' }) });
+  await first;
+  assert.equal(elements.createRoom.disabled, false);
 });

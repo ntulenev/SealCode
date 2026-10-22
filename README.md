@@ -58,7 +58,7 @@ dotnet run --project src/SealCode/SealCode.csproj
 
 ## Tests
 
-Use Node.js 24 for the test runner and its coverage flags. After `npm ci`, install Chromium once with `npx playwright install chromium`.
+Use Node.js 20 or newer for the client build and test runner (CI uses Node.js 24). After `npm ci`, install Chromium once with `npx playwright install chromium`.
 Run `npm run build:client` before browser tests. Browser tests build the server and
 start their own isolated application instance. Set `E2E_PORT` to override the HTTP
 port (5087) or the production HTTPS check port (5088).
@@ -268,7 +268,7 @@ Configure these values in the `Limits` section:
 | `MaxSnapshotCharacters` | 1,048,576 | UTF-16 characters per text snapshot |
 | `MaxRooms` | 32 | Rooms per process |
 | `MaxConnections` | 160 | Concurrent hub connections |
-| `MaxConnectionsPerSource` | 20 | Concurrent connections per normalized source (1-10000; no greater than `MaxConnections`) |
+| `MaxConnectionsPerSource` | `min(20, MaxConnections)` | Concurrent connections per normalized source (1-10000; no greater than `MaxConnections`) |
 | `UnjoinedConnectionTimeoutSeconds` | 60 | Deadline to join a room (5-3600 seconds) |
 | `NewConnectionsPerSourcePerMinute` | 30 | New connections per source per minute; range 1–10000 |
 | `InvocationsPerSecond` | 100 | Hub invocations per connection per second |
@@ -336,10 +336,13 @@ Browser tests use an isolated temporary content root with disposable settings, n
 Coverage reports are separate:
 
 - **Server:** ReportGenerator merges source lines and branches across projects, rather than averaging project percentages.
-- **Client:** `c8 --all` includes every root `wwwroot/*.js` module, including
-  untested browser entry points. Tests are excluded. The enforced floors are
-  61% lines, 83% branches and 82% functions; LCOV is written to
-  `coverage/client/lcov.info`. Native Node coverage is also reported for loaded modules.
+- **Client:** `c8 --all` covers root `wwwroot/*.js` modules, including the untested
+  `room-application.js`, `room-connection.js` and `monaco-adapter.js`. Tests, typedef-only
+  `client-types.js`, `*-main.js`, `room.js` and `version.js` are excluded.
+  The enforced floors are 68% lines, 86% branches and 87% functions; LCOV is written
+  to `coverage/client/lcov.info`. c8 is the only coverage reporter.
+  The goal is to raise line coverage to at least 80% by covering the browser composition
+  and Monaco adapters.
 
 ### Production HTTPS check
 

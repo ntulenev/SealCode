@@ -30,6 +30,7 @@ export default defineConfig({
     url: `${baseURL}/health`,
     ignoreHTTPSErrors: true,
     reuseExistingServer: false,
+    timeout: 180_000,
     env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Production' }
   }
 });

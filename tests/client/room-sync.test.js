@@ -219,7 +219,7 @@ test('oversized checkpoint is skipped until the document revision changes', asyn
   writer.schedule();
   assert.equal(attempts, 1);
   assert.equal(scheduled, 0);
-  revision++;
+  revision += 64;
   writer.schedule();
   assert.equal(scheduled, 1);
 });
@@ -478,4 +478,128 @@ test('an unexpectedly large merge halves the prefix without dropping its tail', 
   assert.equal(f.queue.pending.length, 1);
   await f.tick();
   assert.deepEqual(sent, [[1], [2]]);
+});
+
+for (const Controller of [SnapshotRecovery, CheckpointWriter]) {
+  for (const reset of [false, true]) {
+    for (const fail of [false, true]) {
+      test(`${Controller.name} releases stale flight (reset=${reset}, fail=${fail})`, async () => {
+        let complete;
+        let current = true;
+        let successes = 0;
+        let errors = 0;
+        let scheduled = 0;
+        const pending = () =>
+          new Promise((resolve, reject) => {
+            complete = () => (fail ? reject(new Error('late')) : resolve(true));
+          });
+        const controller = new Controller({
+          scheduler: {
+            schedule() {
+              scheduled++;
+            },
+            cancel() {}
+          },
+          active: () => true,
+          ready: () => true,
+          capture: () => 1,
+          current: () => current,
+          revisions: () => ({
+            DocumentRevision: 0,
+            MetadataRevision: 0,
+            PresenceRevision: 0
+          }),
+          probe: pending,
+          snapshot: async () => ({}),
+          begin: () => 1,
+          apply() {},
+          end() {},
+          revision: () => 1,
+          payload: () => ({}),
+          send: pending,
+          onSuccess() {
+            successes++;
+          },
+          onError() {
+            errors++;
+          }
+        });
+        const flight = controller.run();
+        if (reset) controller.reset();
+        else current = false;
+        complete();
+        await flight;
+        assert.equal(controller.inFlight, false);
+        assert.equal(successes, 0);
+        assert.equal(errors, 0);
+        assert.equal(scheduled, 0);
+        current = true;
+        controller.schedule();
+        assert.equal(scheduled, 1);
+      });
+    }
+  }
+}
+
+test('batch fallback covers only the refused prefix and preserves enqueue order', async () => {
+  const sent = [];
+  const f = fixture((update) => {
+    sent.push([...update]);
+    if (sent.length === 1) throw new Error('LimitExceeded');
+  });
+  for (const value of [1, 2, 3]) f.queue.enqueue(Uint8Array.of(value));
+  await f.tick();
+  assert.equal(f.queue.singleRemaining, 3);
+  for (const value of [4, 5]) f.queue.enqueue(Uint8Array.of(value));
+  while (f.queue.pending.length) await f.tick();
+  assert.deepEqual(sent, [[1, 2, 3], [1], [2], [3], [4, 5]]);
+  assert.equal(f.queue.singleRemaining, 0);
+  f.queue.singleRemaining = 2;
+  f.queue.reset();
+  assert.equal(f.queue.singleRemaining, 0);
+});
+
+test('merge failures restore the prefix and retry individual updates', async () => {
+  const sent = [];
+  const f = fixture((update) => sent.push([...update]), {
+    merge() {
+      throw new Error('broken merge');
+    }
+  });
+  for (const value of [1, 2, 3]) f.queue.enqueue(Uint8Array.of(value));
+  await f.tick();
+  assert.deepEqual(f.errors, [false]);
+  assert.deepEqual(
+    f.queue.pending.map((item) => [...item]),
+    [[1], [2], [3]]
+  );
+  assert.equal(f.timers.size, 1);
+  while (f.queue.pending.length) await f.tick();
+  assert.deepEqual(sent, [[1], [2], [3]]);
+  assert.equal(f.queue.blocked, false);
+});
+
+test('transport reset preserves the checkpoint refusal interval until document disposal', () => {
+  let revision = 10;
+  let schedules = 0;
+  const writer = new CheckpointWriter({
+    scheduler: {
+      schedule() {
+        schedules++;
+      },
+      cancel() {}
+    },
+    ready: () => true,
+    revision: () => revision
+  });
+  writer.skippedRevision = 10;
+  writer.reset({ keepSkipped: true });
+  revision = 73;
+  writer.schedule();
+  assert.equal(schedules, 0);
+  revision = 74;
+  writer.schedule();
+  assert.equal(schedules, 1);
+  writer.reset();
+  assert.equal(writer.skippedRevision, -1);
 });

@@ -81,9 +81,14 @@ internal static class HubErrors
         {
             return invoke();
         }
-        catch (Exception ex) when (Translate(ex) is not null)
+        catch (Exception ex)
         {
-            throw Translate(ex)!;
+            var translated = Translate(ex);
+            if (translated is not null)
+            {
+                throw translated;
+            }
+            throw;
         }
     }
 
@@ -98,6 +103,7 @@ internal static class HubErrors
         UnauthorizedAccessException => Create(HubErrorCode.NotParticipant, ""),
         RoomLimitException limit => Create(HubErrorCode.LimitExceeded, limit.Resource),
         ArgumentNullException => Create(HubErrorCode.InvalidInput, "Invalid room input"),
+        ArgumentException input when !string.IsNullOrEmpty(input.ParamName) => Create(HubErrorCode.InvalidInput, "Invalid room input"),
         ArgumentException input => Create(HubErrorCode.InvalidInput, input.Message, legacyInput: true),
         _ => null
     };

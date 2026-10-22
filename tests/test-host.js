@@ -13,6 +13,8 @@ export function testHostCommand(baseURL, admins) {
       Limits: {
         MaxRooms: 1000,
         MaxConnections: 1000,
+        MaxConnectionsPerSource: 1000,
+        UnjoinedConnectionTimeoutSeconds: 3600,
         NewConnectionsPerSourcePerMinute: 10000,
         InvocationsPerSecond: 1000
       },

@@ -39,3 +39,24 @@ test('join waits for languages and ignores a second click', async ({ page, reque
   );
   expect(joins).toBe(1);
 });
+
+test('room removed before first join leaves the join controls disabled', async ({
+  page,
+  request
+}) => {
+  const created = await request.post('/admin/rooms', {
+    headers: await csrf(request),
+    data: { name: 'Removed before join', language: 'sql' }
+  });
+  const roomId = (await created.json()).RoomId;
+  await page.goto(`/room/${roomId}`);
+  const removed = await request.delete(`/admin/rooms/${roomId}`, {
+    headers: await csrf(request)
+  });
+  expect(removed.ok()).toBeTruthy();
+  await page.locator('#displayNameInput').fill('Alice');
+  await page.locator('#joinBtn').click();
+  await expect(page.locator('#joinError')).toContainText('Room not found');
+  await expect(page.locator('#joinBtn')).toBeDisabled();
+  await expect(page.locator('#displayNameInput')).toBeDisabled();
+});

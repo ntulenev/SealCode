@@ -129,7 +129,7 @@ test('online, offline and connection callbacks coordinate rejoin and read-only s
   assert.equal(joins, 1);
   reconnecting();
   closed();
-  assert.equal(resets, 2);
+  assert.equal(resets, 4);
   assert.equal(statuses.at(-1), 'disconnected');
   await reconnected();
   assert.equal(joins, 2);
@@ -215,4 +215,39 @@ test('online with a live transport rejoins before enabling editing', async () =>
   assert.equal(lifecycle.participating, true);
   assert.equal(readOnly.at(-1), false);
   lifecycle.closeRoom('done');
+});
+
+test('offline resets once and online resets before joining on the live connection', async () => {
+  const calls = [];
+  const { lifecycle, connection } = create(async () => {
+    calls.push('join');
+    return {};
+  });
+  const events = new Map();
+  connection.onreconnected = connection.onreconnecting = connection.onclose = () => {};
+  lifecycle.resetTransport = () => calls.push('reset');
+  lifecycle.registerConnectivity({
+    addEventListener: (name, fn) => events.set(name, fn)
+  });
+  events.get('offline')();
+  assert.deepEqual(calls, ['reset']);
+  events.get('online')();
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['reset', 'reset', 'join']);
+});
+
+test('a stale rejoin cannot unlock or schedule over a newer rejoin', async () => {
+  const replies = [];
+  const { lifecycle } = create(() => new Promise((resolve) => replies.push(resolve)));
+  const old = lifecycle.rejoinRoomWithRetry();
+  lifecycle.pause('reconnecting');
+  const current = lifecycle.rejoinRoomWithRetry();
+  replies[0]({});
+  await old;
+  assert.equal(lifecycle.rejoining, true);
+  await lifecycle.rejoinRoomWithRetry();
+  assert.equal(replies.length, 2);
+  replies[1]({});
+  await current;
+  assert.equal(lifecycle.rejoining, false);
 });
