@@ -38,8 +38,8 @@ Deployment and default values remain in the
 | SealCode | Composition, HTTP, SignalR, security, browser assets: RoomHub, RoomResourceFilter, SignalRRoomNotifier | Logic, Abstractions, Models, Transport |
 | TestKit | Shared RoomStateBuilder and Concurrency helpers, compiled into selected test projects | Shared source directory; no separate project |
 
-Diagram 1 shows project references and the notification boundary that keeps
-SignalR out of Logic.
+Diagram 1 shows production project references; each arrow points from a project
+to a project it references.
 
 ```mermaid
 flowchart TD
@@ -51,10 +51,12 @@ flowchart TD
     Logic --> Models
     Transport --> Models
     Abstractions --> Models
-    Logic -. "calls IRoomNotifier" .-> Boundary["Abstractions: IRoomNotifier"]
-    Implementation["SealCode: SignalRRoomNotifier"] -. implements .-> Boundary
-    TestKit["TestKit shared sources"] -. compiled into .-> Tests["Test projects"]
 ```
+
+Logic calls the IRoomNotifier interface defined in Abstractions. SealCode supplies
+its SignalRRoomNotifier implementation through dependency injection, so Logic
+does not reference SignalR or the SealCode project. TestKit is shared test source,
+not a project reference, and is described in the table above.
 
 [RoomState](../src/Models/RoomState.cs) owns the aggregate lock. Its internal
 [RoomMembership](../src/Models/RoomMembership.cs) and
