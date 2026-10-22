@@ -48,6 +48,7 @@ test('room removed before first join leaves the join controls disabled', async (
     headers: await csrf(request),
     data: { name: 'Removed before join', language: 'sql' }
   });
+  expect(created.ok()).toBe(true);
   const roomId = (await created.json()).RoomId;
   await page.goto(`/room/${roomId}`);
   const removed = await request.delete(`/admin/rooms/${roomId}`, {

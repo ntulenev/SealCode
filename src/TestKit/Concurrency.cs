@@ -14,7 +14,11 @@ internal static class Concurrency
         var failures = new ConcurrentQueue<Exception>();
         var tasks = actions.Select(action => Task.Factory.StartNew(() =>
         {
-            barrier.SignalAndWait();
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(10)))
+            {
+                failures.Enqueue(new TimeoutException("Concurrent start timed out"));
+                return;
+            }
             try
             {
                 action();
@@ -24,7 +28,7 @@ internal static class Concurrency
                 failures.Enqueue(error);
             }
         }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
         if (!failures.IsEmpty)
         {
             throw new AggregateException(failures);
