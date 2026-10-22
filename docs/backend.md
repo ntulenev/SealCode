@@ -91,7 +91,11 @@ executed once for every route.
 6. Default-file rewriting and static files serve the browser assets.
    StaticAssetCaching revalidates stable names and caches hashed assets.
 7. Cookie authentication resolves the admin identity.
-8. AdminHttpSecurity applies the admin HTTP policy.
+8. AdminHttpSecurity.InvokeAsync validates the antiforgery token for every POST
+   and DELETE under `/admin` and answers HTTP 400 when it is missing or invalid.
+   Login throttling is not part of this middleware: it is the endpoint filter
+   AdminHttpSecurity.FilterLoginAsync attached to the login route. Static admin
+   HTML is served by step 6, before this policy runs.
 9. MapSealCodeEndpoints and MapAdminEndpoints register HTTP routes.
 10. MapHub registers RoomHub at `/roomHub`.
 
@@ -123,8 +127,10 @@ fields are exposed but are not consumed by this reader.
 
 Room creation and administration use cookie authentication and antiforgery
 validation. See the [admin workflow](../README.md#admin-workflow) and
-[endpoint list](../README.md#endpoints); their implementation is
-[AdminEndpoints](../src/SealCode/Routing/AdminEndpoints.cs).
+[endpoint list](../README.md#endpoints). Admin pages, login/logout and room
+management are implemented in [AdminEndpoints](../src/SealCode/Routing/AdminEndpoints.cs);
+the antiforgery token endpoint `/admin/token` is mapped by MapSealCodeEndpoints
+and answers with Cache-Control: no-store.
 
 ## 4. Room model
 
@@ -177,8 +183,14 @@ verify that the Yjs bytes and text represent the claimed revision semantically.
 
 RoomState.Close marks the aggregate closed and calls the journal's Clear.
 Clear removes incremental updates and resets byte/count balances; it does not
-erase the checkpoint or reset revision counters. Remaining references reject
-mutations and synchronization snapshots. Membership is not cleared by Close.
+erase the checkpoint or reset revision counters. Membership is not cleared by
+Close. Through remaining references, joins, appends, checkpoints, language changes
+and synchronization snapshots are rejected with RoomNotFoundException
+(EnsureOpen/RequireParticipant). Leave deliberately has no closure check, so
+disconnect cleanup can still remove membership on a closed room; it advances
+PresenceRevision as usual. Cursor, selection and copy broadcasts do not consult
+the closed flag; they rely on the registry lookup, and a deleted room is removed
+from the registry before it is closed.
 
 RoomRegistry stores rooms in an immutable dictionary. CreateRoom checks MaxRooms
 and inserts under its capacity lock. Normal deletion removes the registry entry
@@ -253,13 +265,13 @@ UserSelection. Neither UserJoined nor YjsCheckpointed echoes to its initiator.
 [HubErrors.Create and HubErrors.Translate](../src/SealCode/Hub/HubErrors.cs) define
 these categories and wire formats:
 
-| HubErrorCode | Wire text | Client interpretation |
-| --- | --- | --- |
-| InvalidInput | InvalidInput: followed by details, or legacy unprefixed input text | Recognized by prefix only; legacy text can remain unclassified |
-| LimitExceeded | LimitExceeded: followed by resource label | Permanent for an individual queued update; checkpoint retry is deferred |
-| RateLimited | RateLimited: Connection capacity reached; RateLimited: Try again later | Temporary; update queue backs off |
-| RoomNotFound | Room not found | Terminal room closure |
-| NotParticipant | Join the room before changing it | Classified membership refusal |
+| HubErrorCode | Wire text | Client classification | Client action |
+| --- | --- | --- | --- |
+| InvalidInput | InvalidInput: followed by details, or legacy unprefixed input text | Substring `InvalidInput` anywhere in the text; legacy unprefixed text stays unclassified | No dedicated handling: join/rejoin errors display the server text; queues retry it like any temporary failure |
+| LimitExceeded | LimitExceeded: followed by resource label | Substring `LimitExceeded` or `too large` | Merged batch: split into single sends. Single update: permanent, queue blocked, editor read-only. Checkpoint: deferred by retryAfterRevisions |
+| RateLimited | RateLimited: Connection capacity reached; RateLimited: Try again later | Substring `RateLimited` | Temporary; update queue retries after 1100 ms |
+| RoomNotFound | Room not found | Text `Room not found` | Terminal: RoomLifecycle.closeRoom |
+| NotParticipant | Join the room before changing it | Exact membership message | Treated as temporary: update queue retries after 500 ms, checkpoint/recovery reschedule. It does not trigger a rejoin by itself; rejoin is driven by reconnect and online events |
 
 Legacy unprefixed messages include:
 
@@ -291,17 +303,26 @@ including SignalR wrappers. It recognizes LimitExceeded or "too large", then
 RateLimited, InvalidInput, Room not found, and the membership message. It returns
 null for other text, including several legacy validation messages.
 
-[UpdateQueue](../src/SealCode/wwwroot/room-sync.js) first falls back from a refused
-merged batch to individual updates. A single LimitExceeded refusal blocks that
-queue and preserves pending edits. RateLimited retries after 1100 ms; other
-send failures normally retry after 500 ms. CheckpointWriter treats LimitExceeded
-as a size refusal and waits for more revisions before reconsidering it.
-RoomLifecycle handles RoomNotFound as terminal rather than retrying indefinitely.
+[UpdateQueue](../src/SealCode/wwwroot/room-sync.js) switches to individual sends
+only when a merged batch is refused with LimitExceeded or merging itself fails;
+the refused batch is then sent one update at a time, after which batching
+resumes. Other failures (RateLimited, NotParticipant, transport errors) re-queue
+the batch unchanged, and it is merged again on retry. A LimitExceeded refusal of a
+single update blocks the queue, keeps pending edits, makes the editor read-only and
+shows a copy-before-reload warning (see
+[room-application.js](../src/SealCode/wwwroot/room-application.js) and
+[ADR 0004](adr/0004-resource-and-security-boundaries.md)). RateLimited retries after
+1100 ms; other send failures retry after 500 ms. CheckpointWriter treats
+LimitExceeded as a size refusal and waits for more revisions before reconsidering
+it. RoomLifecycle handles RoomNotFound as terminal rather than retrying indefinitely.
 
 Keep [HubContract.cs](../src/Transport/HubContract.cs),
 [hub-contract.js](../src/SealCode/wwwroot/hub-contract.js), and
 [HubContract.Tests](../src/SealCode.Tests/HubContract.Tests.cs) synchronized.
-The tests check the wire contract against the implementations/client constants.
+HubContract.Tests checks two things: the C# and JavaScript name/value maps are
+identical, and every `[HubMethodName]` on RoomHub appears in the contract. It does
+not verify that every contract method is implemented, nor parameter lists or event
+arguments; those are covered only by RoomHub, API and browser tests.
 
 ## 6. Connection lifecycle
 
@@ -314,7 +335,9 @@ admits connections in this order:
 
 Failure reports RateLimited: Connection capacity reached and increments
 hub.throttled. Source-capacity refusal releases the global permit immediately.
-No participant registration has happened at admission time.
+The fixed-window rate permit from step 1 is consumed even when step 2 or 3 then
+refuses the connection, so refused attempts count against the source's
+new-connection budget. No participant registration has happened at admission time.
 
 The rate buckets are a fixed array of 256 limiters selected by a string hash.
 Unrelated sources can collide and share a new-connection rate budget. Concurrent
@@ -351,20 +374,33 @@ Diagram 3 shows admission, the initial deadline, and membership transitions.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Admitted: admission succeeds
+    [*] --> Unjoined: admitted
     [*] --> Rejected: RateLimited
     Rejected --> [*]
-    Admitted --> Unjoined
     Unjoined --> Joined: JoinRoom
-    Unjoined --> Disconnected: initial deadline
-    Joined --> Joined: JoinRoom same connection and name
+    Unjoined --> Disconnected: join deadline
     Joined --> Left: LeaveRoom
     Left --> Joined: JoinRoom
-    Joined --> Left: RoomKilled closes browser session
     Joined --> Disconnected: connection ends
     Left --> Disconnected: connection ends
     Disconnected --> [*]
 ```
+
+A repeated JoinRoom on the same connection with the same name keeps the
+connection in Joined (idempotent registration). RoomKilled does not change
+server-side membership: the browser reacts by stopping its connection, so the
+transition is Joined → Disconnected. Disconnect cleanup then finds no room in the
+registry and returns without a UserLeft event.
+
+SignalR liveness settings decide how quickly a dead connection reaches
+Disconnected. The server uses KeepAliveInterval 5 s and ClientTimeoutInterval 15 s
+([AddSealCodeSignalR](../src/SealCode/Hosting/ServiceCollectionExtensions.cs)).
+The browser uses keepAliveIntervalInMilliseconds 5000, serverTimeoutInMilliseconds
+15000 and automatic reconnect that retries indefinitely every 3 s (2 s while the
+browser reports offline), see
+[createRoomConnection](../src/SealCode/wwwroot/room-connection.js). Until the
+server times out an abandoned connection, that connection keeps its display name
+and its participant slot.
 
 RoomHub.OnDisconnectedAsync calls RemoveFromRoomAsync for the active room.
 Leave commits membership removal and its matching user snapshot under the room
@@ -391,18 +427,18 @@ Diagram 4 shows group subscription before the atomic synchronization snapshot.
 ```mermaid
 sequenceDiagram
     participant A as Client A
+    participant F as RoomResourceFilter
     participant H as RoomHub
-    participant S as RoomSessionService
+    participant M as RoomManager
     participant R as RoomState
     participant B as Client B
-    participant F as RoomResourceFilter
     A->>F: JoinRoom
     F->>H: JoinRoom
-    H->>R: RoomManager registers participant
+    H->>M: RegisterUserInRoom
+    M->>R: AddUser
     H->>H: AddToGroupAsync
     B->>H: UpdateYjs
-    H->>S: Append
-    S->>R: Append
+    H->>R: Append via RoomSessionService
     H-->>A: YjsUpdated buffered while joining
     H->>R: CreateYjsSyncState
     R-->>H: atomic snapshot
@@ -424,7 +460,9 @@ is still required.
 On AddToGroupAsync failure, a newly registered participant is removed and active
 context is cleared. If subscription succeeded but the room closes before snapshot
 creation, snapshot creation throws; rollback also attempts group removal with
-CancellationToken.None and logs any cleanup failure.
+CancellationToken.None and logs any cleanup failure. The rollback calls
+RoomState.Leave, which advances PresenceRevision without a UserLeft event; other
+participants reconcile that revision on their next GetRoomRevisions probe.
 
 For an existing active membership, wasMember prevents rollback from removing that
 pre-existing registration. Same-connection, same-name registration is idempotent;
@@ -598,8 +636,9 @@ SignalR reconnect. A replacement connection is registered using its new
 ConnectionId. RoomLifecycle.pause clears participating, resets transport
 scheduling, and makes the editor read-only while retaining the document.
 
-The old connection can still occupy the name/capacity until disconnect cleanup.
-Rejoin retries use delays of 500, 1000, 2000, 5000, and then 10000 ms.
+The old connection can still occupy the name/capacity until disconnect cleanup,
+which for an abandoned transport happens only after the server's 15 s client
+timeout (see [Connection lifecycle](#6-connection-lifecycle)). Rejoin retries use delays of 500, 1000, 2000, 5000, and then 10000 ms.
 Only a successful join sets participating true. Sending is gated by
 canSendUpdates, so local updates already produced remain queued until the room
 membership and synchronization snapshot are restored.
@@ -609,7 +648,7 @@ WebSocket still reports Connected. Offline pauses participation; online reissues
 JoinRoom on that live connection when necessary. Same-connection registration
 is idempotent, so this also refreshes synchronization without duplicate membership.
 
-### Language and transient presence
+### Language, cursor, selection and copy
 
 SetLanguage delegates to RoomSessionService.ChangeLanguage and then
 RoomState.ChangeLanguage. Under the aggregate lock it validates membership and
@@ -621,6 +660,9 @@ BroadcastPresenceAsync checks membership, then broadcasts outside the lock using
 Context.ConnectionAborted. These events have no durable revision, snapshot, or
 replay guarantee. Nonparticipants are silently ignored; a missing room still
 raises Room not found. A negative cursor offset is rejected before broadcasting.
+Unlike committed changes, these sends do not go through BroadcastAfterCommitAsync:
+a send failure is not logged by the hub and propagates to the caller. The browser
+ignores it (a failed selection update only logs a console warning).
 
 ### Closing a room
 
@@ -672,17 +714,17 @@ has been exhaustively tested.
 
 | Guarantee | Mechanism | Code | Covered by tests |
 | --- | --- | --- | --- |
-| Accepted incremental updates receive unique, strictly increasing contiguous document revisions within a room | Check budgets and advance revision inside aggregate lock | [RoomState.Append; RoomDocumentJournal.Append](../src/Models/RoomDocumentJournal.cs) | [RoomStateConcurrency.Tests: ParallelAppendsAssignContiguousUniqueRevisions](../src/Models.Tests/RoomStateConcurrency.Tests.cs) |
+| Accepted incremental updates receive unique, strictly increasing contiguous document revisions within a room | Check budgets and advance revision inside aggregate lock | [RoomState.Append](../src/Models/RoomState.cs); [RoomDocumentJournal.Append](../src/Models/RoomDocumentJournal.cs) | [RoomStateConcurrency.Tests: ParallelAppendsAssignContiguousUniqueRevisions](../src/Models.Tests/RoomStateConcurrency.Tests.cs) |
 | A committed update is broadcast independently of author cancellation; a send failure does not roll it back | CancellationToken.None and caught non-fatal broadcast exceptions after commit | [RoomHub.UpdateYjsAsync; BroadcastAfterCommitAsync](../src/SealCode/RoomHub.cs) | [RoomHub.Tests: UpdateYjsAsyncShouldAppendAndBroadcastUpdate](../src/SealCode.Tests/RoomHub.Tests.cs); [RoomHubBroadcast.Tests: BroadcastFailureDoesNotUndoCommittedState](../src/SealCode.Tests/RoomHubBroadcast.Tests.cs) |
 | Joining leaves no subscription/snapshot gap for accepted updates, assuming live delivery succeeds | Subscribe before atomic snapshot; client buffers synchronization events | [RoomHub.JoinRoomAsync](../src/SealCode/RoomHub.cs) | [RoomHub.Tests: JoinRoomAsyncShouldIncludeUpdatesDuringSubscription](../src/SealCode.Tests/RoomHub.Tests.cs) |
 | Client detects revision gaps and missing final events and attempts snapshot recovery | Contiguous revision tracking plus periodic probes; snapshot merged into existing document | [YjsSession](../src/SealCode/wwwroot/yjs-session.js); [SnapshotRecovery](../src/SealCode/wwwroot/room-sync.js) | [yjs-session.test.js](../tests/client/yjs-session.test.js), [room-sync.test.js](../tests/client/room-sync.test.js), [crdt-recovery.spec.js](../tests/e2e/crdt-recovery.spec.js) |
-| A stale checkpoint cannot clear newer accepted updates | Exact current-revision check under the same lock as append | [RoomState.Checkpoint](../src/Models/RoomState.cs); [RoomDocumentJournal.TryCheckpoint](../src/Models/RoomDocumentJournal.cs) | [RoomHub.Tests: CheckpointYjsAsyncShouldRejectStaleCheckpoint](../src/SealCode.Tests/RoomHub.Tests.cs), [RoomDocumentJournal.Tests](../src/Models.Tests/RoomDocumentJournal.Tests.cs) |
-| Capacity, case-insensitive unique names, closure and expiration are serialized against join | AddUser and TryCloseIfIdle share the aggregate lock | [RoomState](../src/Models/RoomState.cs); [RoomMembership.Add](../src/Models/RoomMembership.cs) | [RoomStateConcurrency.Tests](../src/Models.Tests/RoomStateConcurrency.Tests.cs) |
+| A stale checkpoint cannot clear newer accepted updates | Exact current-revision check under the same lock as append | [RoomState.Checkpoint](../src/Models/RoomState.cs); [RoomDocumentJournal.TryCheckpoint](../src/Models/RoomDocumentJournal.cs) | [RoomState.Tests: TryCreateYjsCheckpointShouldRejectStaleRevisionWithoutLosingTail](../src/Models.Tests/RoomState.Tests.cs) (locked check); [RoomHub.Tests: CheckpointYjsAsyncShouldRejectStaleCheckpoint](../src/SealCode.Tests/RoomHub.Tests.cs) (optimistic pre-decode check only). An update accepted while the checkpoint is being decoded: not covered |
+| Capacity, case-insensitive unique names, closure and expiration are serialized against join | AddUser and TryCloseIfIdle share the aggregate lock | [RoomState](../src/Models/RoomState.cs); [RoomMembership.Add](../src/Models/RoomMembership.cs) | [RoomStateConcurrency.Tests](../src/Models.Tests/RoomStateConcurrency.Tests.cs); names differing only by case under concurrency: not covered (the concurrent test uses identical names) |
 | Retained incremental journals stay within byte/count budgets; refusal preserves committed state | Budget checks precede journal mutation; no eviction on append | [RoomDocumentJournal.Append](../src/Models/RoomDocumentJournal.cs) | [ResourceBudget.Tests: JournalBoundaryDoesNotMutateOnRefusal; ConcurrentAppendsCannotExceedBudgetAndCheckpointReleasesIt](../src/Models.Tests/ResourceBudget.Tests.cs) |
 | Application payload limits are checked and translated to stable resource errors | Encoded length before decode plus locked canonical size checks | [RoomSessionService](../src/Logic/RoomSessionService.cs); [HubErrors](../src/SealCode/Hub/HubErrors.cs) | [RoomSessionService.Tests](../src/Logic.Tests/RoomSessionService.Tests.cs), [SealCodeApi.Tests: HubJournalLimitIsStableAndCheckpointRestoresCapacity](../src/SealCode.Tests/SealCodeApi.Tests.cs) |
 | Room and admitted connection capacity do not exceed their configured budgets | Registry capacity lock, global semaphore, locked source counts | [RoomRegistry.CreateRoom](../src/Logic/RoomRegistry.cs); [RoomResourceFilter.OnConnectedAsync](../src/SealCode/RoomResourceFilter.cs) | [RoomRegistry.Tests](../src/Logic.Tests/RoomRegistry.Tests.cs), [RoomResourceFilter.Tests](../src/SealCode.Tests/RoomResourceFilter.Tests.cs) |
-| Document reads and document/language mutations require participant access; mutations recheck under lock | GetParticipant and RequireParticipant; snapshot rejects closed rooms | [RoomSessionService](../src/Logic/RoomSessionService.cs); [RoomState](../src/Models/RoomState.cs) | [SealCodeApi.Tests: NonParticipantsShouldNotMutateRoom](../src/SealCode.Tests/SealCodeApi.Tests.cs), [RoomSessionService.Tests](../src/Logic.Tests/RoomSessionService.Tests.cs) |
-| Sequential cleanup releases each recorded connection resource once, including partial initialization | Remove ownership entries before release; disconnect finally and initialization catch | [RoomResourceFilter.Release](../src/SealCode/RoomResourceFilter.cs) | [RoomResourceFilter.Tests: DisconnectReleasesConnectionCapacity; LimiterCreationFailureReleasesSourceAndGlobalPermit](../src/SealCode.Tests/RoomResourceFilter.Tests.cs); concurrent Release is not covered |
+| Document reads and document/language mutations require participant access; mutations recheck under lock | GetParticipant and RequireParticipant; snapshot rejects closed rooms | [RoomSessionService](../src/Logic/RoomSessionService.cs); [RoomState](../src/Models/RoomState.cs) | [SealCodeApi.Tests: NonParticipantsShouldNotMutateRoom](../src/SealCode.Tests/SealCodeApi.Tests.cs), [RoomSessionService.Tests](../src/Logic.Tests/RoomSessionService.Tests.cs) (preflight participant check); the recheck under the lock after a concurrent Leave: not covered |
+| Sequential cleanup releases each recorded connection resource once, including partial initialization | Remove ownership entries before release; disconnect finally and initialization catch | [RoomResourceFilter.Release](../src/SealCode/RoomResourceFilter.cs) | [RoomResourceFilter.Tests: DisconnectReleasesConnectionCapacity; LimiterCreationFailureReleasesSourceAndGlobalPermit](../src/SealCode.Tests/RoomResourceFilter.Tests.cs) (single release per path); a repeated or concurrent Release on the same connection: not covered |
 | Admission rejection reports a categorized refusal and never registers a room member | Filter throws RateLimited before invoking the hub lifecycle | [RoomResourceFilter.OnConnectedAsync](../src/SealCode/RoomResourceFilter.cs) | [SealCodeApi.Tests: ConnectionCapacityRejectionClosesClientAndReleasesPermit](../src/SealCode.Tests/SealCodeApi.Tests.cs) |
 
 Participant checks on read paths are separate from snapshot/revision acquisition:
@@ -733,6 +775,10 @@ Membership publishes a volatile immutable dictionary. ConnectedUsers,
 ConnectedUserCount, TryGetRoomUser and user snapshot helpers can read a published
 collection without mutating it. Several independent reads still need not describe
 one instant, and the separately read presence revision need not match such reads.
+
+LastUpdatedUtc is a 16-byte DateTimeOffset, so a lock-free read (for example in
+RoomView.From for the admin list) can in theory observe a torn value. The value
+is informational and never used for synchronization decisions.
 
 Direct mutable-property reads are not a coherent synchronization contract.
 Consumers needing related fields use CreateYjsSyncState or GetRevisions under
@@ -807,8 +853,9 @@ budgets fail startup rather than allowing an inconsistent advertised contract.
 The browser's readClientLimits uses `/features` to set update batch size,
 checkpoint state/text limits, checkpoint thresholds and full-message size.
 UpdateQueue estimates Base64 expansion, merges a candidate batch, and shrinks it
-if the actual merged update exceeds the encoded budget. A refused merged batch
-falls back to individual sends before a permanent single-update refusal blocks it.
+if the actual merged update exceeds the encoded budget. A merged batch refused
+with LimitExceeded is resent one update at a time; only a LimitExceeded refusal of
+a single update blocks the queue (see [section 5](#errors-and-retry-classification)).
 
 Pending edits and live delivery buffers have separate bounded client storage.
 Checkpoint compaction releases server journal capacity; it does not acknowledge
@@ -840,7 +887,9 @@ Useful log templates and their owners include:
 - RoomRegistry: Room created; Room deleted with the reason.
 - RoomHub: User joined; User left, including room identity and display name.
 - RoomHub: Failed to broadcast Yjs update / Yjs checkpoint / language;
-  Presence notification failed; Failed to roll back group subscription.
+  Presence notification failed (UserJoined and UserLeft only); Failed to roll
+  back group subscription. Cursor, selection and copy send failures are not
+  logged.
 - RoomHub: Ignored stale Yjs checkpoint, at Debug level.
 - RoomManager: Room closure notification failed.
 - IdleRoomCleanupService: Idle room expired.
@@ -859,8 +908,8 @@ state, not a rollback of the operation.
    closure under the aggregate lock, not only in a preflight lookup.
 3. Translate expected errors through HubErrors and retain documented wire text.
 4. For committed room changes, use BroadcastAfterCommitAsync and choose the
-   recipient group/cancellation policy deliberately. Transient presence has its
-   own best-effort path.
+   recipient group/cancellation policy deliberately. Cursor, selection and copy
+   events use their own best-effort path (BroadcastPresenceAsync).
 5. Extend RoomHub.Tests and HubContract.Tests, plus domain/concurrency tests for
    any new invariant. Add API/browser coverage when transport behavior matters.
 6. Update the method/event tables in section 5 and affected guarantees.
