@@ -188,3 +188,83 @@ test('language events cannot roll back metadata and a missed final event is reco
   expect(await text(alice)).toBe(await text(bob));
   await context.close();
 });
+
+test('recovers missed edits after offline interrupts a revision probe', async ({
+  browser,
+  request
+}) => {
+  const roomId = await createRoom(request);
+  const context = await browser.newContext();
+  const alice = await context.newPage();
+  const bob = await context.newPage();
+  let held;
+  let probeId;
+  let joins = 0;
+  let rejoinId;
+  let releaseJoin;
+  let dropped = 0;
+  let dropUpdates = false;
+  await alice.routeWebSocket('**/roomHub*', (route) => {
+    const server = route.connectToServer();
+    route.onMessage((message) => {
+      if (typeof message === 'string') {
+        for (const record of message.split('\x1e').filter(Boolean)) {
+          const frame = JSON.parse(record);
+          if (frame.target === 'JoinRoom' && ++joins > 1) rejoinId = frame.invocationId;
+          if (frame.target === 'GetRoomRevisions' && probeId === undefined) {
+            probeId = frame.invocationId;
+          }
+        }
+      }
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      if (typeof message !== 'string') return route.send(message);
+      for (const record of message.split('\x1e').filter(Boolean)) {
+        const frame = JSON.parse(record);
+        if (frame.type === 3 && frame.invocationId === probeId && !held) {
+          held = () => route.send(record + '\x1e');
+        } else if (frame.type === 3 && frame.invocationId === rejoinId) {
+          releaseJoin = () => route.send(record + '\x1e');
+        } else if (dropUpdates && frame.target === 'YjsUpdated') {
+          dropped++;
+        } else {
+          route.send(record + '\x1e');
+        }
+      }
+    });
+  });
+  try {
+    await join(alice, roomId, 'Alice');
+    await join(bob, roomId, 'Bob');
+    await alice.clock.runFor(5500);
+    await expect.poll(() => !!held).toBe(true);
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await expect.poll(() => !!releaseJoin).toBe(true);
+    held();
+    await alice.waitForTimeout(50);
+    releaseJoin();
+    await expect(alice.locator('#connectionStatus')).toHaveText('connected');
+    dropUpdates = true;
+    await insert(bob, 'Recovered');
+    await expect.poll(() => text(bob)).toBe('Recovered');
+    await expect
+      .poll(async () => {
+        await bob.clock.runFor(200);
+        return bob.evaluate(() => window.__debugUndoState().documentRevision);
+      })
+      .toBe(1);
+    await expect.poll(() => dropped).toBe(1);
+    expect(await text(alice)).toBe('');
+    dropUpdates = false;
+    await expect
+      .poll(async () => {
+        await alice.clock.runFor(1000);
+        return text(alice);
+      })
+      .toBe('Recovered');
+  } finally {
+    await context.close();
+  }
+});

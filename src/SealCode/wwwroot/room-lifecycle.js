@@ -118,6 +118,7 @@ export class RoomLifecycle {
   async rejoinRoomWithRetry() {
     if (!this.joined || !this.getDisplayName() || this.closed) return;
     if (this.connection.state !== this.connectedState || this.rejoining) return;
+    this.resetTransport();
     this.rejoining = true;
     this.clearRejoinRetryTimer();
     this.setStatus('reconnecting');
@@ -194,6 +195,7 @@ export class RoomLifecycle {
     events.addEventListener('offline', () => {
       if (!this.joined || this.closed) return;
       this.participating = false;
+      this.resetTransport();
       this.setStatus('reconnecting');
       this.setReadOnly(true);
     });

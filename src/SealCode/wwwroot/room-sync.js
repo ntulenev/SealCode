@@ -219,6 +219,7 @@ export class SnapshotRecovery {
     this.onSuccess = onSuccess;
     this.onError = onError;
     this.inFlight = false;
+    this.generation = 0;
   }
   schedule(delay = 5000) {
     if (this.active()) this.scheduler.schedule('recovery', delay, () => this.run());
@@ -229,12 +230,13 @@ export class SnapshotRecovery {
       this.schedule();
       return;
     }
+    const generation = this.generation;
     const context = this.capture();
     let token;
     this.inFlight = true;
     try {
       const remote = await this.probe();
-      if (!this.current(context) || !this.ready()) return;
+      if (generation !== this.generation || !this.current(context) || !this.ready()) return;
       const local = this.revisions();
       if (
         remote.DocumentRevision <= local.DocumentRevision &&
@@ -246,20 +248,21 @@ export class SnapshotRecovery {
       }
       token = this.begin();
       const result = await this.snapshot();
-      if (!this.current(context)) return;
+      if (generation !== this.generation || !this.current(context)) return;
       this.apply(result);
       this.onSuccess();
     } catch (error) {
-      if (this.current(context)) this.onError(error);
+      if (generation === this.generation && this.current(context)) this.onError(error);
     } finally {
-      if (this.current(context)) {
+      if (generation === this.generation) {
         this.inFlight = false;
         if (token !== undefined) this.end(token);
-        this.schedule();
+        if (this.current(context)) this.schedule();
       }
     }
   }
   reset() {
+    this.generation++;
     this.inFlight = false;
     this.scheduler.cancel('recovery');
   }
@@ -295,6 +298,7 @@ export class CheckpointWriter {
     this.inFlight = false;
     this.timer = false;
     this.skippedRevision = -1;
+    this.generation = 0;
   }
   schedule() {
     if (
@@ -311,27 +315,29 @@ export class CheckpointWriter {
   async run() {
     this.timer = false;
     if (!this.ready()) return;
+    const generation = this.generation;
     const context = this.capture();
     const revision = this.revision();
     let retry = false;
     this.inFlight = true;
     try {
       const accepted = await this.send(this.payload(revision));
-      if (this.current(context) && accepted) this.onSuccess(revision);
+      if (generation === this.generation && this.current(context) && accepted) this.onSuccess(revision);
     } catch (error) {
-      if (!this.current(context)) return;
+      if (generation !== this.generation || !this.current(context)) return;
       const permanent = classifyHubError(error) === HubErrorCode.LimitExceeded;
       if (permanent) this.skippedRevision = revision;
       retry = !permanent;
       this.onError(error, permanent);
     } finally {
-      if (this.current(context)) {
+      if (generation === this.generation) {
         this.inFlight = false;
-        if (retry || this.revision() > revision) this.schedule();
+        if (this.current(context) && (retry || this.revision() > revision)) this.schedule();
       }
     }
   }
   reset() {
+    this.generation++;
     this.inFlight = false;
     this.timer = false;
     this.skippedRevision = -1;

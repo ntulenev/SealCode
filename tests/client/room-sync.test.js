@@ -479,3 +479,50 @@ test('an unexpectedly large merge halves the prefix without dropping its tail', 
   await f.tick();
   assert.deepEqual(sent, [[1], [2]]);
 });
+
+for (const Controller of [SnapshotRecovery, CheckpointWriter]) {
+  for (const reset of [false, true]) {
+    for (const fail of [false, true]) {
+      test(`${Controller.name} releases stale flight (reset=${reset}, fail=${fail})`, async () => {
+        let complete;
+        let current = true;
+        let successes = 0;
+        let errors = 0;
+        let scheduled = 0;
+        const pending = () => new Promise((resolve, reject) => {
+          complete = () => fail ? reject(new Error('late')) : resolve(true);
+        });
+        const controller = new Controller({
+          scheduler: { schedule() { scheduled++; }, cancel() {} },
+          active: () => true,
+          ready: () => true,
+          capture: () => 1,
+          current: () => current,
+          revisions: () => ({ DocumentRevision: 0, MetadataRevision: 0, PresenceRevision: 0 }),
+          probe: pending,
+          snapshot: async () => ({}),
+          begin: () => 1,
+          apply() {},
+          end() {},
+          revision: () => 1,
+          payload: () => ({}),
+          send: pending,
+          onSuccess() { successes++; },
+          onError() { errors++; }
+        });
+        const flight = controller.run();
+        if (reset) controller.reset();
+        else current = false;
+        complete();
+        await flight;
+        assert.equal(controller.inFlight, false);
+        assert.equal(successes, 0);
+        assert.equal(errors, 0);
+        assert.equal(scheduled, 0);
+        current = true;
+        controller.schedule();
+        assert.equal(scheduled, 1);
+      });
+    }
+  }
+}

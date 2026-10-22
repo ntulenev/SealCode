@@ -238,7 +238,6 @@ export function createRoomApplication({
   function isCurrentSyncContext(context) {
     return (
       !lifecycle.closed &&
-      lifecycle.participating &&
       yjs.ydoc === context.document &&
       yjs.yjsSession === context.session &&
       connection.connectionId === context.connectionId
