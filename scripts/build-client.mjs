@@ -1,4 +1,6 @@
 import { build } from 'esbuild';
+import { rmSync } from 'node:fs';
+rmSync('src/SealCode/wwwroot/assets', { recursive: true, force: true });
 await build({
   entryPoints: {
     room: 'src/SealCode/wwwroot/room.js',

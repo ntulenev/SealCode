@@ -1,6 +1,6 @@
 using Models;
 
-namespace SealCode.Tests;
+namespace TestKit;
 
 internal static class RoomStateBuilder
 {
@@ -13,7 +13,7 @@ internal static class RoomStateBuilder
     internal static RoomVersion ChangeLanguageAsTestParticipant(this RoomState room, RoomLanguage language, DateTimeOffset now, ILanguageValidator validator)
         => room.ChangeLanguage(Participant(room), language, now, validator).RoomVersion;
 
-    private static ConnectionId Participant(RoomState room)
+    internal static ConnectionId Participant(RoomState room)
     {
         if (room.ConnectedUsers.Count > 0)
         {

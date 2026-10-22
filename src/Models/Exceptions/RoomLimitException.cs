@@ -10,7 +10,7 @@ public sealed class RoomLimitException : Exception
     /// Initializes a new instance of the <see cref="RoomLimitException"/> class.
     /// </summary>
     public RoomLimitException()
-        : base("LimitExceeded: Room resource budget reached. Copy unsynced text before reloading.")
+        : this("Room resource budget reached. Copy unsynced text before reloading.")
     {
     }
 
@@ -21,5 +21,11 @@ public sealed class RoomLimitException : Exception
     public RoomLimitException(string resource)
         : base($"LimitExceeded: {resource}")
     {
+        Resource = resource;
     }
+
+    /// <summary>
+    /// Gets the stable resource label used in the protocol refusal.
+    /// </summary>
+    public string Resource { get; }
 }

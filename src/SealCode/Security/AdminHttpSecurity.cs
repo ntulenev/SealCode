@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
 
+using SealCode.Hosting;
+
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace SealCode.Security;
@@ -9,6 +11,17 @@ namespace SealCode.Security;
 /// </summary>
 internal sealed class AdminHttpSecurity : IDisposable
 {
+
+    /// <summary>
+    /// Initializes bounded login limiters.
+    /// </summary>
+    /// <param name="limiterFactory">An optional limiter factory for deterministic tests.</param>
+    public AdminHttpSecurity(Func<int, TimeSpan, RateLimiter>? limiterFactory = null)
+    {
+        limiterFactory ??= CreateLimiter;
+        _sources = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(30, TimeSpan.FromMinutes(1)))];
+        _names = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(10, TimeSpan.FromMinutes(1)))];
+    }
 
     /// <summary>
     /// Validates an admin mutation before passing the request to the next handler.
@@ -45,7 +58,7 @@ internal sealed class AdminHttpSecurity : IDisposable
     {
         var context = invocation.HttpContext;
         var request = context.Request;
-        var source = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var source = ConnectionSource.From(context.Connection.RemoteIpAddress);
         using var sourceLease = _sources[(uint)StringComparer.Ordinal.GetHashCode(source) % 256]
             .AttemptAcquire();
         if (!sourceLease.IsAcquired)
@@ -83,12 +96,15 @@ internal sealed class AdminHttpSecurity : IDisposable
             limiter.Dispose();
         }
     }
-    private static FixedWindowRateLimiter[] CreateLimiters(int permits)
-        => [.. Enumerable.Range(0, 256).Select(_ => new FixedWindowRateLimiter(new()
+    private static FixedWindowRateLimiter CreateLimiter(int permits, TimeSpan window) => new(new()
     {
-        PermitLimit = permits, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true
-    }))];
+        PermitLimit = permits,
+        Window = window,
+        QueueLimit = 0,
+        AutoReplenishment = true
+    });
+
     // Hash buckets bound limiter state for arbitrary names/addresses.
-    private readonly FixedWindowRateLimiter[] _sources = CreateLimiters(30);
-    private readonly FixedWindowRateLimiter[] _names = CreateLimiters(10);
+    private readonly RateLimiter[] _sources;
+    private readonly RateLimiter[] _names;
 }

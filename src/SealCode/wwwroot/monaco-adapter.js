@@ -1,3 +1,5 @@
+// @ts-nocheck
+// TODO: type the Monaco editor integration callbacks.
 /** Owns Monaco setup; collaborative operations are supplied by the controller. */
 export function createMonacoAdapter(monaco, host, { language, undo, redo }) {
   const model = monaco.editor.createModel('', language || 'plaintext');

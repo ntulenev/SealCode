@@ -1,182 +1,182 @@
 import { token } from './admin-token.js';
-const roomsEl = document.getElementById('rooms');
-const createBtn = document.getElementById('createRoom');
-const nameInput = /** @type {HTMLInputElement} */ (document.getElementById('roomName'));
-const langInput = /** @type {HTMLSelectElement} */ (
-  document.getElementById('roomLanguage')
-);
-const resultEl = document.getElementById('createResult');
+import { setLanguageOptions } from './language-options.js';
 
-function setLanguageOptions(selectEl, languages, selected) {
-  const cleaned = Array.isArray(languages)
-    ? languages
-        .map((language) => (typeof language === 'string' ? language.trim() : ''))
-        .filter((language) => language)
-    : [];
-  const unique = [...new Set(cleaned)];
+/** Creates the admin page with explicit browser dependencies. */
+/** @param {{document: Document, window: Window, fetch: typeof fetch, confirm: (message: string) => boolean, clipboard: Pick<Clipboard, "writeText">}} options */
+export function createAdminPage({ document, window, fetch, confirm, clipboard }) {
+  const roomsEl = document.getElementById('rooms');
+  const createBtn = document.getElementById('createRoom');
+  const nameInput = /** @type {HTMLInputElement} */ (document.getElementById('roomName'));
+  const langInput = /** @type {HTMLSelectElement} */ (
+    document.getElementById('roomLanguage')
+  );
+  const resultEl = document.getElementById('createResult');
 
-  selectEl.innerHTML = '';
-  if (unique.length === 0) {
-    const option = document.createElement('option');
-    option.value = '';
-    option.textContent = 'No languages configured';
-    option.disabled = true;
-    option.selected = true;
-    selectEl.appendChild(option);
-    selectEl.disabled = true;
-    return;
-  }
-
-  for (const language of unique) {
-    const option = document.createElement('option');
-    option.value = language;
-    option.textContent = language;
-    selectEl.appendChild(option);
-  }
-
-  selectEl.disabled = false;
-  if (selected && unique.includes(selected)) {
-    selectEl.value = selected;
-  } else {
-    selectEl.selectedIndex = 0;
-  }
-}
-
-async function loadLanguages() {
-  try {
-    const res = await fetch('/languages');
-    if (!res.ok) {
-      throw new Error('Failed to load languages');
+  async function loadLanguages() {
+    try {
+      const res = await fetch('/languages');
+      if (!res.ok || res.redirected) {
+        throw requestError(res);
+      }
+      const languages = await res.json();
+      setLanguageOptions(document, langInput, languages);
+    } catch (error) {
+      setLanguageOptions(document, langInput, []);
+      showError(error);
     }
-    const languages = await res.json();
-    setLanguageOptions(langInput, languages);
-  } catch {
-    setLanguageOptions(langInput, []);
-    resultEl.textContent = 'Failed to load languages.';
-  }
-}
-
-async function fetchRooms() {
-  const res = await fetch('/admin/rooms');
-  if (!res.ok) {
-    roomsEl.innerHTML = '<p class="error">Failed to load rooms.</p>';
-    return;
-  }
-  const rooms = await res.json();
-  renderRooms(rooms);
-}
-
-function renderRooms(rooms) {
-  if (!rooms.length) {
-    roomsEl.innerHTML = '<p class="muted">No rooms yet.</p>';
-    return;
   }
 
-  roomsEl.innerHTML = '';
-  for (const room of rooms) {
-    const row = document.createElement('div');
-    row.className = 'room-row';
+  async function fetchRooms() {
+    try {
+      const res = await fetch('/admin/rooms');
+      if (!res.ok || res.redirected) {
+        throw requestError(res);
+      }
+      if (res.redirected) throw requestError(res);
+      const rooms = await res.json();
+      renderRooms(rooms);
+    } catch (error) {
+      showError(error);
+    }
+  }
 
-    const name = document.createElement('div');
-    name.innerHTML = `<strong>${escapeHtml(room.Name)}</strong><br/><small>${room.RoomId}</small>`;
+  /** @param {Array<Record<string, any>>} rooms */
+  function renderRooms(rooms) {
+    if (!rooms.length) {
+      roomsEl.innerHTML = '<p class="muted">No rooms yet.</p>';
+      return;
+    }
 
-    const lang = document.createElement('div');
-    const languageBadge = document.createElement('span');
-    languageBadge.className = 'badge';
-    languageBadge.textContent = room.Language;
-    lang.appendChild(languageBadge);
+    roomsEl.innerHTML = '';
+    for (const room of rooms) {
+      const row = document.createElement('div');
+      row.className = 'room-row';
 
-    const users = document.createElement('div');
-    users.textContent = `${room.UsersCount} users`;
+      const name = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = room.Name ?? '';
+      const id = document.createElement('small');
+      id.textContent = room.RoomId;
+      name.append(title, document.createElement('br'), id);
 
-    const updated = document.createElement('div');
-    updated.textContent = new Date(room.LastUpdatedUtc).toLocaleString();
+      const lang = document.createElement('div');
+      const languageBadge = document.createElement('span');
+      languageBadge.className = 'badge';
+      languageBadge.textContent = room.Language;
+      lang.appendChild(languageBadge);
 
-    const createdBy = document.createElement('div');
-    createdBy.textContent = room.CreatedBy || 'unknown';
+      const users = document.createElement('div');
+      users.textContent = `${room.UsersCount} users`;
 
-    const actions = document.createElement('div');
-    actions.className = 'room-actions';
+      const updated = document.createElement('div');
+      updated.textContent = new Date(room.LastUpdatedUtc).toLocaleString();
 
-    const link = document.createElement('button');
-    link.textContent = 'Copy link';
-    link.addEventListener('click', () => {
-      const url = `${window.location.origin}/room/${room.RoomId}`;
-      navigator.clipboard.writeText(url);
-      resultEl.textContent = `Copied ${url}`;
-    });
+      const createdBy = document.createElement('div');
+      createdBy.textContent = room.CreatedBy || 'unknown';
 
-    actions.append(link);
+      const actions = document.createElement('div');
+      actions.className = 'room-actions';
 
-    const del = document.createElement('button');
-    del.textContent = 'Delete';
-    if (!room.CanDelete) {
-      del.disabled = true;
-      del.title = 'Only super admins can delete rooms created by other users.';
-    } else {
-      del.addEventListener('click', async () => {
-        if (!confirm('Delete this room?')) return;
-        const res = await fetch(`/admin/rooms/${room.RoomId}`, {
-          method: 'DELETE',
-          headers: { 'X-CSRF-TOKEN': await token() }
-        });
-        if (res.status === 403) {
-          resultEl.textContent =
-            'Only super admins can delete rooms created by other users.';
-          return;
+      const link = document.createElement('button');
+      link.textContent = 'Copy link';
+      link.addEventListener('click', async () => {
+        try {
+          const url = `${window.location.origin}/room/${encodeURIComponent(room.RoomId)}`;
+          await clipboard.writeText(url);
+          resultEl.textContent = `Copied ${url}`;
+        } catch {
+          resultEl.textContent = 'Could not copy the link.';
         }
-        if (!res.ok) {
-          resultEl.textContent = 'Failed to delete room.';
-          return;
-        }
-        resultEl.textContent = 'Room deleted.';
-        fetchRooms();
       });
+
+      actions.append(link);
+
+      const del = document.createElement('button');
+      del.textContent = 'Delete';
+      if (!room.CanDelete) {
+        del.disabled = true;
+        del.title = 'Only super admins can delete rooms created by other users.';
+      } else {
+        del.addEventListener('click', async () => {
+          try {
+            if (!confirm('Delete this room?')) return;
+            const res = await fetch(`/admin/rooms/${encodeURIComponent(room.RoomId)}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-TOKEN': await token(fetch) }
+            });
+            if (res.status === 403) {
+              resultEl.textContent =
+                'Only super admins can delete rooms created by other users.';
+              return;
+            }
+            if (!res.ok || res.redirected) {
+              throw requestError(res);
+            }
+            resultEl.textContent = 'Room deleted.';
+            await fetchRooms();
+          } catch (error) {
+            showError(error);
+          }
+        });
+      }
+      actions.append(del);
+      row.append(name, lang, users, updated, createdBy, actions);
+      roomsEl.append(row);
     }
-    actions.append(del);
-    row.append(name, lang, users, updated, createdBy, actions);
-    roomsEl.append(row);
-  }
-}
-
-createBtn.addEventListener('click', async () => {
-  const name = nameInput.value.trim();
-  const language = langInput.value;
-  if (!name) {
-    resultEl.textContent = 'Room name is required.';
-    return;
-  }
-  if (!language) {
-    resultEl.textContent = 'Language is required.';
-    return;
   }
 
-  const res = await fetch('/admin/rooms', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': await token() },
-    body: JSON.stringify({ name, language })
+  createBtn.addEventListener('click', async () => {
+    try {
+      const name = nameInput.value.trim();
+      const language = langInput.value;
+      if (!name) {
+        resultEl.textContent = 'Room name is required.';
+        return;
+      }
+      if (!language) {
+        resultEl.textContent = 'Language is required.';
+        return;
+      }
+
+      const res = await fetch('/admin/rooms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': await token(fetch)
+        },
+        body: JSON.stringify({ name, language })
+      });
+
+      if (!res.ok || res.redirected) {
+        throw requestError(res);
+      }
+
+      const room = await res.json();
+      const url = `${window.location.origin}/room/${encodeURIComponent(room.RoomId)}`;
+      resultEl.textContent = `Room created: ${url}`;
+      nameInput.value = '';
+      await fetchRooms();
+    } catch (error) {
+      showError(error);
+    }
   });
 
-  if (!res.ok) {
-    resultEl.textContent = 'Failed to create room.';
-    return;
+  /** @param {Response} response */
+  function requestError(response) {
+    return new Error(
+      response.status === 401 || response.redirected
+        ? 'Session expired. Sign in again.'
+        : 'Request failed. Try again.'
+    );
+  }
+  /** @param {unknown} error */
+  function showError(error) {
+    resultEl.textContent =
+      error instanceof Error && error.message === 'Session expired. Sign in again.'
+        ? error.message
+        : 'Request failed. Try again.';
   }
 
-  const room = await res.json();
-  const url = `${window.location.origin}/room/${room.RoomId}`;
-  resultEl.textContent = `Room created: ${url}`;
-  nameInput.value = '';
-  fetchRooms();
-});
-
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  const ready = Promise.all([fetchRooms(), loadLanguages()]);
+  return { ready };
 }
-
-fetchRooms();
-loadLanguages();

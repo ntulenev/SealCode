@@ -1,5 +1,7 @@
 using Abstractions;
 
+using Microsoft.Extensions.Time.Testing;
+
 using Models;
 using Models.Configuration;
 using Models.Exceptions;
@@ -57,8 +59,20 @@ public sealed class RoomSessionServiceTests
         Assert.True(service.TryGetParticipant(room.RoomId, _connection, out _, out var user));
         Assert.Equal("Alice", user.Value);
         var manager = new Mock<IRoomManager>();
-        var missing = new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>());
+        var missing = new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>(), _clock);
         Assert.Throws<RoomNotFoundException>(() => missing.TryGetParticipant(RoomId.New(), _connection, out _, out _));
+    }
+
+    [Fact]
+    public void MutationsUseTheInjectedClock()
+    {
+        var (room, service) = Create();
+        _clock.Advance(TimeSpan.FromHours(1));
+        _ = service.Append(room.RoomId, _connection, "AQ==");
+        Assert.Equal(_clock.GetUtcNow(), room.LastUpdatedUtc);
+        _clock.Advance(TimeSpan.FromHours(1));
+        _ = service.Checkpoint(room.RoomId, _connection, "Ag==", "text", 1);
+        Assert.Equal(_clock.GetUtcNow(), room.LastUpdatedUtc);
     }
 
     private (RoomState Room, RoomSessionService Service) Create()
@@ -68,8 +82,9 @@ public sealed class RoomSessionServiceTests
         room.AddUser(_connection, new("Alice"), 5);
         var manager = new Mock<IRoomManager>(MockBehavior.Strict);
         manager.Setup(value => value.TryGetRoom(room.RoomId, out room)).Returns(true);
-        return (room, new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>()));
+        return (room, new RoomSessionService(manager.Object, Mock.Of<ILanguageValidator>(), _clock));
     }
 
+    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UnixEpoch);
     private readonly ConnectionId _connection = new("connection");
 }

@@ -149,3 +149,14 @@ test('bootstrap, merge, local changes, revision gaps and cursor adjustments reta
   assert.equal(undo.destroyed, true);
   source.destroy();
 });
+
+test('multiple cursor edits use offsets from the original document', () => {
+  const { session } = create();
+  Object.assign(session.cursorPositions, { Bob: 20, Carol: 7 });
+  session.applyRemoteCursorAdjustment([
+    { rangeOffset: 2, rangeLength: 3, text: '' },
+    { rangeOffset: 10, rangeLength: 4, text: '' }
+  ]);
+  assert.deepEqual(session.cursorPositions, { Bob: 13, Carol: 4 });
+  session.disposeYjs();
+});

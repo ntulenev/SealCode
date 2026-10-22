@@ -15,6 +15,41 @@ namespace Logic.Tests;
 
 public sealed class RoomRegistryTests
 {
+    [Fact]
+    public async Task ConcurrentCreationCannotExceedRoomBudget()
+    {
+        var registry = new RoomRegistry(Mock.Of<ILogger<RoomRegistry>>(), Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers = [], Languages = [], Limits = new RoomLimits { MaxRooms = 2 }
+        }));
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, 32).Select(index => Task.Run(async () =>
+        {
+            await gate.Task;
+            try
+            {
+                registry.CreateRoom(new($"Room-{index}"), new("csharp"), new("admin"));
+            }
+            catch (RoomLimitException) { }
+        })).ToArray();
+        gate.SetResult();
+        await Task.WhenAll(tasks);
+        registry.GetRoomsSnapshot().Should().HaveCount(2);
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1873", Justification = "The expression verifies a recorded log invocation.")]
+    [Fact]
+    public async Task DeletionLogsTheSuppliedReason()
+    {
+        var logger = new Mock<ILogger<RoomRegistry>>();
+        var registry = new RoomRegistry(logger.Object, CreateSettings());
+        var room = registry.CreateRoom(new("Room"), new("csharp"), new("admin"));
+        await registry.DeleteRoomAsync(room.RoomId, new("Review test reason"), CancellationToken.None);
+        logger.Verify(log => log.Log(LogLevel.Information, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("Review test reason", StringComparison.Ordinal)),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     [Fact(DisplayName = "CtorShouldThrowWhenLoggerIsNull")]
     [Trait("Category", "Unit")]
     public void CtorShouldThrowWhenLoggerIsNull()
@@ -119,7 +154,7 @@ public sealed class RoomRegistryTests
             new Mock<ILogger<RoomManager>>().Object);
         Assert.Equal(RoomDeletionResult.Deleted, await manager.DeleteRoomAsync(room.RoomId, new("admin"), request.Token));
         Assert.False(registry.TryGetRoom(room.RoomId, out _));
-        Assert.Throws<RoomNotFoundException>(() => room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow));
+        Assert.Throws<RoomNotFoundException>(() => room.AppendAsTestParticipant([1], DateTimeOffset.UnixEpoch));
         Assert.Throws<RoomNotFoundException>(() => room.AddUser(new("connection"), new("Alice"), 5));
         Assert.False(await registry.DeleteRoomAsync(room.RoomId, new("closed"), CancellationToken.None));
     }

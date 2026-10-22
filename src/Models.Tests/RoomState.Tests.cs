@@ -183,7 +183,7 @@ public sealed class RoomStateTests
         var state = CreateState();
         var validator = new DenyAllLanguageValidator();
 
-        var action = () => state.ChangeLanguageAsTestParticipant(new RoomLanguage("python"), DateTimeOffset.UtcNow, validator);
+        var action = () => state.ChangeLanguageAsTestParticipant(new RoomLanguage("python"), DateTimeOffset.UnixEpoch, validator);
 
         action.Should().Throw<ArgumentException>();
     }
@@ -239,14 +239,14 @@ public sealed class RoomStateTests
     public void TryCreateYjsCheckpointShouldRejectStaleRevisionWithoutLosingTail()
     {
         var state = CreateState();
-        state.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
-        state.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
+        state.AppendAsTestParticipant([1], DateTimeOffset.UnixEpoch);
+        state.AppendAsTestParticipant([2], DateTimeOffset.UnixEpoch);
 
         var result = state.CheckpointAsTestParticipant(
             new RoomDocumentRevision(1),
             [9],
             new RoomText("stale"),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UnixEpoch);
         var syncState = state.CreateYjsSyncState();
 
         result.Should().BeFalse();

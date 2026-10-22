@@ -36,7 +36,7 @@ public sealed class RoomManager : IRoomManager
         _registry = registry;
         _notifier = notifier;
         _logger = logger;
-        _maxUsersPerRoom = Math.Clamp(settings.Value.MaxUsersPerRoom, 1, 5);
+        _maxUsersPerRoom = settings.Value.MaxUsersPerRoom;
     }
 
     /// <inheritdoc />
@@ -87,16 +87,17 @@ public sealed class RoomManager : IRoomManager
             return RoomDeletionResult.Forbidden;
         }
 
+        var reason = new RoomDeletionReason("Room deleted by admin");
         var deleted = await _registry.DeleteRoomAsync(
             roomId,
-            new RoomDeletionReason("Room deleted by admin"),
+            reason,
             cancellationToken).ConfigureAwait(false);
         if (deleted)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             try
             {
-                await _notifier.RoomKilledAsync(roomId, new("Room deleted by admin"), timeout.Token).ConfigureAwait(false);
+                await _notifier.RoomKilledAsync(roomId, reason, timeout.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {

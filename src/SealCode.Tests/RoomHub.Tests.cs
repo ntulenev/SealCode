@@ -12,6 +12,8 @@ using Models.Exceptions;
 
 using Moq;
 
+using SealCode.Hub;
+
 namespace SealCode.Tests;
 
 public sealed class RoomHubTests
@@ -31,7 +33,7 @@ public sealed class RoomHubTests
     public async Task InvalidRoomIdShouldPreserveExactMessageAcrossMethods(string method)
     {
         using var hub = CreateHub();
-        var exception = await Assert.ThrowsAsync<HubException>(async () =>
+        var exception = (await FluentActions.Awaiting(async () =>
         {
             switch (method)
             {
@@ -71,7 +73,7 @@ public sealed class RoomHubTests
                 default:
                     throw new ArgumentException("Unknown test method", nameof(method));
             }
-        });
+        }).Should().ThrowAsync<HubException>()).Which;
         exception.Message.Should().Be("Invalid room id");
     }
 
@@ -84,10 +86,10 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        _ = SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        SetupTryGetRoom(DefaultRoomId, room, out var manager);
         using var hub = CreateHub(roomManager: manager.Object);
 
-        var exception = await Assert.ThrowsAsync<HubException>(async () =>
+        var exception = (await FluentActions.Awaiting(async () =>
         {
             if (method == "UpdateYjs")
             {
@@ -97,7 +99,7 @@ public sealed class RoomHubTests
             {
                 _ = await hub.CheckpointYjsAsync(DefaultRoomId, payload, "", 0);
             }
-        });
+        }).Should().ThrowAsync<HubException>()).Which;
 
         exception.Message.Should().Be(expected);
     }
@@ -109,7 +111,7 @@ public sealed class RoomHubTests
     public async Task PresenceFromNonParticipantShouldBeSilent(string operation)
     {
         var room = CreateRoomState(DefaultRoomId);
-        _ = SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        SetupTryGetRoom(DefaultRoomId, room, out var manager);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         using var hub = CreateHub(roomManager: manager.Object, clients: clients.Object);
         switch (operation)
@@ -131,39 +133,18 @@ public sealed class RoomHubTests
 
     private static readonly string DefaultRoomId = RoomId.New().Value;
 
-    [Fact(DisplayName = "CtorShouldThrowWhenRoomManagerIsNull")]
-    [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenRoomManagerIsNull()
+    [Theory]
+    [InlineData("manager")]
+    [InlineData("sessions")]
+    [InlineData("logger")]
+    public void ConstructorRejectsMissingDependencies(string dependency)
     {
-        var sessions = new Mock<IRoomSessionService>(MockBehavior.Strict).Object;
-        var logger = new Mock<ILogger<RoomHub>>(MockBehavior.Strict).Object;
-
-        var action = () => new RoomHub(null!, sessions, logger);
-
-        action.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact(DisplayName = "CtorShouldThrowWhenSessionServiceIsNull")]
-    [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenSessionServiceIsNull()
-    {
-        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict).Object;
-        var logger = new Mock<ILogger<RoomHub>>().Object;
-
-        var action = () => new RoomHub(roomManager, null!, logger);
-
-        action.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact(DisplayName = "CtorShouldThrowWhenLoggerIsNull")]
-    [Trait("Category", "Unit")]
-    public void CtorShouldThrowWhenLoggerIsNull()
-    {
-        var roomManager = new Mock<IRoomManager>(MockBehavior.Strict).Object;
-        var sessions = new Mock<IRoomSessionService>(MockBehavior.Strict).Object;
-
-        var action = () => new RoomHub(roomManager, sessions, null!);
-
+        var manager = Mock.Of<IRoomManager>();
+        var sessions = Mock.Of<IRoomSessionService>();
+        var logger = Mock.Of<ILogger<RoomHub>>();
+        var action = () => new RoomHub(dependency == "manager" ? null! : manager,
+            dependency == "sessions" ? null! : sessions,
+            dependency == "logger" ? null! : logger);
         action.Should().Throw<ArgumentNullException>();
     }
 
@@ -175,7 +156,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.JoinRoomAsync(" ", "Alice");
 
-        await action.Should().ThrowAsync<HubException>();
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
     }
 
     [Fact(DisplayName = "JoinRoomAsyncShouldThrowWhenRoomIsNotFound")]
@@ -183,19 +164,20 @@ public sealed class RoomHubTests
     public async Task JoinRoomAsyncShouldThrowWhenRoomIsNotFound()
     {
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
-        var registerUserCalls = 0;
         roomManager.Setup(m => m.RegisterUserInRoom(
                 It.IsAny<RoomId>(),
                 It.IsAny<ConnectionId>(),
                 It.IsAny<RoomUser>()))
-            .Callback<RoomId, ConnectionId, RoomUser>((_, _, _) => registerUserCalls++)
             .Throws(new RoomNotFoundException());
         using var hub = CreateHub(roomManager.Object);
 
         Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, "Alice");
 
-        await action.Should().ThrowAsync<HubException>();
-        registerUserCalls.Should().Be(1);
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.RoomNotFound);
+        roomManager.Verify(m => m.RegisterUserInRoom(
+                It.IsAny<RoomId>(),
+                It.IsAny<ConnectionId>(),
+                It.IsAny<RoomUser>()), Times.Once);
     }
 
     [Theory(DisplayName = "JoinRoomAsyncShouldRejectInvalidRoomUser")]
@@ -210,7 +192,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, displayName!);
 
-        await action.Should().ThrowAsync<HubException>();
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
     }
 
     [Fact(DisplayName = "JoinRoomAsyncShouldAddCallerToGroupAndNotifyOthers")]
@@ -223,38 +205,30 @@ public sealed class RoomHubTests
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         room.AddUser(new ConnectionId("conn-2"), new RoomUser("Bob"), 5);
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
-        var registerUserCalls = 0;
         roomManager.Setup(m => m.RegisterUserInRoom(
                 It.Is<RoomId>(id => id.Value == roomId),
                 It.Is<ConnectionId>(id => id.Value == "conn-1"),
                 It.Is<RoomUser>(user => user.Value == "Alice")))
-            .Callback<RoomId, ConnectionId, RoomUser>((_, _, _) => registerUserCalls++)
             .Returns(room);
 
-        var userJoinedCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "UserJoined",
                 It.Is<object?[]>(args => MatchUserJoinedArgs(args, "Alice", new[] { "Alice", "Bob" })),
                 CancellationToken.None))
-            .Callback(() => userJoinedCalls++)
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupExceptCalls = 0;
         clients.Setup(c => c.GroupExcept(
                 It.Is<string>(group => group == roomId),
                 It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
-            .Callback(() => groupExceptCalls++)
             .Returns(proxy.Object);
 
-        var addToGroupCalls = 0;
         var groups = new Mock<IGroupManager>(MockBehavior.Strict);
         groups.Setup(g => g.AddToGroupAsync(
                 It.Is<string>(conn => conn == "conn-1"),
                 It.Is<string>(group => group == roomId),
                 It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => addToGroupCalls++)
             .Returns(Task.CompletedTask);
 
         var items = new Dictionary<object, object?>();
@@ -270,10 +244,21 @@ public sealed class RoomHubTests
         result.Users.Should().Equal("Alice", "Bob");
         items["roomId"].Should().Be(roomId);
         items["displayName"].Should().Be("Alice");
-        registerUserCalls.Should().Be(1);
-        groupExceptCalls.Should().Be(1);
-        userJoinedCalls.Should().Be(1);
-        addToGroupCalls.Should().Be(1);
+        roomManager.Verify(m => m.RegisterUserInRoom(
+                It.Is<RoomId>(id => id.Value == roomId),
+                It.Is<ConnectionId>(id => id.Value == "conn-1"),
+                It.Is<RoomUser>(user => user.Value == "Alice")), Times.Once);
+        clients.Verify(c => c.GroupExcept(
+                It.Is<string>(group => group == roomId),
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")), Times.Once);
+        proxy.Verify(p => p.SendCoreAsync(
+                "UserJoined",
+                It.Is<object?[]>(args => MatchUserJoinedArgs(args, "Alice", new[] { "Alice", "Bob" })),
+                CancellationToken.None), Times.Once);
+        groups.Verify(g => g.AddToGroupAsync(
+                It.Is<string>(conn => conn == "conn-1"),
+                It.Is<string>(group => group == roomId),
+                It.Is<CancellationToken>(token => token == cts.Token)), Times.Once);
     }
 
     [Theory]
@@ -286,7 +271,7 @@ public sealed class RoomHubTests
         var room = CreateRoomState(DefaultRoomId);
         if (reconnect)
         {
-            room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
+            room.AppendAsTestParticipant([1], DateTimeOffset.UnixEpoch);
         }
 
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
@@ -316,7 +301,7 @@ public sealed class RoomHubTests
 
         var joinTask = hub.JoinRoomAsync(DefaultRoomId, "Alice");
         await subscriptionStarted.Task;
-        var appended = room.AppendAsTestParticipant([2, 3], DateTimeOffset.UtcNow);
+        var appended = room.AppendAsTestParticipant([2, 3], DateTimeOffset.UnixEpoch);
         subscriptionCompleted.SetResult();
         var result = await joinTask;
 
@@ -330,19 +315,20 @@ public sealed class RoomHubTests
     public async Task JoinRoomAsyncShouldThrowWhenAddUserFails()
     {
         var roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
-        var registerUserCalls = 0;
         roomManager.Setup(m => m.RegisterUserInRoom(
                 It.IsAny<RoomId>(),
                 It.IsAny<ConnectionId>(),
                 It.IsAny<RoomUser>()))
-            .Callback<RoomId, ConnectionId, RoomUser>((_, _, _) => registerUserCalls++)
             .Throws(new AddRoomUserException("Display name already in use. Choose another name."));
         using var hub = CreateHub(roomManager.Object);
 
         Func<Task> action = () => hub.JoinRoomAsync(DefaultRoomId, "Alice");
 
-        await action.Should().ThrowAsync<HubException>();
-        registerUserCalls.Should().Be(1);
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        roomManager.Verify(m => m.RegisterUserInRoom(
+                It.IsAny<RoomId>(),
+                It.IsAny<ConnectionId>(),
+                It.IsAny<RoomUser>()), Times.Once);
     }
 
     [Fact(DisplayName = "UpdateYjsAsyncShouldThrowWhenPayloadIsInvalid")]
@@ -351,13 +337,13 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         using var hub = CreateHub(roomManager.Object);
 
         Func<Task> action = () => hub.UpdateYjsAsync(DefaultRoomId, "not-base64");
 
-        await action.Should().ThrowAsync<HubException>();
-        tryGetRoomCounter.Count.Should().Be(1);
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
     }
 
     [Fact(DisplayName = "UpdateYjsAsyncShouldAppendAndBroadcastUpdate")]
@@ -369,21 +355,17 @@ public sealed class RoomHubTests
         var updateBase64 = Convert.ToBase64String([1, 2]);
         var room = CreateRoomState(roomId, text: "before");
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(roomId, room, out var roomManager);
+        SetupTryGetRoom(roomId, room, out var roomManager);
 
-        var yjsUpdatedCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "YjsUpdated",
                 It.Is<object?[]>(args => MatchYjsUpdatedArgs(args, updateBase64, 1, 2, "Alice")),
                 CancellationToken.None))
-            .Callback(() => yjsUpdatedCalls++)
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupCalls = 0;
         clients.Setup(c => c.Group(It.Is<string>(group => group == roomId)))
-            .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
@@ -395,9 +377,12 @@ public sealed class RoomHubTests
         room.Version.Value.Should().Be(2);
         room.DocumentRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().ContainSingle();
-        tryGetRoomCounter.Count.Should().Be(2);
-        groupCalls.Should().Be(1);
-        yjsUpdatedCalls.Should().Be(1);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
+        clients.Verify(c => c.Group(It.Is<string>(group => group == roomId)), Times.Once);
+        proxy.Verify(p => p.SendCoreAsync(
+                "YjsUpdated",
+                It.Is<object?[]>(args => MatchYjsUpdatedArgs(args, updateBase64, 1, 2, "Alice")),
+                CancellationToken.None), Times.Once);
     }
 
     [Theory]
@@ -409,8 +394,8 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UnixEpoch);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync("YjsCheckpointed",
             It.Is<object?[]>(args => args.Length == 1 && (long)args[0]! == 1L), CancellationToken.None))
@@ -440,7 +425,7 @@ public sealed class RoomHubTests
         room.YjsState.Should().Equal([3, 4]);
         room.YjsCheckpointRevision.Value.Should().Be(1);
         room.CreateYjsSyncState().Updates.Should().BeEmpty();
-        tryGetRoomCounter.Count.Should().Be(2);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
     }
 
     [Fact]
@@ -448,7 +433,7 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UnixEpoch);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var failure = new InvalidOperationException("Broadcast failed");
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -485,8 +470,8 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        room.AppendAsTestParticipant([1], DateTimeOffset.UtcNow);
-        room.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1], DateTimeOffset.UnixEpoch);
+        room.AppendAsTestParticipant([2], DateTimeOffset.UnixEpoch);
         SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);
@@ -512,61 +497,36 @@ public sealed class RoomHubTests
     {
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var validator = new Mock<ILanguageValidator>(MockBehavior.Strict);
-        var isValidCalls = 0;
         validator.Setup(v => v.IsValid(It.IsAny<RoomLanguage>()))
-            .Callback<RoomLanguage>(_ => isValidCalls++)
             .Returns(false);
         using var hub = CreateHub(roomManager.Object, validator.Object);
 
         Func<Task> action = () => hub.SetLanguageAsync(DefaultRoomId, language);
 
-        await action.Should().ThrowAsync<HubException>();
-        tryGetRoomCounter.Count.Should().Be(1);
-        isValidCalls.Should().Be(1);
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
+        validator.Verify(v => v.IsValid(It.IsAny<RoomLanguage>()), Times.Once);
     }
 
     [Fact(DisplayName = "SetLanguageAsyncShouldBroadcastWhenLanguageIsValid")]
     [Trait("Category", "Unit")]
     public async Task SetLanguageAsyncShouldBroadcastWhenLanguageIsValid()
     {
-        using var cts = new CancellationTokenSource();
         var room = CreateRoomState(DefaultRoomId);
-        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
-
-        var validator = new Mock<ILanguageValidator>(MockBehavior.Strict);
-        var isValidCalls = 0;
-        validator.Setup(v => v.IsValid(It.Is<RoomLanguage>(language => language.Value == "javascript")))
-            .Callback<RoomLanguage>(_ => isValidCalls++)
-            .Returns(true);
-
-        var languageUpdatedCalls = 0;
-        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
-        proxy.Setup(p => p.SendCoreAsync(
-                "LanguageUpdated",
-                It.Is<object?[]>(args => MatchLanguageUpdatedArgs(args, "javascript", 2)),
-                CancellationToken.None))
-            .Callback(() => languageUpdatedCalls++)
-            .Returns(Task.CompletedTask);
-
-        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupCalls = 0;
-        clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
-            .Callback(() => groupCalls++)
-            .Returns(proxy.Object);
-
-        using var hub = CreateHub(roomManager.Object, validator.Object, clients.Object, cancellationToken: cts.Token);
-
-        await hub.SetLanguageAsync(DefaultRoomId, "JavaScript");
-
+        room.AddUser(new("conn-1"), new("Alice"), 5);
+        SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        var validator = new Mock<ILanguageValidator>();
+        validator.Setup(v => v.IsValid(It.IsAny<RoomLanguage>())).Returns(true);
+        using var harness = new HubHarness(manager.Object, validator.Object);
+        await harness.Hub.SetLanguageAsync(DefaultRoomId, "JavaScript");
         room.Language.Value.Should().Be("javascript");
         room.Version.Value.Should().Be(2);
-        tryGetRoomCounter.Count.Should().Be(1);
-        isValidCalls.Should().Be(1);
-        groupCalls.Should().Be(1);
-        languageUpdatedCalls.Should().Be(1);
+        harness.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new SentEvent("LanguageUpdated", ["javascript", 2, 1L]));
+        manager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Once);
+        validator.Verify(v => v.IsValid(It.IsAny<RoomLanguage>()), Times.Once);
     }
 
     [Fact(DisplayName = "UpdateCursorAsyncShouldReturnWhenUserNotFound")]
@@ -574,13 +534,13 @@ public sealed class RoomHubTests
     public async Task UpdateCursorAsyncShouldReturnWhenUserNotFound()
     {
         var room = CreateRoomState(DefaultRoomId);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
         using var hub = CreateHub(roomManager.Object, clients: clients.Object);
 
         await hub.UpdateCursorAsync(DefaultRoomId, 3);
 
-        tryGetRoomCounter.Count.Should().Be(1);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
         clients.VerifyNoOtherCalls();
     }
 
@@ -591,32 +551,33 @@ public sealed class RoomHubTests
         using var cts = new CancellationTokenSource();
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
-        var cursorUpdatedCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "CursorUpdated",
                 It.Is<object?[]>(args => MatchCursorUpdatedArgs(args, "Alice", 3)),
                 It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => cursorUpdatedCalls++)
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupExceptCalls = 0;
         clients.Setup(c => c.GroupExcept(
                 It.Is<string>(group => group == DefaultRoomId),
                 It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
-            .Callback(() => groupExceptCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
         await hub.UpdateCursorAsync(DefaultRoomId, 3);
 
-        tryGetRoomCounter.Count.Should().Be(1);
-        groupExceptCalls.Should().Be(1);
-        cursorUpdatedCalls.Should().Be(1);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
+        clients.Verify(c => c.GroupExcept(
+                It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")), Times.Once);
+        proxy.Verify(p => p.SendCoreAsync(
+                "CursorUpdated",
+                It.Is<object?[]>(args => MatchCursorUpdatedArgs(args, "Alice", 3)),
+                It.Is<CancellationToken>(token => token == cts.Token)), Times.Once);
     }
 
     [Fact(DisplayName = "UpdateSelectionAsyncShouldBroadcastWhenUserFound")]
@@ -626,31 +587,31 @@ public sealed class RoomHubTests
         using var cts = new CancellationTokenSource();
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
-        var userSelectionCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "UserSelection",
                 It.Is<object?[]>(args => MatchUserSelectionArgs(args, "Alice", true)),
                 It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => userSelectionCalls++)
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupCalls = 0;
         clients.Setup(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
                 It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")))
-            .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
         await hub.UpdateSelectionAsync(DefaultRoomId, true);
 
-        tryGetRoomCounter.Count.Should().Be(1);
-        groupCalls.Should().Be(1);
-        userSelectionCalls.Should().Be(1);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
+        clients.Verify(c => c.GroupExcept(It.Is<string>(group => group == DefaultRoomId),
+                It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")), Times.Once);
+        proxy.Verify(p => p.SendCoreAsync(
+                "UserSelection",
+                It.Is<object?[]>(args => MatchUserSelectionArgs(args, "Alice", true)),
+                It.Is<CancellationToken>(token => token == cts.Token)), Times.Once);
     }
 
     [Fact(DisplayName = "UpdateCopyAsyncShouldBroadcastWhenUserFound")]
@@ -660,30 +621,29 @@ public sealed class RoomHubTests
         using var cts = new CancellationTokenSource();
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
-        var userCopyCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "UserCopy",
                 It.Is<object?[]>(args => MatchUserCopyArgs(args, "Alice")),
                 It.Is<CancellationToken>(token => token == cts.Token)))
-            .Callback(() => userCopyCalls++)
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupCalls = 0;
         clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
-            .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
 
         await hub.UpdateCopyAsync(DefaultRoomId);
 
-        tryGetRoomCounter.Count.Should().Be(1);
-        groupCalls.Should().Be(1);
-        userCopyCalls.Should().Be(1);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
+        clients.Verify(c => c.Group(It.Is<string>(group => group == DefaultRoomId)), Times.Once);
+        proxy.Verify(p => p.SendCoreAsync(
+                "UserCopy",
+                It.Is<object?[]>(args => MatchUserCopyArgs(args, "Alice")),
+                It.Is<CancellationToken>(token => token == cts.Token)), Times.Once);
     }
 
     [Fact(DisplayName = "LeaveRoomAsyncShouldRemoveUserAndNotifyGroup")]
@@ -694,30 +654,24 @@ public sealed class RoomHubTests
         var room = CreateRoomState(DefaultRoomId);
         room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
         room.AddUser(new ConnectionId("conn-2"), new RoomUser("Bob"), 5);
-        var tryGetRoomCounter = SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
 
-        var removeFromGroupCalls = 0;
         var groups = new Mock<IGroupManager>(MockBehavior.Strict);
         groups.Setup(g => g.RemoveFromGroupAsync(
                 It.Is<string>(conn => conn == "conn-1"),
                 It.Is<string>(group => group == DefaultRoomId),
                 CancellationToken.None))
-            .Callback(() => removeFromGroupCalls++)
             .Returns(Task.CompletedTask);
 
-        var userLeftCalls = 0;
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
         proxy.Setup(p => p.SendCoreAsync(
                 "UserLeft",
                 It.Is<object?[]>(args => MatchUserLeftArgs(args, "Alice", new[] { "Bob" })),
                 CancellationToken.None))
-            .Callback(() => userLeftCalls++)
             .Returns(Task.CompletedTask);
 
         var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
-        var groupCalls = 0;
         clients.Setup(c => c.Group(It.Is<string>(group => group == DefaultRoomId)))
-            .Callback(() => groupCalls++)
             .Returns(proxy.Object);
 
         using var hub = CreateHub(
@@ -729,10 +683,16 @@ public sealed class RoomHubTests
         await hub.LeaveRoomAsync(DefaultRoomId);
 
         room.ConnectedUserCount.Should().Be(1);
-        tryGetRoomCounter.Count.Should().Be(1);
-        groupCalls.Should().Be(1);
-        removeFromGroupCalls.Should().Be(1);
-        userLeftCalls.Should().Be(1);
+        roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
+        clients.Verify(c => c.Group(It.Is<string>(group => group == DefaultRoomId)), Times.Once);
+        groups.Verify(g => g.RemoveFromGroupAsync(
+                It.Is<string>(conn => conn == "conn-1"),
+                It.Is<string>(group => group == DefaultRoomId),
+                CancellationToken.None), Times.Once);
+        proxy.Verify(p => p.SendCoreAsync(
+                "UserLeft",
+                It.Is<object?[]>(args => MatchUserLeftArgs(args, "Alice", new[] { "Bob" })),
+                CancellationToken.None), Times.Once);
     }
 
     [Fact]
@@ -746,9 +706,9 @@ public sealed class RoomHubTests
         groups.Setup(x => x.AddToGroupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("subscription failure"));
         using var hub = CreateHub(manager.Object, groups: groups.Object);
-        await Assert.ThrowsAsync<IOException>(() => hub.JoinRoomAsync(DefaultRoomId, "Alice"));
-        Assert.Equal(0, room.ConnectedUserCount);
-        Assert.False(hub.Context.Items.ContainsKey("roomId"));
+        await FluentActions.Awaiting(() => hub.JoinRoomAsync(DefaultRoomId, "Alice")).Should().ThrowAsync<IOException>();
+        room.ConnectedUserCount.Should().Be(0);
+        hub.Context.Items.Should().NotContainKey("roomId");
     }
 
     [Theory]
@@ -760,7 +720,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.CheckpointYjsAsync(DefaultRoomId, "AQ==", "", revision);
 
-        await action.Should().ThrowAsync<HubException>();
+        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
     }
 
     private static bool MatchUserJoinedArgs(object?[] args, string user, string[] users)
@@ -807,24 +767,6 @@ public sealed class RoomHubTests
         }
 
         return string.Equals(args[3] as string, author, StringComparison.Ordinal);
-    }
-
-    private static bool MatchLanguageUpdatedArgs(
-        object?[] args,
-        string language,
-        int version)
-    {
-        if (args.Length != 3)
-        {
-            return false;
-        }
-
-        if (!string.Equals(args[0] as string, language, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return args[1] is int actualVersion && actualVersion == version;
     }
 
     private static bool MatchCursorUpdatedArgs(
@@ -889,6 +831,7 @@ public sealed class RoomHubTests
         return actualUsers is not null && actualUsers.SequenceEqual(users);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000", Justification = "Hub ownership is transferred to the caller.")]
     private static RoomHub CreateHub(
         IRoomManager? roomManager = null,
         ILanguageValidator? languageValidator = null,
@@ -897,44 +840,53 @@ public sealed class RoomHubTests
         IDictionary<object, object?>? items = null,
         ILogger<RoomHub>? logger = null,
         CancellationToken cancellationToken = default)
+        => new HubHarness(roomManager, languageValidator, clients, groups, items, logger, cancellationToken).Hub;
+
+    private sealed record SentEvent(string Name, object?[] Arguments);
+
+    private sealed class HubHarness : IDisposable
     {
-        roomManager ??= new Mock<IRoomManager>(MockBehavior.Strict).Object;
-        languageValidator ??= new Mock<ILanguageValidator>(MockBehavior.Strict).Object;
-        clients ??= new Mock<IHubCallerClients>(MockBehavior.Strict).Object;
-        groups ??= new Mock<IGroupManager>(MockBehavior.Strict).Object;
-        items ??= new Dictionary<object, object?>();
-        logger ??= new Mock<ILogger<RoomHub>>().Object;
-        var context = new Mock<HubCallerContext>(MockBehavior.Strict);
-        context.SetupGet(c => c.ConnectionId).Returns("conn-1");
-        context.SetupGet(c => c.ConnectionAborted).Returns(cancellationToken);
-        context.SetupGet(c => c.Items).Returns(items);
-
-        var hub = new RoomHub(roomManager, new RoomSessionService(roomManager, languageValidator), logger)
+        internal HubHarness(IRoomManager? roomManager = null, ILanguageValidator? languageValidator = null,
+            IHubCallerClients? clients = null, IGroupManager? groups = null,
+            IDictionary<object, object?>? items = null, ILogger<RoomHub>? logger = null,
+            CancellationToken cancellationToken = default)
         {
-            Context = context.Object,
-            Clients = clients,
-            Groups = groups
-        };
+            roomManager ??= Mock.Of<IRoomManager>(MockBehavior.Strict);
+            languageValidator ??= Mock.Of<ILanguageValidator>(MockBehavior.Strict);
+            var proxy = new Mock<IClientProxy>();
+            proxy.Setup(p => p.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+                .Callback<string, object?[], CancellationToken>((name, arguments, _) => Events.Add(new(name, arguments)))
+                .Returns(Task.CompletedTask);
+            var defaultClients = new Mock<IHubCallerClients>();
+            defaultClients.Setup(c => c.Group(It.IsAny<string>())).Returns(proxy.Object);
+            defaultClients.Setup(c => c.GroupExcept(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(proxy.Object);
+            var context = new Mock<HubCallerContext>(MockBehavior.Strict);
+            context.SetupGet(c => c.ConnectionId).Returns("conn-1");
+            context.SetupGet(c => c.ConnectionAborted).Returns(cancellationToken);
+            context.SetupGet(c => c.Items).Returns(items ?? new Dictionary<object, object?>());
+            Hub = new RoomHub(roomManager, new RoomSessionService(roomManager, languageValidator), logger ?? Mock.Of<ILogger<RoomHub>>())
+            {
+                Context = context.Object,
+                Clients = clients ?? defaultClients.Object,
+                Groups = groups ?? Mock.Of<IGroupManager>()
+            };
+        }
 
-        return hub;
+        internal RoomHub Hub { get; }
+
+        internal List<SentEvent> Events { get; } = [];
+
+        public void Dispose() => Hub.Dispose();
     }
 
-    private static CallCounter SetupTryGetRoom(
+    private static void SetupTryGetRoom(
         string roomId,
         RoomState room,
         out Mock<IRoomManager> roomManager)
     {
-        var counter = new CallCounter();
         roomManager = new Mock<IRoomManager>(MockBehavior.Strict);
         roomManager.Setup(m => m.TryGetRoom(It.Is<RoomId>(id => id.Value == roomId), out room))
-            .Callback(() => counter.Count++)
             .Returns(true);
-        return counter;
-    }
-
-    private sealed class CallCounter
-    {
-        public int Count { get; set; }
     }
 
     private static RoomState CreateRoomState(string roomId, string text = "")
@@ -944,7 +896,7 @@ public sealed class RoomHubTests
             new RoomLanguage("csharp"),
             new RoomText(text),
             new RoomVersion(1),
-            DateTimeOffset.UtcNow,
+            DateTimeOffset.UnixEpoch,
             new AdminUser("admin", true));
 }
 

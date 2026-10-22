@@ -97,7 +97,7 @@ test('remote carets clamp columns, keep stable styles and restore after hiding',
     appendChild: (element) => children.push(element)
   };
   const presence = new PresenceView({ editor, monaco, document, participantsList });
-  presence.displayName = 'Alice';
+  presence.getDisplayName = () => 'Alice';
   Object.assign(presence.cursorPositions, { Alice: 3, Bob: 100, Invalid: '?' });
   presence.markActiveEditor('Bob');
   presence.markSelecting('Bob', true);
@@ -118,4 +118,32 @@ test('remote carets clamp columns, keep stable styles and restore after hiding',
   assert.equal(style.textContent, css);
   presence.renderUsers(null);
   assert.equal(children.length, 0);
+});
+
+test('retaining users cleans every departed presence collection and preserves self', () => {
+  const presence = view();
+  presence.getDisplayName = () => 'Alice';
+  for (const name of ['Alice', 'Bob', 'Carol']) {
+    presence.cursorPositions[name] = 20;
+    presence.caretColors[name] = 'red';
+    for (const map of [
+      presence.caretClassMap,
+      presence.activeEditors,
+      presence.selectingUsers,
+      presence.copyingUsers
+    ])
+      map.set(name, 1);
+  }
+  presence.retainUsers(['Carol']);
+  assert.deepEqual(Object.keys(presence.cursorPositions), ['Alice', 'Carol']);
+  assert.deepEqual(Object.keys(presence.caretColors), ['Alice', 'Carol']);
+  for (const map of [
+    presence.caretClassMap,
+    presence.activeEditors,
+    presence.selectingUsers,
+    presence.copyingUsers
+  ])
+    assert.deepEqual([...map.keys()], ['Alice', 'Carol']);
+  presence.removeUser('Carol');
+  assert.deepEqual(Object.keys(presence.cursorPositions), ['Alice']);
 });

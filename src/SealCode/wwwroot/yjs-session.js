@@ -8,6 +8,7 @@ const maxPendingBytes = 8 * 1024 * 1024;
 
 /** Owns one Yjs document, undo history, revisions and synchronization buffer. */
 export class YjsSession {
+  /** @param {import('./client-types.js').YjsSessionOptions} options */
   constructor({
     Y,
     MonacoBinding,
@@ -52,6 +53,7 @@ export class YjsSession {
     this.isApplyingRemoteUpdate = false;
     this.isSynchronizingYjs = false;
     this.synchronizationEpoch = 0;
+    /** @type {Array<{updateBase64: string, documentRevision: number, roomVersion: number, author: string}>} */
     this.bufferedYjsMessages = [];
     this.yjsSession = 0;
     this.checkpointJournal = new CheckpointJournalTracker();
@@ -61,6 +63,9 @@ export class YjsSession {
     return this.editor?.getModel();
   }
 
+  /**
+   * @param {Array<{Revision?: number, revision?: number, Update?: string, update?: string}>} updates
+   */
   normalizeYjsUpdates(updates) {
     if (!Array.isArray(updates)) return [];
     return updates
@@ -78,6 +83,10 @@ export class YjsSession {
       .sort((left, right) => left.revision - right.revision);
   }
 
+  /**
+   * @param {Uint8Array} update
+   * @param {unknown} origin
+   */
   applyYjsUpdate(update, origin) {
     if (!this.ydoc || !update || update.length === 0) return;
     this.isApplyingRemoteUpdate = true;
@@ -88,6 +97,11 @@ export class YjsSession {
     }
   }
 
+  /**
+   * @param {string} text
+   * @param {string} stateBase64
+   * @param {Array<{Revision?: number, revision?: number, Update?: string, update?: string}>} updates
+   */
   applyYjsSyncPayload(text, stateBase64, updates) {
     const normalizedUpdates = this.normalizeYjsUpdates(updates);
     let appliedCrdtState = false;
@@ -112,6 +126,11 @@ export class YjsSession {
     return normalizedUpdates;
   }
 
+  /**
+   * @param {number} documentRevision
+   * @param {number} checkpointRevision
+   * @param {Array<{revision: number, update: string}>} updates
+   */
   resetDocumentRevisionState(documentRevision, checkpointRevision, updates) {
     const latestRevision = Number(documentRevision);
     const baseRevision = Number(checkpointRevision);
@@ -144,6 +163,9 @@ export class YjsSession {
     if (this.currentDocumentRevision > baseRevision) this.onCheckpoint();
   }
 
+  /**
+   * @param {number} revision
+   */
   noteDocumentRevision(revision) {
     const parsedRevision = Number(revision);
     if (!Number.isSafeInteger(parsedRevision) || parsedRevision <= 0) return false;
@@ -191,6 +213,13 @@ export class YjsSession {
     }
   }
 
+  /**
+   * @param {string} text
+   * @param {string} stateBase64
+   * @param {Array<{Revision?: number, revision?: number, Update?: string, update?: string}>} updates
+   * @param {number} documentRevision
+   * @param {number} checkpointRevision
+   */
   initializeYjs(text, stateBase64, updates, documentRevision, checkpointRevision) {
     if (!this.model) return;
     this.disposeYjs(true);
@@ -232,6 +261,12 @@ export class YjsSession {
     this.onRemoteChange();
   }
 
+  /**
+   * @param {string} stateBase64
+   * @param {Array<{Revision?: number, revision?: number, Update?: string, update?: string}>} updates
+   * @param {number} documentRevision
+   * @param {number} checkpointRevision
+   */
   mergeYjsSyncState(stateBase64, updates, documentRevision, checkpointRevision) {
     if (!this.ydoc || !this.ytext) return false;
     const normalizedUpdates = this.applyYjsSyncPayload('', stateBase64, updates);
@@ -248,10 +283,13 @@ export class YjsSession {
     return true;
   }
 
+  /**
+   * @param {import('monaco-editor').editor.IModelContentChange[]} changes
+   */
   applyRemoteCursorAdjustment(changes) {
     if (!changes || !changes.length || !this.model) return;
     const sorted = [...changes].sort(
-      (a, b) => (a.rangeOffset ?? 0) - (b.rangeOffset ?? 0)
+      (a, b) => (b.rangeOffset ?? 0) - (a.rangeOffset ?? 0)
     );
     for (const change of sorted) {
       const start =
@@ -283,6 +321,12 @@ export class YjsSession {
     }
   }
 
+  /**
+   * @param {string} updateBase64
+   * @param {number} documentRevision
+   * @param {number} roomVersion
+   * @param {string} author
+   */
   handleYjsUpdated(updateBase64, documentRevision, roomVersion, author) {
     this.onRevision(roomVersion);
     if (!this.ydoc) return;
@@ -329,6 +373,12 @@ export class YjsSession {
     }
   }
 
+  /**
+   * @param {string} updateBase64
+   * @param {number} documentRevision
+   * @param {number} roomVersion
+   * @param {string} author
+   */
   receiveUpdate(updateBase64, documentRevision, roomVersion, author) {
     if (this.isSynchronizingYjs) {
       if (

@@ -89,7 +89,7 @@ public sealed class RoomRegistry : IRoomRegistry
         }
 
 #pragma warning disable CA1873 // Avoid potentially expensive logging
-        _logger.LogInformation("Room deleted {RoomId} ({Name})", room.RoomId.Value, room.Name.Value);
+        _logger.LogInformation("Room deleted {RoomId} ({Name}): {Reason}", room.RoomId.Value, room.Name.Value, reason.Value);
 #pragma warning restore CA1873 // Avoid potentially expensive logging
 
         room.Close();

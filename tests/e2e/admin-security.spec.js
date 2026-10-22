@@ -1,12 +1,6 @@
-import { csrf } from './admin-token.js';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 test('admin language labels render untrusted values as text', async ({ page }) => {
-  const login = await page.request.post('/admin/login', {
-    headers: await csrf(page.request),
-    form: { name: 'BrowserAdmin', password: 'browser-pass' }
-  });
-  expect(login.ok()).toBeTruthy();
   const language = '<img src=x onerror="window.__review_xss=true">';
   await page.route('**/admin/rooms', (route) =>
     route.fulfill({

@@ -62,6 +62,28 @@ public sealed class ResourceBudgetTests
         Assert.Equal(valid, Validator.TryValidateProperty(value, context, []));
     }
 
+    [Theory]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 0, false)]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 1, true)]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 10000, true)]
+    [InlineData(nameof(RoomLimits.MaxConnectionsPerSource), 10001, false)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 4, false)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 5, true)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 3600, true)]
+    [InlineData(nameof(RoomLimits.UnjoinedConnectionTimeoutSeconds), 3601, false)]
+    public void ConnectionBudgetRangesAreValidated(string property, int value, bool valid)
+    {
+        var context = new ValidationContext(new RoomLimits()) { MemberName = property };
+        Assert.Equal(valid, Validator.TryValidateProperty(value, context, []));
+    }
+
+    [Fact]
+    public void SourceBudgetMustFitTotalCapacity()
+    {
+        var limits = new RoomLimits { MaxConnections = 10, MaxConnectionsPerSource = 11 };
+        Assert.False(Validator.TryValidateObject(limits, new(limits), [], validateAllProperties: true));
+    }
+
     private static RoomState Create(RoomLimits limits) => new(RoomId.New(), new("Room"), new("csharp"), new(""), new(1), DateTimeOffset.UnixEpoch, new("admin"), limits: limits);
 
     [Theory]
@@ -76,11 +98,11 @@ public sealed class ResourceBudgetTests
         });
         if (accepted)
         {
-            room.AppendAsTestParticipant(new byte[bytes], DateTimeOffset.UtcNow);
+            room.AppendAsTestParticipant(new byte[bytes], DateTimeOffset.UnixEpoch);
         }
         else
         {
-            Assert.Throws<RoomLimitException>(() => room.AppendAsTestParticipant(new byte[bytes], DateTimeOffset.UtcNow));
+            Assert.Throws<RoomLimitException>(() => room.AppendAsTestParticipant(new byte[bytes], DateTimeOffset.UnixEpoch));
         }
 
         Assert.Equal(accepted ? 1 : 0, room.DocumentRevision.Value);
@@ -103,14 +125,14 @@ public sealed class ResourceBudgetTests
         {
             try
             {
-                room.AppendAsTestParticipant(new byte[256], DateTimeOffset.UtcNow);
+                room.AppendAsTestParticipant(new byte[256], DateTimeOffset.UnixEpoch);
             }
             catch (RoomLimitException) { }
         });
         Assert.Equal(4, room.DocumentRevision.Value);
         Assert.Equal(1024, room.JournalBytes);
-        Assert.True(room.CheckpointAsTestParticipant(new(4), [1], new(""), DateTimeOffset.UtcNow));
-        room.AppendAsTestParticipant([2], DateTimeOffset.UtcNow);
+        Assert.True(room.CheckpointAsTestParticipant(new(4), [1], new(""), DateTimeOffset.UnixEpoch));
+        room.AppendAsTestParticipant([2], DateTimeOffset.UnixEpoch);
         Assert.Equal(5, room.DocumentRevision.Value);
         Assert.Equal(1, room.JournalCount);
     }
@@ -120,10 +142,10 @@ public sealed class ResourceBudgetTests
     {
         var room = Create(new());
         room.AddUser(new("a"), new("Alice"), 5);
-        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([1, 2], DateTimeOffset.UnixEpoch);
         var snapshot = room.CreateYjsSyncState();
         room.AddUser(new("b"), new("Bob"), 5);
-        room.AppendAsTestParticipant([3], DateTimeOffset.UtcNow);
+        room.AppendAsTestParticipant([3], DateTimeOffset.UnixEpoch);
         snapshot.Updates[0].Payload[0] = 99;
         Assert.Equal(1, snapshot.DocumentRevision.Value);
         Assert.Equal(2, snapshot.Version.Value);
@@ -147,7 +169,7 @@ public sealed class ResourceBudgetTests
     public void LargeDocumentFitsDefaultBudgets()
     {
         var room = Create(new());
-        room.AppendAsTestParticipant(new byte[500100], DateTimeOffset.UtcNow);
-        Assert.True(room.CheckpointAsTestParticipant(new(1), new byte[500100], new(new string('a', 500000)), DateTimeOffset.UtcNow));
+        room.AppendAsTestParticipant(new byte[500100], DateTimeOffset.UnixEpoch);
+        Assert.True(room.CheckpointAsTestParticipant(new(1), new byte[500100], new(new string('a', 500000)), DateTimeOffset.UnixEpoch));
     }
 }

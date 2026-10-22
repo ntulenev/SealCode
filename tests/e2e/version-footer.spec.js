@@ -1,5 +1,5 @@
 import { csrf } from './admin-token.js';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 test('every page displays the deployed version and commit from the server', async ({
   page
@@ -8,14 +8,6 @@ test('every page displays the deployed version and commit from the server', asyn
   expect(response.headers()['cache-control']).toBe('no-store');
   const version = await response.json();
   const expected = `SealCode v${version.Version} · ${version.Commit.slice(0, 7)}`;
-  expect(
-    (
-      await page.request.post('/admin/login', {
-        headers: await csrf(page.request),
-        form: { name: 'BrowserAdmin', password: 'browser-pass' }
-      })
-    ).ok()
-  ).toBeTruthy();
   const room = await page.request.post('/admin/rooms', {
     headers: await csrf(page.request),
     data: { name: 'Version footer', language: 'csharp' }

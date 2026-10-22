@@ -2,30 +2,40 @@ import { HubMethods, HubEvents } from './hub-contract.js';
 import { HubErrorCode, classifyHubError } from './hub-errors.js';
 
 /** Recognizes the legacy room deletion error inside a SignalR wrapper. */
+/**
+ * @param {unknown} error
+ */
 export function isRoomNotFound(error) {
   return classifyHubError(error) === HubErrorCode.RoomNotFound;
 }
 
 /** Registers the event names from the shared hub contract in one place. */
+/**
+ * @param {Pick<import('@microsoft/signalr').HubConnection, 'on'>} connection
+ * @param {Partial<Record<keyof typeof HubEvents, (...args: any[]) => void>>} handlers
+ */
 export function registerHubHandlers(connection, handlers) {
   for (const [event, handler] of Object.entries(handlers)) {
-    connection.on(HubEvents[event], handler);
+    connection.on(HubEvents[/** @type {keyof typeof HubEvents} */ (event)], handler);
   }
 }
 
 /** Owns joining, reconnect retries, connectivity and terminal room closure. */
 export class RoomLifecycle {
+  /** @param {import('./client-types.js').RoomLifecycleOptions} options */
   constructor({
     connection,
     roomId,
     session,
     getDisplayName,
     start,
+    stop = async () => {},
     connectedState = 'Connected',
     onJoinStart,
     applyJoin,
     onJoinSuccess,
     onJoinError,
+    onRejoinError = onJoinError,
     onSynchronizationEnd,
     onClose,
     setStatus,
@@ -40,11 +50,13 @@ export class RoomLifecycle {
     this.session = session;
     this.getDisplayName = getDisplayName;
     this.start = start;
+    this.stop = stop;
     this.connectedState = connectedState;
     this.onJoinStart = onJoinStart;
     this.applyJoin = applyJoin;
     this.onJoinSuccess = onJoinSuccess;
     this.onJoinError = onJoinError;
+    this.onRejoinError = onRejoinError;
     this.onSynchronizationEnd = onSynchronizationEnd;
     this.onClose = onClose;
     this.setStatus = setStatus;
@@ -55,6 +67,7 @@ export class RoomLifecycle {
     this.rejoinRetryDelaysMs = rejoinRetryDelaysMs;
     this.closed = false;
     this.joined = false;
+    this.participating = false;
     this.rejoining = false;
     this.retryTimer = null;
     this.retryAttempt = 0;
@@ -68,6 +81,7 @@ export class RoomLifecycle {
 
   async joinRoom() {
     if (this.closed) return false;
+    this.participating = false;
     this.onJoinStart();
     this.session.isSynchronizingYjs = true;
     const epoch = ++this.session.synchronizationEpoch;
@@ -80,6 +94,7 @@ export class RoomLifecycle {
       if (this.closed || epoch !== this.session.synchronizationEpoch) return false;
       this.applyJoin(result);
       this.joined = true;
+      this.participating = true;
       this.retryAttempt = 0;
       this.clearRejoinRetryTimer();
       this.onJoinSuccess();
@@ -89,7 +104,8 @@ export class RoomLifecycle {
         this.closeRoom('Room not found.');
         return false;
       }
-      this.onJoinError(error);
+      if (this.joined) this.onRejoinError(error);
+      else this.onJoinError(error);
       return false;
     } finally {
       if (epoch === this.session.synchronizationEpoch) {
@@ -131,18 +147,30 @@ export class RoomLifecycle {
     }, delay);
   }
 
+  /**
+   * @param {string} reason
+   */
   closeRoom(reason) {
+    if (this.closed) return;
     this.closed = true;
     this.joined = false;
+    this.participating = false;
     this.session.synchronizationEpoch += 1;
     this.session.isSynchronizingYjs = false;
     this.session.bufferedYjsMessages.length = 0;
     this.clearRejoinRetryTimer();
     this.setReadOnly(true);
     this.onClose(reason);
+    Promise.resolve()
+      .then(() => this.stop())
+      .catch((error) => console.warn('Failed to stop connection.', error));
   }
 
+  /**
+   * @param {string} status
+   */
   pause(status) {
+    this.participating = false;
     this.resetTransport();
     this.clearRejoinRetryTimer();
     this.rejoining = false;
@@ -150,6 +178,9 @@ export class RoomLifecycle {
     this.setReadOnly(true);
   }
 
+  /**
+   * @param {Pick<Window, 'addEventListener'>} events
+   */
   registerConnectivity(events) {
     this.connection.onreconnected(async () => {
       if (this.joined && this.getDisplayName() && !this.closed) {
@@ -162,12 +193,19 @@ export class RoomLifecycle {
     this.connection.onclose(() => this.pause('disconnected'));
     events.addEventListener('offline', () => {
       if (!this.joined || this.closed) return;
+      this.participating = false;
       this.setStatus('reconnecting');
       this.setReadOnly(true);
     });
     events.addEventListener('online', () => {
       if (!this.joined || this.closed) return;
       if (this.connection.state === this.connectedState) {
+        if (!this.participating) {
+          this.rejoinRoomWithRetry().catch((error) =>
+            console.warn('Failed to rejoin room.', error)
+          );
+          return;
+        }
         this.setStatus('connected');
         this.setReadOnly(false);
         return;

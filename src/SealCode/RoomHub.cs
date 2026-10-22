@@ -94,16 +94,9 @@ public sealed class RoomHub : SignalRHub
         // Subscribe before taking the snapshot so concurrent updates are either
         // included in it or delivered to the client's synchronization buffer.
         var joinResult = JoinRoomResult.From(room);
-        try
-        {
-            await Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
-                .SendAsync(HubContract.Events.UserJoined, displayName, joinResult.Users, joinResult.PresenceRevision, CancellationToken.None)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            _logger.LogWarning(ex, "Presence notification failed for {RoomId}", parsedRoomId.Value);
-        }
+        await BroadcastAfterCommitAsync(() => Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
+            .SendAsync(HubContract.Events.UserJoined, displayName, joinResult.Users, joinResult.PresenceRevision, CancellationToken.None),
+            "Presence notification failed for {RoomId}", parsedRoomId).ConfigureAwait(false);
         _logger.LogInformation("User joined {RoomId} ({Name}) as {RoomUser}", parsedRoomId.Value, room.Name.Value, displayName);
         return joinResult;
     }
@@ -120,9 +113,9 @@ public sealed class RoomHub : SignalRHub
         var appendResult = HubErrors.Invoke(() => _sessions.Append(parsedRoomId, new(Context.ConnectionId), updateBase64));
 
         // Once appended, the update belongs to the room even if its author disconnects.
-        await Clients.Group(parsedRoomId.Value)
-            .SendAsync(HubContract.Events.YjsUpdated, updateBase64, appendResult.DocumentRevision.Value, appendResult.RoomVersion.Value, appendResult.Author.Value, CancellationToken.None)
-            .ConfigureAwait(false);
+        await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
+            .SendAsync(HubContract.Events.YjsUpdated, updateBase64, appendResult.DocumentRevision.Value, appendResult.RoomVersion.Value, appendResult.Author.Value, CancellationToken.None),
+            "Failed to broadcast Yjs update for {RoomId}", parsedRoomId).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -176,15 +169,9 @@ public sealed class RoomHub : SignalRHub
         }
         if (accepted)
         {
-            try
-            {
-                await Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId)
-                    .SendAsync(HubContract.Events.YjsCheckpointed, basedOnRevision, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                _logger.LogWarning(ex, "Failed to broadcast Yjs checkpoint for {RoomId}", parsedRoomId.Value);
-            }
+            await BroadcastAfterCommitAsync(() => Clients.GroupExcept(parsedRoomId.Value, Context.ConnectionId)
+                .SendAsync(HubContract.Events.YjsCheckpointed, basedOnRevision, CancellationToken.None),
+                "Failed to broadcast Yjs checkpoint for {RoomId}", parsedRoomId).ConfigureAwait(false);
         }
         return accepted;
     }
@@ -198,14 +185,13 @@ public sealed class RoomHub : SignalRHub
     public async Task SetLanguageAsync(string roomId, string language)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
-        var room = GetRoomForParticipant(parsedRoomId, out _);
         int newVersion;
         long metadataRevision;
         RoomLanguage normalized;
         try
         {
             normalized = new RoomLanguage(language);
-            var changed = _sessions.ChangeLanguage(room, new(Context.ConnectionId), normalized);
+            var changed = HubErrors.Invoke(() => _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized));
             newVersion = changed.RoomVersion.Value;
             metadataRevision = changed.MetadataRevision;
         }
@@ -213,9 +199,9 @@ public sealed class RoomHub : SignalRHub
         {
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }
-        await Clients.Group(parsedRoomId.Value)
-            .SendAsync(HubContract.Events.LanguageUpdated, normalized.Value, newVersion, metadataRevision, CancellationToken.None)
-            .ConfigureAwait(false);
+        await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
+            .SendAsync(HubContract.Events.LanguageUpdated, normalized.Value, newVersion, metadataRevision, CancellationToken.None),
+            "Failed to broadcast language for {RoomId}", parsedRoomId).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -272,12 +258,17 @@ public sealed class RoomHub : SignalRHub
     /// <param name="exception">The disconnect exception, if any.</param>
     public async override Task OnDisconnectedAsync(Exception? exception)
     {
-        if (Context.GetActiveRoomId() is string roomId)
+        try
         {
-            // ConnectionAborted is already canceled during disconnect; use a non-canceled token for cleanup/notifications.
-            await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
+            if (Context.GetActiveRoomId() is string roomId)
+            {
+                await RemoveFromRoomAsync(roomId, new ConnectionId(Context.ConnectionId), notify: true).ConfigureAwait(false);
+            }
         }
-        await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
+        finally
+        {
+            await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
+        }
     }
 
     private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify)
@@ -303,6 +294,13 @@ public sealed class RoomHub : SignalRHub
             displayName = result.User.Value;
             usersSnapshot = [.. result.Users.Select(x => x.Value)];
         }
+        if (notify && displayName is not null)
+        {
+            await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
+                .SendAsync(HubContract.Events.UserLeft, displayName, usersSnapshot, result.PresenceRevision, CancellationToken.None),
+                "Presence notification failed for {RoomId}", parsedRoomId).ConfigureAwait(false);
+            _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
+        }
         try
         {
             await Groups.RemoveFromGroupAsync(connectionId.Value, parsedRoomId.Value, CancellationToken.None).ConfigureAwait(false);
@@ -313,12 +311,20 @@ public sealed class RoomHub : SignalRHub
             Context.SetActiveRoom(parsedRoomId.Value, displayName);
             throw;
         }
-        if (notify && displayName is not null)
+
+    }
+
+    private async Task BroadcastAfterCommitAsync(Func<Task> send, string operation, RoomId roomId)
+    {
+        try
         {
-            await Clients.Group(parsedRoomId.Value)
-                .SendAsync(HubContract.Events.UserLeft, displayName, usersSnapshot, result.PresenceRevision, CancellationToken.None)
-                .ConfigureAwait(false);
-            _logger.LogInformation("User left {RoomId} as {RoomUser}", parsedRoomId.Value, displayName);
+            await send().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+#pragma warning disable CA2254 // The caller supplies one of the existing constant log templates.
+            _logger.LogWarning(ex, operation, roomId.Value);
+#pragma warning restore CA2254
         }
     }
 

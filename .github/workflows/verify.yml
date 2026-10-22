@@ -28,7 +28,7 @@ jobs:
           dotnet tool install --tool-path .tools dotnet-reportgenerator-globaltool --version 5.5.4
           .tools/reportgenerator '-reports:coverage/server/**/coverage.cobertura.xml' '-targetdir:coverage/merged' '-reporttypes:Html;Cobertura;TextSummary'
       - name: Client tests and separate JS coverage
-        run: node --test --experimental-test-coverage '--test-coverage-include=src/SealCode/wwwroot/*.js' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/client.lcov tests/client/*.test.js
+        run: npm run test:client
       - run: npx playwright install --with-deps chromium
       - name: Smoke test
         run: npm run test:smoke

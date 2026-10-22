@@ -1,4 +1,5 @@
 /** Converts between Base64 and byte arrays. */
+/** @param {Uint8Array} data */
 export function base64FromUint8(data) {
   if (!data || data.length === 0) return '';
   let binary = '';
@@ -11,6 +12,7 @@ export function base64FromUint8(data) {
 }
 
 /** Converts between Base64 and byte arrays. */
+/** @param {string} base64 */
 export function uint8FromBase64(base64) {
   if (!base64) return new Uint8Array();
   const binary = atob(base64);
