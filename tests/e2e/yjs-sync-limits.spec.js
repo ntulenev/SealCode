@@ -184,7 +184,7 @@ test('only the latest author checkpoints after the revision threshold', async ({
       )
       .toBe(revision);
     if (revision === 20) {
-      await advance(page, 1200);
+      await advance([page, observer], 1200);
       expect(counts).toEqual([0, 0]);
     }
   }
@@ -290,7 +290,7 @@ test('observer accounts for checkpoint broadcasts across another fallback window
     .poll(async () => (await syncState(page, roomId)).CheckpointRevision)
     .toBe(64);
   await appendRevisions(page, page, roomId, 65, 64 + 127);
-  await advance(page, 1500);
+  await advance([page, observer], 1500);
   expect(authorCount()).toBeGreaterThan(0);
   expect(observerCount()).toBe(0);
   await observer.close();
