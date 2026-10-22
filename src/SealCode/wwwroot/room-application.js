@@ -29,6 +29,7 @@ import {
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
 import { readClientLimits } from './client-limits.js';
+import { SyncErrors } from './sync-errors.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
 
@@ -58,6 +59,7 @@ export function createRoomApplication({
     joinError,
     syncError
   } = elements;
+  const syncErrors = new SyncErrors();
   let collaborativeUndoEnabled = true;
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
   let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
@@ -183,7 +185,7 @@ export function createRoomApplication({
     },
     resetTransport: () => {
       recoveryController.reset();
-      checkpointWriter.reset();
+      checkpointWriter.reset({ keepSkipped: true });
       syncScheduler.reset();
     }
   });
@@ -294,6 +296,7 @@ export function createRoomApplication({
     }
   });
   checkpointWriter = new CheckpointWriter({
+    retryAfterRevisions: checkpointEveryRevisions,
     delay: 1000,
     scheduler: syncScheduler,
     ready: () =>
@@ -379,16 +382,18 @@ export function createRoomApplication({
     connectionStatusEl.textContent = status;
   }
 
+  function renderSyncError(error) {
+    syncError.dataset.kind = error?.kind ?? '';
+    syncError.textContent = error?.message ?? '';
+    syncError.classList.toggle('hidden', error === null);
+  }
+
   function showSyncError(kind, message) {
-    syncError.dataset.kind = kind;
-    syncError.textContent = message;
-    syncError.classList.remove('hidden');
+    renderSyncError(syncErrors.show(kind, message));
   }
 
   function clearSyncError(kind) {
-    if (syncError.dataset.kind !== kind) return;
-    syncError.textContent = '';
-    syncError.classList.add('hidden');
+    renderSyncError(syncErrors.clear(kind));
   }
 
   function ensureLanguageOption(language) {
@@ -404,7 +409,7 @@ export function createRoomApplication({
   async function loadLanguages(selected) {
     const preferred = selected ?? languageSelect?.value ?? '';
     try {
-      const res = await fetch('/languages');
+      const res = await fetch('/languages', { signal: AbortSignal.timeout(10000) });
       if (!res.ok) {
         throw new Error('Failed to load languages');
       }
@@ -456,7 +461,7 @@ export function createRoomApplication({
 
   async function loadFeatures() {
     try {
-      const response = await fetch('/features');
+      const response = await fetch('/features', { signal: AbortSignal.timeout(10000) });
       if (!response.ok) throw new Error('Failed to load feature flags');
       const features = await response.json();
       collaborativeUndoEnabled =
@@ -468,13 +473,14 @@ export function createRoomApplication({
       maxEncodedCheckpointBytes = limits.maxEncodedCheckpointBytes;
       maxSnapshotCharacters = limits.maxSnapshotCharacters;
       updateSender.maxEncodedBytes = limits.maxEncodedUpdateBytes;
-      checkpointWriter.retryAfterRevisions = checkpointEveryRevisions;
     } catch (err) {
       console.warn(
         'Failed to load feature flags; collaborative undo remains enabled.',
         err
       );
       collaborativeUndoEnabled = true;
+    } finally {
+      checkpointWriter.retryAfterRevisions = checkpointEveryRevisions;
     }
   }
 
@@ -708,7 +714,7 @@ export function createRoomApplication({
         setLanguageReadOnly(true);
       }
     } finally {
-      if (!lifecycle.joined) {
+      if (!lifecycle.joined && !lifecycle.closed) {
         joinBtn.disabled = false;
         displayNameInput.disabled = false;
       }

@@ -219,7 +219,7 @@ test('oversized checkpoint is skipped until the document revision changes', asyn
   writer.schedule();
   assert.equal(attempts, 1);
   assert.equal(scheduled, 0);
-  revision++;
+  revision += 64;
   writer.schedule();
   assert.equal(scheduled, 1);
 });
@@ -558,4 +558,24 @@ test('merge failures restore the prefix and retry individual updates', async () 
   while (f.queue.pending.length) await f.tick();
   assert.deepEqual(sent, [[1], [2], [3]]);
   assert.equal(f.queue.blocked, false);
+});
+
+test('transport reset preserves the checkpoint refusal interval until document disposal', () => {
+  let revision = 10;
+  let schedules = 0;
+  const writer = new CheckpointWriter({
+    scheduler: { schedule() { schedules++; }, cancel() {} },
+    ready: () => true,
+    revision: () => revision
+  });
+  writer.skippedRevision = 10;
+  writer.reset({ keepSkipped: true });
+  revision = 73;
+  writer.schedule();
+  assert.equal(schedules, 0);
+  revision = 74;
+  writer.schedule();
+  assert.equal(schedules, 1);
+  writer.reset();
+  assert.equal(writer.skippedRevision, -1);
 });

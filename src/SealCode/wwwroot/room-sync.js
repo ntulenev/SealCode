@@ -276,7 +276,7 @@ export class CheckpointWriter {
   /** @param {import('./client-types.js').CheckpointWriterOptions} options */
   constructor({
     delay = 400,
-    retryAfterRevisions = 1,
+    retryAfterRevisions = 64,
     scheduler,
     ready,
     capture,
@@ -339,11 +339,12 @@ export class CheckpointWriter {
       }
     }
   }
-  reset() {
+  /** @param {{keepSkipped?: boolean}} [options] */
+  reset({ keepSkipped = false } = {}) {
     this.generation++;
     this.inFlight = false;
     this.timer = false;
-    this.skippedRevision = -1;
+    if (!keepSkipped) this.skippedRevision = -1;
     this.scheduler.cancel('checkpoint');
   }
 }
