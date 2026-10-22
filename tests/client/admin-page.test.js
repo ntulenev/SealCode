@@ -44,16 +44,19 @@ async function fixture({
       element()
     ])
   );
-  const fetch = async (url, options) => options?.method === 'POST' && post ? post() : ({
-    ok: url !== '/admin/token' || tokenStatus === 200,
-    status: url === '/admin/token' ? tokenStatus : 200,
-    json: async () =>
-      url === '/admin/rooms'
-        ? rooms
-        : url === '/languages'
-          ? ['csharp']
-          : { Token: 'token' }
-  });
+  const fetch = async (url, options) =>
+    options?.method === 'POST' && post
+      ? post()
+      : {
+          ok: url !== '/admin/token' || tokenStatus === 200,
+          status: url === '/admin/token' ? tokenStatus : 200,
+          json: async () =>
+            url === '/admin/rooms'
+              ? rooms
+              : url === '/languages'
+                ? ['csharp']
+                : { Token: 'token' }
+        };
   const page = createAdminPage({
     document: { getElementById: (id) => elements[id], createElement: element },
     window: { location: { origin: 'https://example.com' } },
@@ -98,10 +101,14 @@ test('null and untrusted names render as text without dropping other rows', asyn
 test('create ignores a second click while the first request is pending', async () => {
   let finish;
   let posts = 0;
-  const elements = await fixture({ post: () => {
-    posts++;
-    return new Promise((resolve) => { finish = resolve; });
-  } });
+  const elements = await fixture({
+    post: () => {
+      posts++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    }
+  });
   elements.roomName.value = 'Room';
   elements.roomLanguage.value = 'csharp';
   const first = elements.createRoom.handlers.click();

@@ -489,16 +489,26 @@ for (const Controller of [SnapshotRecovery, CheckpointWriter]) {
         let successes = 0;
         let errors = 0;
         let scheduled = 0;
-        const pending = () => new Promise((resolve, reject) => {
-          complete = () => fail ? reject(new Error('late')) : resolve(true);
-        });
+        const pending = () =>
+          new Promise((resolve, reject) => {
+            complete = () => (fail ? reject(new Error('late')) : resolve(true));
+          });
         const controller = new Controller({
-          scheduler: { schedule() { scheduled++; }, cancel() {} },
+          scheduler: {
+            schedule() {
+              scheduled++;
+            },
+            cancel() {}
+          },
           active: () => true,
           ready: () => true,
           capture: () => 1,
           current: () => current,
-          revisions: () => ({ DocumentRevision: 0, MetadataRevision: 0, PresenceRevision: 0 }),
+          revisions: () => ({
+            DocumentRevision: 0,
+            MetadataRevision: 0,
+            PresenceRevision: 0
+          }),
           probe: pending,
           snapshot: async () => ({}),
           begin: () => 1,
@@ -507,8 +517,12 @@ for (const Controller of [SnapshotRecovery, CheckpointWriter]) {
           revision: () => 1,
           payload: () => ({}),
           send: pending,
-          onSuccess() { successes++; },
-          onError() { errors++; }
+          onSuccess() {
+            successes++;
+          },
+          onError() {
+            errors++;
+          }
         });
         const flight = controller.run();
         if (reset) controller.reset();
@@ -548,12 +562,17 @@ test('batch fallback covers only the refused prefix and preserves enqueue order'
 test('merge failures restore the prefix and retry individual updates', async () => {
   const sent = [];
   const f = fixture((update) => sent.push([...update]), {
-    merge() { throw new Error('broken merge'); }
+    merge() {
+      throw new Error('broken merge');
+    }
   });
   for (const value of [1, 2, 3]) f.queue.enqueue(Uint8Array.of(value));
   await f.tick();
   assert.deepEqual(f.errors, [false]);
-  assert.deepEqual(f.queue.pending.map((item) => [...item]), [[1], [2], [3]]);
+  assert.deepEqual(
+    f.queue.pending.map((item) => [...item]),
+    [[1], [2], [3]]
+  );
   assert.equal(f.timers.size, 1);
   while (f.queue.pending.length) await f.tick();
   assert.deepEqual(sent, [[1], [2], [3]]);
@@ -564,7 +583,12 @@ test('transport reset preserves the checkpoint refusal interval until document d
   let revision = 10;
   let schedules = 0;
   const writer = new CheckpointWriter({
-    scheduler: { schedule() { schedules++; }, cancel() {} },
+    scheduler: {
+      schedule() {
+        schedules++;
+      },
+      cancel() {}
+    },
     ready: () => true,
     revision: () => revision
   });

@@ -40,7 +40,10 @@ test('join waits for languages and ignores a second click', async ({ page, reque
   expect(joins).toBe(1);
 });
 
-test('room removed before first join leaves the join controls disabled', async ({ page, request }) => {
+test('room removed before first join leaves the join controls disabled', async ({
+  page,
+  request
+}) => {
   const created = await request.post('/admin/rooms', {
     headers: await csrf(request),
     data: { name: 'Removed before join', language: 'sql' }

@@ -123,7 +123,8 @@ export class UpdateQueue {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
       const limited = !merging && classifyHubError(error) === HubErrorCode.LimitExceeded;
-      if ((merging || limited) && updates.length > 1) this.singleRemaining = updates.length;
+      if ((merging || limited) && updates.length > 1)
+        this.singleRemaining = updates.length;
       this.blocked = limited && updates.length === 1;
       retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
@@ -239,7 +240,8 @@ export class SnapshotRecovery {
     this.inFlight = true;
     try {
       const remote = await this.probe();
-      if (generation !== this.generation || !this.current(context) || !this.ready()) return;
+      if (generation !== this.generation || !this.current(context) || !this.ready())
+        return;
       const local = this.revisions();
       if (
         remote.DocumentRevision <= local.DocumentRevision &&
@@ -325,7 +327,8 @@ export class CheckpointWriter {
     this.inFlight = true;
     try {
       const accepted = await this.send(this.payload(revision));
-      if (generation === this.generation && this.current(context) && accepted) this.onSuccess(revision);
+      if (generation === this.generation && this.current(context) && accepted)
+        this.onSuccess(revision);
     } catch (error) {
       if (generation !== this.generation || !this.current(context)) return;
       const permanent = classifyHubError(error) === HubErrorCode.LimitExceeded;
@@ -335,7 +338,8 @@ export class CheckpointWriter {
     } finally {
       if (generation === this.generation) {
         this.inFlight = false;
-        if (this.current(context) && (retry || this.revision() > revision)) this.schedule();
+        if (this.current(context) && (retry || this.revision() > revision))
+          this.schedule();
       }
     }
   }

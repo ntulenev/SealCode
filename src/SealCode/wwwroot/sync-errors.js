@@ -16,7 +16,13 @@ export class SyncErrors {
     return this.current();
   }
   current() {
-    for (const kind of ['update-size', 'checkpoint-size', 'rejoin', 'recovery', 'transport']) {
+    for (const kind of [
+      'update-size',
+      'checkpoint-size',
+      'rejoin',
+      'recovery',
+      'transport'
+    ]) {
       const message = this.errors.get(kind);
       if (message !== undefined) return { kind, message };
     }

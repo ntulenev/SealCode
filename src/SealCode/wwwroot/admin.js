@@ -5,7 +5,9 @@ import { setLanguageOptions } from './language-options.js';
 /** @param {{document: Document, window: Window, fetch: typeof fetch, confirm: (message: string) => boolean, clipboard: Pick<Clipboard, "writeText">}} options */
 export function createAdminPage({ document, window, fetch, confirm, clipboard }) {
   const roomsEl = document.getElementById('rooms');
-  const createBtn = /** @type {HTMLButtonElement} */ (document.getElementById('createRoom'));
+  const createBtn = /** @type {HTMLButtonElement} */ (
+    document.getElementById('createRoom')
+  );
   const nameInput = /** @type {HTMLInputElement} */ (document.getElementById('roomName'));
   const langInput = /** @type {HTMLSelectElement} */ (
     document.getElementById('roomLanguage')

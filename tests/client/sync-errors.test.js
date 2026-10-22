@@ -10,11 +10,17 @@ test('sync errors retain every kind and reveal the next highest priority', () =>
     assert.deepEqual(errors.show(kind, kind), { kind, message: kind });
   }
   errors.show('rejoin', 'another failure');
-  assert.deepEqual(errors.clear('rejoin'), { kind: 'update-size', message: 'update-size' });
+  assert.deepEqual(errors.clear('rejoin'), {
+    kind: 'update-size',
+    message: 'update-size'
+  });
   errors.show('rejoin', 'rejoin');
   for (let i = 0; i < priority.length; i++) {
     const next = priority[i + 1];
-    assert.deepEqual(errors.clear(priority[i]), next ? { kind: next, message: next } : null);
+    assert.deepEqual(
+      errors.clear(priority[i]),
+      next ? { kind: next, message: next } : null
+    );
   }
   assert.equal(errors.clear('rejoin'), null);
 });

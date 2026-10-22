@@ -219,11 +219,16 @@ test('online with a live transport rejoins before enabling editing', async () =>
 
 test('offline resets once and online resets before joining on the live connection', async () => {
   const calls = [];
-  const { lifecycle, connection } = create(async () => { calls.push('join'); return {}; });
+  const { lifecycle, connection } = create(async () => {
+    calls.push('join');
+    return {};
+  });
   const events = new Map();
   connection.onreconnected = connection.onreconnecting = connection.onclose = () => {};
   lifecycle.resetTransport = () => calls.push('reset');
-  lifecycle.registerConnectivity({ addEventListener: (name, fn) => events.set(name, fn) });
+  lifecycle.registerConnectivity({
+    addEventListener: (name, fn) => events.set(name, fn)
+  });
   events.get('offline')();
   assert.deepEqual(calls, ['reset']);
   events.get('online')();

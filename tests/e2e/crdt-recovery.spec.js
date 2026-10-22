@@ -1,3 +1,4 @@
+import { advance } from './advance.js';
 import { csrf } from './admin-token.js';
 import { expect, test } from './fixtures.js';
 
@@ -134,7 +135,7 @@ for (const notification of ['received', 'missed']) {
     }
     releaseUpdate();
     await expect(page.locator('#joinOverlay')).not.toHaveClass(/hidden/);
-    await page.clock.runFor(1200);
+    await advance(page, 1200);
     expect(updateAttempts).toBe(1);
     expect(await text(page)).toBe('Keep this text');
     expect(await page.evaluate(() => window.__debugYjsSend())).toBe(false);
