@@ -149,6 +149,7 @@ public sealed class RoomResourceFilterTests
             await filter.OnConnectedAsync(Context(caller), _ => Task.CompletedTask);
         }
         joined.Object.SetActiveRoom("room", "Alice");
+        joined.Object.MarkJoined();
         joined.Object.ClearActiveRoom();
         await filter.OnDisconnectedAsync(Context(released), null, (_, _) => Task.CompletedTask);
         clock.Advance(TimeSpan.FromSeconds(5));

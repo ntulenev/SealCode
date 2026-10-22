@@ -2,8 +2,47 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   readClientLimits,
-  checkCheckpointSize
+  checkCheckpointSize,
+  timeoutSignal
 } from '../../src/SealCode/wwwroot/client-limits.js';
+
+test('fetch timeout delegates to the native signal factory', (context) => {
+  const expected = new AbortController().signal;
+  const native = context.mock.method(AbortSignal, 'timeout', () => expected);
+  assert.equal(timeoutSignal(1234), expected);
+  assert.deepEqual(native.mock.calls[0].arguments, [1234]);
+});
+
+test('fetch timeout falls back to an abort controller and timer', (context) => {
+  const original = AbortSignal.timeout;
+  context.after(() => {
+    AbortSignal.timeout = original;
+  });
+  AbortSignal.timeout = undefined;
+  let expire;
+  const signal = timeoutSignal(1234, (callback, delay) => {
+    assert.equal(delay, 1234);
+    expire = callback;
+  });
+  assert.ok(signal instanceof AbortSignal);
+  assert.equal(signal.aborted, false);
+  expire();
+  assert.equal(signal.aborted, true);
+});
+
+test('fallback uses the browser timer and aborts only at the deadline', (context) => {
+  const original = AbortSignal.timeout;
+  context.after(() => {
+    AbortSignal.timeout = original;
+  });
+  AbortSignal.timeout = undefined;
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const signal = timeoutSignal(100);
+  context.mock.timers.tick(99);
+  assert.equal(signal.aborted, false);
+  context.mock.timers.tick(1);
+  assert.equal(signal.aborted, true);
+});
 
 test('client limits accept either casing and reject invalid values', () => {
   const defaults = readClientLimits();

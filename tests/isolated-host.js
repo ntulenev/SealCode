@@ -6,9 +6,18 @@ import { join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 
 const children = new Set();
-process.on('exit', () => {
+function killChildren() {
   for (const child of children) child.kill();
-});
+}
+process.on('exit', killChildren);
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  const handler = () => {
+    killChildren();
+    process.removeListener(signal, handler);
+    process.kill(process.pid, signal);
+  };
+  process.on(signal, handler);
+}
 
 /** Owns disposable hosts through Playwright teardown, including test timeouts. */
 export async function isolatedHostFixture({}, use) {

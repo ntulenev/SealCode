@@ -122,6 +122,60 @@ test('scheduler keeps earlier recovery and cancels every session timer', () => {
   assert.equal(timers.size, 0);
 });
 
+test('scheduler fires current jobs and ignores callbacks from reset sessions', () => {
+  const callbacks = [];
+  const cleared = [];
+  const fired = [];
+  const scheduler = new SyncScheduler({
+    now: () => 0,
+    setTimer: (callback) => callbacks.push(callback),
+    clearTimer: (timer) => cleared.push(timer)
+  });
+  scheduler.cancel('missing');
+  scheduler.schedule('probe', 10, () => fired.push('current'));
+  callbacks[0]();
+  assert.deepEqual(fired, ['current']);
+  assert.equal(scheduler.jobs.size, 0);
+  scheduler.schedule('probe', 10, () => fired.push('stale'));
+  scheduler.reset();
+  callbacks[1]();
+  assert.deepEqual(fired, ['current']);
+  scheduler.schedule('checkpoint', 10, () => fired.push('cancelled'));
+  scheduler.cancel('checkpoint');
+  assert.equal(scheduler.jobs.size, 0);
+  assert.deepEqual(cleared, [2, 3]);
+});
+
+test('scheduler default clock and timers honor deadlines and cancellation', (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const scheduler = new SyncScheduler();
+  const fired = [];
+  scheduler.schedule('cancelled', 100, () => fired.push('cancelled'));
+  scheduler.cancel('cancelled');
+  context.mock.timers.tick(100);
+  assert.deepEqual(fired, []);
+  scheduler.schedule('current', 100, () => fired.push('current'));
+  context.mock.timers.tick(99);
+  assert.deepEqual(fired, []);
+  context.mock.timers.tick(1);
+  assert.deepEqual(fired, ['current']);
+  assert.equal(scheduler.jobs.size, 0);
+});
+
+test('checkpoint tracker preserves newer checkpoints when rebuilding an empty journal', () => {
+  const tracker = new CheckpointJournalTracker();
+  tracker.noteCheckpoint(5);
+  tracker.noteUpdate(6, 12, true, 5);
+  tracker.resetFromSync(3, []);
+  assert.equal(tracker.checkpointRevision, 5);
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+  assert.equal(tracker.isLatestAuthor, false);
+  tracker.resetFromSync(7, []);
+  tracker.noteUpdate(7, 12, false, 7);
+  assert.equal(tracker.checkpointRevision, 7);
+  assert.equal(tracker.bytesSinceCheckpoint, 0);
+});
+
 test('metadata-only gap recovers and ends synchronization in order', async () => {
   const calls = [];
   const recovery = new SnapshotRecovery({

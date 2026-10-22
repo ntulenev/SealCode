@@ -28,7 +28,7 @@ import {
 } from './room-sync.js';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
-import { readClientLimits, checkCheckpointSize } from './client-limits.js';
+import { readClientLimits, checkCheckpointSize, timeoutSignal } from './client-limits.js';
 import { SyncErrors } from './sync-errors.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
@@ -409,7 +409,7 @@ export function createRoomApplication({
   async function loadLanguages(selected) {
     const preferred = selected ?? languageSelect?.value ?? '';
     try {
-      const res = await fetch('/languages', { signal: AbortSignal.timeout(10000) });
+      const res = await fetch('/languages', { signal: timeoutSignal(10000) });
       if (!res.ok) {
         throw new Error('Failed to load languages');
       }
@@ -461,7 +461,7 @@ export function createRoomApplication({
 
   async function loadFeatures() {
     try {
-      const response = await fetch('/features', { signal: AbortSignal.timeout(10000) });
+      const response = await fetch('/features', { signal: timeoutSignal(10000) });
       if (!response.ok) throw new Error('Failed to load feature flags');
       const features = await response.json();
       collaborativeUndoEnabled =

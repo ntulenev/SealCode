@@ -150,6 +150,33 @@ test('bootstrap, merge, local changes, revision gaps and cursor adjustments reta
   source.destroy();
 });
 
+test('empty sync journals preserve local edits and reject merge after disposal', () => {
+  const { session } = create();
+  session.ytext.insert(0, 'local');
+  assert.equal(session.mergeYjsSyncState(null, [], 0, 0), true);
+  assert.equal(session.ytext.toString(), 'local');
+  assert.equal(session.currentDocumentRevision, 0);
+  assert.equal(session.checkpointJournal.bytesSinceCheckpoint, 0);
+  session.disposeYjs();
+  assert.equal(session.mergeYjsSyncState(null, [], 0, 0), false);
+});
+
+test('merging an older checkpoint preserves newer CRDT edits and checkpoint knowledge', () => {
+  const { session } = create();
+  const source = new Y.Doc();
+  source.getText('monaco').insert(0, 'base');
+  const checkpoint = base64FromUint8(Y.encodeStateAsUpdate(source));
+  session.initializeYjs('', checkpoint, [], 2, 2);
+  session.ytext.insert(4, ' local');
+  session.checkpointJournal.noteCheckpoint(4);
+  assert.equal(session.mergeYjsSyncState(checkpoint, [], 2, 2), true);
+  assert.equal(session.ytext.toString(), 'base local');
+  assert.equal(session.checkpointJournal.checkpointRevision, 4);
+  assert.equal(session.checkpointJournal.bytesSinceCheckpoint, 0);
+  session.disposeYjs();
+  source.destroy();
+});
+
 test('multiple cursor edits use offsets from the original document', () => {
   const { session } = create();
   Object.assign(session.cursorPositions, { Bob: 20, Carol: 7 });

@@ -1,6 +1,20 @@
 import { HubErrorCode, createHubError } from './hub-errors.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES } from './yjs-message-size.js';
 
+/** Creates a fetch deadline in browsers with or without native timeout signals.
+ * @param {number} ms
+ * @param {(callback: () => void, delay: number) => unknown} [setTimer]
+ * @returns {AbortSignal} */
+export function timeoutSignal(
+  ms,
+  setTimer = (callback, delay) => setTimeout(callback, delay)
+) {
+  if (AbortSignal.timeout) return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimer(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 /** Reads validated server limits in either JSON naming convention. */
 /** @param {Record<string, any>} [features]
  * @returns {import('./client-types.js').ClientLimits} */

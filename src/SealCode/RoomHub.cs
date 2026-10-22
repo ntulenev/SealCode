@@ -77,9 +77,15 @@ public sealed class RoomHub : SignalRHub
         }
         displayName = roomUser.Value;
         Context.SetActiveRoom(parsedRoomId.Value, displayName);
+        JoinRoomResult joinResult;
+        var subscribed = false;
         try
         {
             await Groups.AddToGroupAsync(connectionId.Value, parsedRoomId.Value, Context.ConnectionAborted).ConfigureAwait(false);
+            subscribed = true;
+            // Subscribe before taking the snapshot so concurrent updates are either
+            // included in it or delivered to the client's synchronization buffer.
+            joinResult = JoinRoomResult.From(room);
         }
         catch
         {
@@ -88,12 +94,20 @@ public sealed class RoomHub : SignalRHub
                 _ = room.Leave(connectionId);
                 Context.ClearActiveRoom();
             }
+            if (subscribed)
+            {
+                try
+                {
+                    await Groups.RemoveFromGroupAsync(connectionId.Value, parsedRoomId.Value, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    _logger.LogWarning(ex, "Failed to roll back group subscription for {RoomId}", parsedRoomId.Value);
+                }
+            }
             throw;
         }
-
-        // Subscribe before taking the snapshot so concurrent updates are either
-        // included in it or delivered to the client's synchronization buffer.
-        var joinResult = JoinRoomResult.From(room);
+        Context.MarkJoined();
         await BroadcastAfterCommitAsync(() => Clients.GroupExcept(parsedRoomId.Value, connectionId.Value)
             .SendAsync(HubContract.Events.UserJoined, displayName, joinResult.Users, joinResult.PresenceRevision, CancellationToken.None),
             "Presence notification failed for {RoomId}", parsedRoomId).ConfigureAwait(false);
@@ -185,30 +199,28 @@ public sealed class RoomHub : SignalRHub
     public async Task SetLanguageAsync(string roomId, string language)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
-        int newVersion;
-        long metadataRevision;
         RoomLanguage normalized;
         try
         {
             normalized = new RoomLanguage(language);
-            var changed = HubErrors.Invoke(() =>
-            {
-                try
-                {
-                    return _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized);
-                }
-                catch (ArgumentException ex) when (ex is not ArgumentNullException)
-                {
-                    throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
-                }
-            });
-            newVersion = changed.RoomVersion.Value;
-            metadataRevision = changed.MetadataRevision;
         }
-        catch (ArgumentException ex) when (ex is not ArgumentNullException)
+        catch (ArgumentException)
         {
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }
+        var changed = HubErrors.Invoke(() =>
+        {
+            try
+            {
+                return _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized);
+            }
+            catch (ArgumentException ex) when (ex is not ArgumentNullException)
+            {
+                throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
+            }
+        });
+        var newVersion = changed.RoomVersion.Value;
+        var metadataRevision = changed.MetadataRevision;
         await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
             .SendAsync(HubContract.Events.LanguageUpdated, normalized.Value, newVersion, metadataRevision, CancellationToken.None),
             "Failed to broadcast language for {RoomId}", parsedRoomId).ConfigureAwait(false);
@@ -287,8 +299,8 @@ public sealed class RoomHub : SignalRHub
         {
             return;
         }
-        if (Context.GetActiveRoomId() is string activeRoomId
-            && string.Equals(activeRoomId, parsedRoomId.Value, StringComparison.Ordinal))
+        var wasActive = string.Equals(Context.GetActiveRoomId(), parsedRoomId.Value, StringComparison.Ordinal);
+        if (wasActive)
         {
             Context.ClearActiveRoom();
         }
@@ -318,7 +330,10 @@ public sealed class RoomHub : SignalRHub
         catch
         {
             // Keep cleanup context so disconnect can retry group removal.
-            Context.SetActiveRoom(parsedRoomId.Value, displayName);
+            if (wasActive || result.Removed)
+            {
+                Context.SetActiveRoom(parsedRoomId.Value, displayName);
+            }
             throw;
         }
 
