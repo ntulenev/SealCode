@@ -544,3 +544,18 @@ test('batch fallback covers only the refused prefix and preserves enqueue order'
   f.queue.reset();
   assert.equal(f.queue.singleRemaining, 0);
 });
+
+test('merge failures restore the prefix and retry individual updates', async () => {
+  const sent = [];
+  const f = fixture((update) => sent.push([...update]), {
+    merge() { throw new Error('broken merge'); }
+  });
+  for (const value of [1, 2, 3]) f.queue.enqueue(Uint8Array.of(value));
+  await f.tick();
+  assert.deepEqual(f.errors, [false]);
+  assert.deepEqual(f.queue.pending.map((item) => [...item]), [[1], [2], [3]]);
+  assert.equal(f.timers.size, 1);
+  while (f.queue.pending.length) await f.tick();
+  assert.deepEqual(sent, [[1], [2], [3]]);
+  assert.equal(f.queue.blocked, false);
+});

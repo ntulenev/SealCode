@@ -102,17 +102,19 @@ export class UpdateQueue {
       estimate += next;
       count++;
     }
-    let payload =
-      count === 1 ? this.pending[0] : this.merge(this.pending.slice(0, count));
-    while (count > 1 && 4 * Math.ceil(payload.length / 3) > this.maxEncodedBytes) {
-      count = Math.max(1, Math.floor(count / 2));
-      payload = count === 1 ? this.pending[0] : this.merge(this.pending.slice(0, count));
-    }
     const updates = this.pending.splice(0, count);
     this.flight = updates;
     this.inFlight = true;
     let retryDelay = 60;
+    let merging = true;
     try {
+      let payload = count === 1 ? updates[0] : this.merge(updates);
+      while (count > 1 && 4 * Math.ceil(payload.length / 3) > this.maxEncodedBytes) {
+        count = Math.max(1, Math.floor(count / 2));
+        this.pending.unshift(...updates.splice(count));
+        payload = count === 1 ? updates[0] : this.merge(updates);
+      }
+      merging = false;
       await this.send(payload);
       if (generation !== this.generation) return;
       if (this.singleRemaining > 0) this.singleRemaining--;
@@ -120,8 +122,8 @@ export class UpdateQueue {
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
-      const limited = classifyHubError(error) === HubErrorCode.LimitExceeded;
-      if (limited && updates.length > 1) this.singleRemaining = updates.length;
+      const limited = !merging && classifyHubError(error) === HubErrorCode.LimitExceeded;
+      if ((merging || limited) && updates.length > 1) this.singleRemaining = updates.length;
       this.blocked = limited && updates.length === 1;
       retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
