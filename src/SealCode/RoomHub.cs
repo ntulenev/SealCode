@@ -191,11 +191,21 @@ public sealed class RoomHub : SignalRHub
         try
         {
             normalized = new RoomLanguage(language);
-            var changed = HubErrors.Invoke(() => _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized));
+            var changed = HubErrors.Invoke(() =>
+            {
+                try
+                {
+                    return _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized);
+                }
+                catch (ArgumentException ex) when (ex is not ArgumentNullException)
+                {
+                    throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
+                }
+            });
             newVersion = changed.RoomVersion.Value;
             metadataRevision = changed.MetadataRevision;
         }
-        catch (ArgumentException)
+        catch (ArgumentException ex) when (ex is not ArgumentNullException)
         {
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }

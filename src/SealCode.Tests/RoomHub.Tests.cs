@@ -505,7 +505,7 @@ public sealed class RoomHubTests
 
         Func<Task> action = () => hub.SetLanguageAsync(DefaultRoomId, language);
 
-        HubErrorAssertions.AssertHubError((await action.Should().ThrowAsync<HubException>()).Which, HubErrorCode.InvalidInput);
+        (await action.Should().ThrowAsync<HubException>()).Which.Message.Should().Be("Invalid language");
         roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
         validator.Verify(v => v.IsValid(It.IsAny<RoomLanguage>()), Times.Once);
     }

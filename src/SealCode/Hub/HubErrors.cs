@@ -98,6 +98,7 @@ internal static class HubErrors
         UnauthorizedAccessException => Create(HubErrorCode.NotParticipant, ""),
         RoomLimitException limit => Create(HubErrorCode.LimitExceeded, limit.Resource),
         ArgumentNullException => Create(HubErrorCode.InvalidInput, "Invalid room input"),
+        ArgumentException input when !string.IsNullOrEmpty(input.ParamName) => Create(HubErrorCode.InvalidInput, "Invalid room input"),
         ArgumentException input => Create(HubErrorCode.InvalidInput, input.Message, legacyInput: true),
         _ => null
     };
