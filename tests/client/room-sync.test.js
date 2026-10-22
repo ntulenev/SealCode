@@ -526,3 +526,21 @@ for (const Controller of [SnapshotRecovery, CheckpointWriter]) {
     }
   }
 }
+
+test('batch fallback covers only the refused prefix and preserves enqueue order', async () => {
+  const sent = [];
+  const f = fixture((update) => {
+    sent.push([...update]);
+    if (sent.length === 1) throw new Error('LimitExceeded');
+  });
+  for (const value of [1, 2, 3]) f.queue.enqueue(Uint8Array.of(value));
+  await f.tick();
+  assert.equal(f.queue.singleRemaining, 3);
+  for (const value of [4, 5]) f.queue.enqueue(Uint8Array.of(value));
+  while (f.queue.pending.length) await f.tick();
+  assert.deepEqual(sent, [[1, 2, 3], [1], [2], [3], [4, 5]]);
+  assert.equal(f.queue.singleRemaining, 0);
+  f.queue.singleRemaining = 2;
+  f.queue.reset();
+  assert.equal(f.queue.singleRemaining, 0);
+});

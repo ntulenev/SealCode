@@ -47,7 +47,7 @@ export class UpdateQueue {
     this.clearTimer = clearTimer;
     this.maxBytes = maxBytes;
     this.maxEncodedBytes = maxEncodedBytes;
-    this.singleUpdates = false;
+    this.singleRemaining = 0;
     this.maxCount = maxCount;
     /** @type {Uint8Array[]} */
     this.pending = [];
@@ -96,7 +96,7 @@ export class UpdateQueue {
     const generation = this.generation;
     let count = 1;
     let estimate = 4 * Math.ceil(this.pending[0].length / 3);
-    while (!this.singleUpdates && count < this.pending.length) {
+    while (this.singleRemaining === 0 && count < this.pending.length) {
       const next = 4 * Math.ceil(this.pending[count].length / 3);
       if (estimate + next > this.maxEncodedBytes) break;
       estimate += next;
@@ -115,12 +115,13 @@ export class UpdateQueue {
     try {
       await this.send(payload);
       if (generation !== this.generation) return;
+      if (this.singleRemaining > 0) this.singleRemaining--;
       this.onSuccess();
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
       const limited = classifyHubError(error) === HubErrorCode.LimitExceeded;
-      if (limited && updates.length > 1) this.singleUpdates = true;
+      if (limited && updates.length > 1) this.singleRemaining = updates.length;
       this.blocked = limited && updates.length === 1;
       retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
@@ -135,7 +136,7 @@ export class UpdateQueue {
   }
   reset() {
     this.generation++;
-    this.singleUpdates = false;
+    this.singleRemaining = 0;
     if (this.timer) this.clearTimer(this.timer);
     this.pending = [];
     this.flight = [];
