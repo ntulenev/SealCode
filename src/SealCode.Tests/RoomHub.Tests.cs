@@ -721,6 +721,66 @@ public sealed class RoomHubTests
         await FluentActions.Awaiting(() => hub.JoinRoomAsync(DefaultRoomId, "Alice")).Should().ThrowAsync<IOException>();
         room.ConnectedUserCount.Should().Be(0);
         hub.Context.Items.Should().NotContainKey("roomId");
+        hub.Context.HasJoinedRoom().Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task FailedGroupRemovalRestoresOnlyRelevantRoomContext(bool participant, bool hasActiveRoom)
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        if (participant)
+        {
+            room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
+        }
+        SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        var groups = new Mock<IGroupManager>();
+        groups.Setup(x => x.RemoveFromGroupAsync("conn-1", DefaultRoomId, CancellationToken.None))
+            .ThrowsAsync(new IOException("removal failure"));
+        using var hub = CreateHub(manager.Object, groups: groups.Object);
+        var activeRoom = participant ? DefaultRoomId : RoomId.New().Value;
+        if (hasActiveRoom)
+        {
+            hub.Context.SetActiveRoom(activeRoom, "Alice");
+        }
+
+        await FluentActions.Awaiting(() => hub.LeaveRoomAsync(DefaultRoomId)).Should().ThrowAsync<IOException>();
+
+        hub.Context.GetActiveRoomId().Should().Be(activeRoom);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RoomClosedDuringJoinRollsBackContextAndGroup(bool cleanupFails)
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        var manager = new Mock<IRoomManager>();
+        manager.Setup(x => x.RegisterUserInRoom(It.IsAny<RoomId>(), It.IsAny<ConnectionId>(), It.IsAny<RoomUser>()))
+            .Callback<RoomId, ConnectionId, RoomUser>((_, connection, user) => room.AddUser(connection, user, 5)).Returns(room);
+        var groups = new Mock<IGroupManager>();
+        groups.Setup(x => x.AddToGroupAsync("conn-1", DefaultRoomId, It.IsAny<CancellationToken>()))
+            .Callback(() => room.Close()).Returns(Task.CompletedTask);
+        var removal = groups.Setup(x => x.RemoveFromGroupAsync("conn-1", DefaultRoomId, CancellationToken.None));
+        if (cleanupFails)
+        {
+            removal.ThrowsAsync(new IOException("removal failure"));
+        }
+        else
+        {
+            removal.Returns(Task.CompletedTask);
+        }
+        using var hub = CreateHub(manager.Object, groups: groups.Object);
+
+        await FluentActions.Awaiting(() => hub.JoinRoomAsync(DefaultRoomId, "Alice"))
+            .Should().ThrowAsync<RoomNotFoundException>().WithMessage("Room not found");
+
+        hub.Context.GetActiveRoomId().Should().BeNull();
+        hub.Context.HasJoinedRoom().Should().BeFalse();
+        room.ConnectedUserCount.Should().Be(0);
+        groups.Verify(x => x.RemoveFromGroupAsync("conn-1", DefaultRoomId, CancellationToken.None), Times.Once);
     }
 
     [Theory]

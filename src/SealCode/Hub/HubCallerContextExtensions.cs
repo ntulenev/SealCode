@@ -23,7 +23,6 @@ internal static class HubCallerContextExtensions
     /// <param name="displayName">The active participant display name, if known.</param>
     public static void SetActiveRoom(this HubCallerContext context, string roomId, string? displayName)
     {
-        context.Items[JOINED_ONCE_KEY] = true;
         context.Items[ROOM_ID_KEY] = roomId;
         context.Items[DISPLAY_NAME_KEY] = displayName;
     }
@@ -45,6 +44,13 @@ internal static class HubCallerContextExtensions
     /// <returns>Whether the initial join deadline has been satisfied.</returns>
     public static bool HasJoinedRoom(this HubCallerContext context)
         => context.Items.ContainsKey(JOINED_ONCE_KEY);
+
+    /// <summary>
+    /// Marks a completed join as satisfying the initial connection deadline.
+    /// </summary>
+    /// <param name="context">The hub connection context.</param>
+    public static void MarkJoined(this HubCallerContext context)
+        => context.Items[JOINED_ONCE_KEY] = true;
 
     private const string JOINED_ONCE_KEY = "joinedOnce";
     private const string ROOM_ID_KEY = "roomId";
