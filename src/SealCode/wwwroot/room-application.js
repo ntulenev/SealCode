@@ -28,7 +28,7 @@ import {
 } from './room-sync.js';
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
-import { readClientLimits } from './client-limits.js';
+import { readClientLimits, checkCheckpointSize } from './client-limits.js';
 import { SyncErrors } from './sync-errors.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
@@ -328,11 +328,11 @@ export function createRoomApplication({
         yjs.ytext.toString(),
         revision
       ];
-      if (
-        args[1].length > maxEncodedCheckpointBytes ||
-        args[2].length > maxSnapshotCharacters ||
-        !fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes)
-      )
+      checkCheckpointSize(
+        { stateBase64Length: args[1].length, textLength: args[2].length },
+        { maxEncodedCheckpointBytes, maxSnapshotCharacters }
+      );
+      if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
         throw createHubError(HubErrorCode.LimitExceeded, 'Checkpoint size');
       return args;
     },

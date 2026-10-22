@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readClientLimits } from '../../src/SealCode/wwwroot/client-limits.js';
+import { readClientLimits, checkCheckpointSize } from '../../src/SealCode/wwwroot/client-limits.js';
 
 test('client limits accept either casing and reject invalid values', () => {
   const defaults = readClientLimits();
@@ -23,3 +23,20 @@ test('client limits accept either casing and reject invalid values', () => {
   }
   assert.equal(readClientLimits({ maxYjsMessageBytes: 2048 }).maxYjsMessageBytes, 2048);
 });
+
+for (const [size, limit] of [
+  ['stateBase64Length', 'maxEncodedCheckpointBytes'],
+  ['textLength', 'maxSnapshotCharacters']
+]) {
+  test(`checkpoint size checks the exact ${limit} boundary`, () => {
+    const limits = readClientLimits();
+    for (const offset of [-1, 0, 1]) {
+      const check = () => checkCheckpointSize(
+        { stateBase64Length: 0, textLength: 0, [size]: limits[limit] + offset },
+        limits
+      );
+      if (offset > 0) assert.throws(check, /LimitExceeded: Checkpoint size/);
+      else assert.doesNotThrow(check);
+    }
+  });
+}

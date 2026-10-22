@@ -1,3 +1,4 @@
+import { HubErrorCode, createHubError } from './hub-errors.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES } from './yjs-message-size.js';
 
 /** Reads validated server limits in either JSON naming convention. */
@@ -24,4 +25,17 @@ export function readClientLimits(features = {}) {
       DEFAULT_MAX_YJS_MESSAGE_BYTES
     )
   };
+}
+
+/** Checks snapshot payload limits before sending a checkpoint.
+ * @param {{stateBase64Length: number, textLength: number}} sizes
+ * @param {Pick<import('./client-types.js').ClientLimits, 'maxEncodedCheckpointBytes' | 'maxSnapshotCharacters'>} limits
+ */
+export function checkCheckpointSize({ stateBase64Length, textLength }, limits) {
+  if (
+    stateBase64Length > limits.maxEncodedCheckpointBytes ||
+    textLength > limits.maxSnapshotCharacters
+  ) {
+    throw createHubError(HubErrorCode.LimitExceeded, 'Checkpoint size');
+  }
 }
