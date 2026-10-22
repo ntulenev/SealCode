@@ -493,6 +493,7 @@ public sealed class RoomHubTests
     [InlineData("javascript")]
     [InlineData("")]
     [InlineData(" ")]
+    [InlineData("   ")]
     public async Task SetLanguageAsyncShouldThrowWhenLanguageIsInvalid(string language)
     {
         var room = CreateRoomState(DefaultRoomId);
@@ -508,6 +509,15 @@ public sealed class RoomHubTests
         HubErrorAssertions.AssertLegacyHubError((await action.Should().ThrowAsync<HubException>()).Which, "Invalid language");
         roomManager.Verify(m => m.TryGetRoom(It.IsAny<RoomId>(), out room), Times.Exactly(1));
         validator.Verify(v => v.IsValid(It.IsAny<RoomLanguage>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task NullLanguageShouldPreserveLegacyError()
+    {
+        using var hub = CreateHub();
+        var exception = (await FluentActions.Awaiting(() => hub.SetLanguageAsync(DefaultRoomId, null!))
+            .Should().ThrowAsync<HubException>()).Which;
+        HubErrorAssertions.AssertLegacyHubError(exception, "Invalid language");
     }
 
     [Fact(DisplayName = "SetLanguageAsyncShouldBroadcastWhenLanguageIsValid")]

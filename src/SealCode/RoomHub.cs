@@ -185,30 +185,28 @@ public sealed class RoomHub : SignalRHub
     public async Task SetLanguageAsync(string roomId, string language)
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
-        int newVersion;
-        long metadataRevision;
         RoomLanguage normalized;
         try
         {
             normalized = new RoomLanguage(language);
-            var changed = HubErrors.Invoke(() =>
-            {
-                try
-                {
-                    return _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized);
-                }
-                catch (ArgumentException ex) when (ex is not ArgumentNullException)
-                {
-                    throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
-                }
-            });
-            newVersion = changed.RoomVersion.Value;
-            metadataRevision = changed.MetadataRevision;
         }
-        catch (ArgumentException ex) when (ex is not ArgumentNullException)
+        catch (ArgumentException)
         {
             throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
         }
+        var changed = HubErrors.Invoke(() =>
+        {
+            try
+            {
+                return _sessions.ChangeLanguage(parsedRoomId, new(Context.ConnectionId), normalized);
+            }
+            catch (ArgumentException ex) when (ex is not ArgumentNullException)
+            {
+                throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid language", legacyInput: true);
+            }
+        });
+        var newVersion = changed.RoomVersion.Value;
+        var metadataRevision = changed.MetadataRevision;
         await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
             .SendAsync(HubContract.Events.LanguageUpdated, normalized.Value, newVersion, metadataRevision, CancellationToken.None),
             "Failed to broadcast language for {RoomId}", parsedRoomId).ConfigureAwait(false);
