@@ -3,41 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SealCode</title>
+  <meta name="description" content="A small, shared workspace for writing code together." />
+  <title>SealCode — code together</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-  <link rel="stylesheet" href="/site.css?v=20260210" />
+  <link rel="stylesheet" href="/site.css?v=20261029" />
   <script src="/version.js" defer></script>
 </head>
-<body>
-  <main class="container">
-    <header class="site-logo">
-      <div class="site-title">
-        <span class="brand-seal">Seal</span><span class="brand-code">Code</span>
+<body class="home-page">
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/about.html">About</a><a href="/admin/login">Manage rooms <span aria-hidden="true">↗</span></a></nav></header>
+  <main class="home-main">
+    <section class="hero" aria-labelledby="home-title">
+      <div class="hero-content">
+        <p class="eyebrow">A shared coding space</p>
+        <h1 id="home-title" class="hero-title">Seal<span class="brand-code">Code</span><span class="pixel-period" aria-hidden="true">.</span></h1>
+        <p class="hero-description">Your code. On the same page.</p>
+        <p class="hero-detail">Open a room, share a link, and work things out together.</p>
+        <form id="joinRoomForm" class="join-link-form">
+          <label for="roomLink">Have an invitation?</label>
+          <div class="input-action"><input id="roomLink" type="text" placeholder="Paste your room link" autocomplete="off" required aria-describedby="roomLinkError" /><button id="goBtn" type="submit">Join room <span aria-hidden="true">→</span></button></div>
+          <p id="roomLinkError" class="error hidden" role="alert"></p>
+        </form>
+        <p class="hero-hint">Need a room? <a href="/admin/login">Open room management <span aria-hidden="true">↗</span></a></p>
       </div>
-      <img src="/Logo.png" alt="SealCode logo" />
-    </header>
-    <p>Collaborative code-editor with rooms.</p>
-    <div class="card">
-      <label for="roomLink">Room link</label>
-      <input id="roomLink" type="text" placeholder="Paste a room link to join" />
-      <button id="goBtn">Go</button>
-    </div>
-    <p class="muted center"><a class="btn-link" href="/admin/login">Rooms Management</a></p>
+      <div class="hero-art"><img src="/Logo.png" width="1355" height="1161" alt="A confident pixel-art seal writing code on a laptop" fetchpriority="high" /></div>
+    </section>
+    <div class="home-details"><span>01 <strong>Live editing</strong></span><span>02 <strong>Shared cursors</strong></span><span>03 <strong>Just send a link</strong></span></div>
   </main>
-  <footer class="tiny-footer">
-    Personal pet project for private use · Not intended for public use
-    <div class="app-version" data-app-version>SealCode</div>
-  </footer>
-  <script>
-    const roomLink = document.getElementById('roomLink');
-    const goBtn = document.getElementById('goBtn');
-    goBtn.addEventListener('click', () => {
-      const value = roomLink.value.trim();
-      if (!value) return;
-      window.location.href = value;
-    });
-  </script>
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
+  <script src="/home.js" defer></script>
 </body>
 </html>

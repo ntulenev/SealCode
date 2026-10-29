@@ -681,7 +681,8 @@ export function createRoomApplication({
     if (!lifecycle.joined) setLanguageReadOnly(true);
   });
 
-  joinBtn.addEventListener('click', async () => {
+  joinBtn.addEventListener('click', async (event) => {
+    event.preventDefault();
     if (joinBtn.disabled) return;
     displayName = displayNameInput.value.trim();
     if (!displayName) {

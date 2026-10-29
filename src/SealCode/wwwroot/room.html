@@ -3,67 +3,42 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Room - SealCode</title>
+  <meta name="description" content="A small, shared workspace for writing code together." />
+  <title>Room — SealCode</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-  <link rel="stylesheet" href="/site.css?v=20260211" />
-  <link rel="stylesheet" href="/room.css?v=20260212.1" />
-  <script src="/version.js" defer></script>
+  <link rel="stylesheet" href="/site.css?v=20261029" />
+  <link rel="stylesheet" href="/room.css?v=20261029" />
   <link rel="stylesheet" href="/assets/room.css" />
+  <script src="/version.js" defer></script>
 </head>
-<body>
+<body class="room-page">
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/">Home <span aria-hidden="true">↗</span></a></nav></header>
   <main class="room-container">
     <header class="room-header">
-      <div class="room-brand">
-        <img class="room-logo" src="/Logo.png" alt="SealCode logo" />
-        <div>
-          <div class="site-title">
-            <span class="brand-seal">Seal</span><span class="brand-code">Code</span>
-          </div>
-          <h1 id="roomName"></h1>
-          <p class="muted">Connection: <span id="connectionStatus">disconnected</span></p>
-          <p class="muted">Created by: <span id="createdBy">unknown</span></p>
-        </div>
-      </div>
-      <div class="room-meta">
-        <label>
-          Language
-          <select id="languageSelect" disabled>
-            <option value="">Loading...</option>
-          </select>
-        </label>
-        <div class="version">Version <span id="versionNumber">0</span></div>
-      </div>
+      <div class="room-heading"><p class="eyebrow">Shared workspace</p><h1 id="roomName">Your room</h1><p class="room-info"><span>Connection: <strong id="connectionStatus">disconnected</strong></span><span>Created by: <span id="createdBy">unknown</span></span></p></div>
+      <div class="room-meta"><label for="languageSelect">Language<select id="languageSelect" disabled><option value="">Loading...</option></select></label><span class="version">Version <span id="versionNumber">0</span></span></div>
     </header>
-
     <p id="syncError" class="error hidden" role="status"></p>
-    <section class="room-main">
-      <section class="participants-bar">
-        <h3>Participants</h3>
-        <ul id="participantsList"></ul>
-      </section>
-      <section class="editor">
-        <div id="monacoEditor" class="monaco-host"></div>
-      </section>
+    <section class="room-main" aria-label="Collaborative editor">
+      <section class="participants-bar" aria-labelledby="participants-title"><h2 id="participants-title">In this room</h2><ul id="participantsList"></ul></section>
+      <section class="editor" aria-label="Code editor"><div id="monacoEditor" class="monaco-host"></div></section>
     </section>
   </main>
-
   <div id="joinOverlay" class="overlay">
-    <div class="overlay-card">
-      <h2>Join room</h2>
-      <p class="muted">Enter a display name to join this room.</p>
-      <input id="displayNameInput" type="text" placeholder="Ada Lovelace" />
-      <button id="joinBtn">Join</button>
-      <p id="joinError" class="error hidden"></p>
-    </div>
+    <form class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="joinTitle" aria-describedby="joinDescription">
+      <div class="dialog-top"><img src="/Logo.png" width="94" height="81" alt="" /></div>
+      <p class="eyebrow">Let's build something</p>
+      <h2 id="joinTitle">Join room</h2>
+      <p id="joinDescription" class="muted">Choose the name your teammates will see.</p>
+      <label for="displayNameInput">Display name</label>
+      <input id="displayNameInput" type="text" placeholder="Ada Lovelace" autocomplete="nickname" maxlength="64" aria-describedby="joinError" />
+      <button id="joinBtn" type="submit">Join room <span aria-hidden="true">→</span></button>
+      <p id="joinError" class="error hidden" role="alert"></p>
+    </form>
   </div>
-
-  <footer class="tiny-footer">
-    Personal pet project for private use · Not intended for public use
-    <div class="app-version" data-app-version>SealCode</div>
-  </footer>
-
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
   <script type="module" src="/assets/room.js"></script>
 </body>
 </html>
