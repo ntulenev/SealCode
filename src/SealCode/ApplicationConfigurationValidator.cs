@@ -59,10 +59,10 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
 
             if (!string.IsNullOrEmpty(admin.McpToken)
                 && (admin.McpToken.Length is < 32 or > 1024
-                    || admin.McpToken.Any(character => character is < (char)33 or > (char)126)
+                    || !IsBearerToken(admin.McpToken)
                     || !tokens.Add(admin.McpToken)))
             {
-                errors.Add("MCP tokens must be unique and contain 32–1024 visible ASCII characters.");
+                errors.Add("MCP tokens must be unique, contain 32–1024 characters and use the Bearer token alphabet.");
             }
 
             if (!_environment.IsDevelopment()
@@ -107,6 +107,13 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
         }
 
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+    }
+
+    private static bool IsBearerToken(string token)
+    {
+        var body = token.TrimEnd('=');
+        return body.Length > 0 && body.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character is '-' or '.' or '_' or '~' or '+' or '/');
     }
 
     private readonly IWebHostEnvironment _environment;

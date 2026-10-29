@@ -90,7 +90,9 @@ Configure a separate `McpToken` next to `PasswordHash` in each `AdminUsers` reco
 ```
 
 An absent or empty token disables MCP for that account. Tokens must be unique,
-case-sensitive, and contain 32–1024 visible ASCII characters without spaces.
+case-sensitive, and contain 32–1024 characters from the
+[Bearer token alphabet](https://www.rfc-editor.org/rfc/rfc6750#section-2.1):
+letters, digits, `-`, `.`, `_`, `~`, `+`, `/`, with optional trailing `=` padding.
 Generate one locally with PowerShell:
 
 ```powershell

@@ -14,14 +14,28 @@ namespace SealCode.Security;
 /// <summary>
 /// Authenticates MCP requests independently of browser cookies.
 /// </summary>
-internal sealed class McpTokenAuthenticationHandler(
-    IOptionsMonitor<AuthenticationSchemeOptions> options,
-    ILoggerFactory logger,
-    UrlEncoder encoder,
-    IOptions<ApplicationConfiguration> settings)
-    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+internal sealed class McpTokenAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     internal const string SCHEME_NAME = "AdminMcpToken";
+
+    /// <summary>
+    /// Initializes bearer authentication for the configured admin accounts.
+    /// </summary>
+    /// <param name="options">The authentication scheme options.</param>
+    /// <param name="logger">The authentication logger factory.</param>
+    /// <param name="encoder">The URL encoder.</param>
+    /// <param name="settings">The validated application settings.</param>
+    public McpTokenAuthenticationHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        IOptions<ApplicationConfiguration> settings)
+        : base(options, logger, encoder)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        _settings = settings.Value;
+    }
 
     /// <inheritdoc />
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -31,17 +45,18 @@ internal sealed class McpTokenAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        if (!AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header)
+        if (Request.Headers.Authorization.Count != 1
+            || !AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header)
             || !string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrEmpty(header.Parameter)
-            || header.Parameter.Length > 1024)
+            || header.Parameter.Length is < 32 or > 1024)
         {
             return Task.FromResult(AuthenticateResult.Fail("Invalid MCP bearer token."));
         }
 
         var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(header.Parameter));
         AdminUserConfiguration? matched = null;
-        foreach (var admin in settings.Value.AdminUsers)
+        foreach (var admin in _settings.AdminUsers)
         {
             if (!string.IsNullOrEmpty(admin.McpToken)
                 && CryptographicOperations.FixedTimeEquals(suppliedHash,
@@ -71,4 +86,6 @@ internal sealed class McpTokenAuthenticationHandler(
         Response.Headers.WWWAuthenticate = "Bearer";
         return Task.CompletedTask;
     }
+
+    private readonly ApplicationConfiguration _settings;
 }

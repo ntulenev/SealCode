@@ -43,7 +43,16 @@ public sealed class ConfigurationValidationTests
         Assert.True(Validator("Development").Validate(null, Settings([
             new() { Name = "Admin", Password = "valid", McpToken = token },
             new() { Name = "Other", Password = "valid", McpToken = token }])).Failed);
-        foreach (var invalid in new[] { "short", " ", new string('a', 1025), token + "\n", token + "é" })
+        foreach (var valid in new[] { token + "-._~+/", token + "==" })
+        {
+            Assert.True(Validator("Development").Validate(null, Settings([
+                new() { Name = "Admin", Password = "valid", McpToken = valid }])).Succeeded);
+        }
+        foreach (var invalid in new[]
+        {
+            "short", " ", new string('a', 1025), token + "\n", token + "é",
+            token + ",", token + "\"", token + ":", token + ";", token + "=a", new string('=', 32)
+        })
         {
             Assert.True(Validator("Development").Validate(null, Settings([
                 new() { Name = "Admin", Password = "valid", McpToken = invalid }])).Failed);

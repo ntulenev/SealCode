@@ -36,6 +36,23 @@ public sealed class AdminMcpTests
     }
 
     [Fact]
+    public async Task TokensAreCaseSensitiveAndCannotBeSuppliedThroughQueryStringsOrRepeatedHeaders()
+    {
+        using var factory = CreateFactory();
+        using var http = CreateHttpClient(factory, ADMIN_TOKEN.ToUpperInvariant());
+        using var wrongCase = await http.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        Assert.Equal(HttpStatusCode.Unauthorized, wrongCase.StatusCode);
+
+        http.DefaultRequestHeaders.Remove("Authorization");
+        using var query = await http.PostAsJsonAsync($"/mcp?access_token={ADMIN_TOKEN}", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        Assert.Equal(HttpStatusCode.Unauthorized, query.StatusCode);
+
+        http.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", [$"Bearer {ADMIN_TOKEN}", $"Bearer {ROOT_TOKEN}"]);
+        using var repeated = await http.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        Assert.Equal(HttpStatusCode.Unauthorized, repeated.StatusCode);
+    }
+
+    [Fact]
     public async Task ToolsManageRoomsWithTheSameOwnershipRulesAsTheAdminPanel()
     {
         using var factory = CreateFactory();
