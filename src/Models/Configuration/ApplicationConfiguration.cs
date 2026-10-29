@@ -66,6 +66,11 @@ public sealed class AdminUserConfiguration : IValidatableObject
     public string? PasswordHash { get; init; }
 
     /// <summary>
+    /// Gets the optional bearer token for MCP access as this admin.
+    /// </summary>
+    public string? McpToken { get; init; }
+
+    /// <summary>
     /// Gets or sets whether the admin can manage rooms created by other admins.
     /// </summary>
     public bool IsSuperAdmin { get; init; }

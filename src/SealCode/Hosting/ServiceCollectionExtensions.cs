@@ -2,14 +2,18 @@ using Abstractions;
 
 using Logic;
 
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
+using ModelContextProtocol.AspNetCore;
+
 using Models;
 using Models.Configuration;
 
+using SealCode.Mcp;
 using SealCode.Routing;
 using SealCode.Security;
 
@@ -62,6 +66,8 @@ internal static class ServiceCollectionExtensions
         _ = services.AddHttpContextAccessor();
         _ = services.AddScoped<IAdminUserManager, AdminUserManager>();
         _ = services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddScheme<AuthenticationSchemeOptions, McpTokenAuthenticationHandler>(
+                McpTokenAuthenticationHandler.SCHEME_NAME, _ => { })
             .AddCookie(options =>
             {
                 options.Cookie.Name = "admin_auth";
@@ -71,6 +77,11 @@ internal static class ServiceCollectionExtensions
                 options.Cookie.SameSite = SameSiteMode.Lax;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
             });
+
+        _ = services.AddAuthorization(options => options.AddPolicy(
+            McpTokenAuthenticationHandler.SCHEME_NAME,
+            policy => policy.AddAuthenticationSchemes(McpTokenAuthenticationHandler.SCHEME_NAME)
+                .RequireAuthenticatedUser()));
 
         _ = services.AddSingleton<IConfigureOptions<ForwardedHeadersOptions>, TrustedProxyOptions>();
         return services;
@@ -90,6 +101,19 @@ internal static class ServiceCollectionExtensions
         _ = services.AddSingleton<IRoomManager, RoomManager>();
         _ = services.AddSingleton<IRoomSessionService, RoomSessionService>();
         _ = services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the stateless admin MCP transport and its explicit tool collection.
+    /// </summary>
+    /// <param name="services">The application service collection.</param>
+    /// <returns>The service collection for further registration.</returns>
+    public static IServiceCollection AddSealCodeMcp(this IServiceCollection services)
+    {
+        _ = services.AddMcpServer()
+            .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
+            .WithTools<AdminMcpTools>();
         return services;
     }
 

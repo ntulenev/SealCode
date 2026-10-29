@@ -74,6 +74,57 @@ port (5087) or the production HTTPS check port (5088).
 | `npm run typecheck` | Static JavaScript type checking |
 | `dotnet test src/SealCode.slnx` | Server domain, service, hub, API and configuration tests |
 
+## Admin MCP
+
+The same server exposes admin room management at `/mcp` over Streamable HTTP
+using the [official MCP C# SDK](https://csharp.sdk.modelcontextprotocol.io/v2/concepts/transports/transports.html).
+Configure a separate `McpToken` next to `PasswordHash` in each `AdminUsers` record:
+
+```json
+{
+  "Name": "admin",
+  "PasswordHash": "<existing Identity V3 hash>",
+  "McpToken": "<unique random token of at least 32 characters>",
+  "IsSuperAdmin": true
+}
+```
+
+An absent or empty token disables MCP for that account. Tokens must be unique,
+case-sensitive, and contain 32–1024 characters from the
+[Bearer token alphabet](https://www.rfc-editor.org/rfc/rfc6750#section-2.1):
+letters, digits, `-`, `.`, `_`, `~`, `+`, `/`, with optional trailing `=` padding.
+Generate one locally with PowerShell:
+
+```powershell
+[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+Set the token locally in `appsettings.json` or through `AdminUsers__0__McpToken`;
+keep real tokens out of commits. Restart the server after changing credentials.
+Connect an MCP client to `https://<your-host>/mcp` with this HTTP header:
+
+```text
+Authorization: Bearer <McpToken>
+```
+
+The endpoint requires the bearer token on every request, independently of admin
+browser cookies. It does not require CSRF tokens or a browser login and uses no
+server-side MCP sessions. Cross-origin browser requests are rejected; configure
+`AllowedHosts` for the public host names used by your deployment.
+
+| Tool | Function |
+| --- | --- |
+| `list_rooms` | All rooms with names, languages, participant counts, owners, update times, deletion permissions and invitation paths |
+| `list_languages` | Allowed languages for room creation |
+| `create_room` | Create a room with `name` and optional `language` (default `csharp`); return its ID and invitation path |
+| `delete_room` | Delete `roomId` and notify connected participants |
+
+Invitation paths such as `/room/<id>` are relative to the application URL.
+Room names, language validation, capacity limits and deletion permissions are
+the same as in the admin panel. The token identifies its configured admin:
+regular admins can delete their own rooms and super admins can delete any room.
+Invalid inputs, missing rooms and forbidden deletions return MCP tool errors.
+
 ## Admin Workflow
 
 1. Visit `/admin/login`.
