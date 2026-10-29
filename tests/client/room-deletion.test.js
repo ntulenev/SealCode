@@ -49,7 +49,7 @@ test('only an authorized admin sees deletion; confirmation and CSRF protect the 
   const canceled = fixture({ confirm: false });
   await canceled.controller.refresh();
   assert.equal(canceled.button.classList.contains('hidden'), false);
-  assert.equal(canceled.calls[0].url, '/admin/rooms/id%2Fwith%20space');
+  assert.equal(canceled.calls[0].url, '/room/id%2Fwith%20space/permissions');
   assert.equal(canceled.calls[0].options.cache, 'no-store');
   await canceled.button.click();
   assert.equal(canceled.calls.length, 1);
@@ -59,6 +59,7 @@ test('only an authorized admin sees deletion; confirmation and CSRF protect the 
   await accepted.button.click();
   assert.equal(accepted.calls[1].url, '/admin/token');
   assert.equal(accepted.calls[2].options.method, 'DELETE');
+  assert.equal(accepted.calls[2].url, '/admin/rooms/id%2Fwith%20space');
   assert.equal(accepted.calls[2].options.headers['X-CSRF-TOKEN'], 'csrf');
   assert.deepEqual(accepted.destinations, ['/']);
   assert.equal(accepted.button.disabled, false);
