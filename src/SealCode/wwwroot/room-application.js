@@ -66,6 +66,7 @@ export function createRoomApplication({
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
   let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
   let maxSnapshotCharacters = 1024 * 1024;
+  let textSizeExceeded = false;
 
   let displayName = '';
   const presence = new PresenceView({
@@ -461,7 +462,7 @@ export function createRoomApplication({
     syncError.textContent = error?.message ?? '';
     syncError.classList.toggle('hidden', error === null);
     downloadLocalText?.classList.toggle(
-      'hidden', error?.kind !== 'update-size' && error?.kind !== 'checkpoint-size'
+      'hidden', !['update-size', 'text-size', 'checkpoint-size'].includes(error?.kind)
     );
   }
   downloadLocalText?.addEventListener('click', () => {
@@ -623,6 +624,15 @@ export function createRoomApplication({
     presence.editor = editor;
     yjs.editor = editor;
     editor.onDidChangeModelContent((event) => {
+      const exceedsTextLimit = model.getValueLength() > maxSnapshotCharacters;
+      if (exceedsTextLimit !== textSizeExceeded) {
+        textSizeExceeded = exceedsTextLimit;
+        if (exceedsTextLimit)
+          showSyncError('text-size',
+            `The document exceeds the ${maxSnapshotCharacters}-character snapshot limit. Reduce its size or download local text before leaving.`);
+        else
+          clearSyncError('text-size');
+      }
       if (yjs.isApplyingRemoteUpdate) return;
       if (checkpointBlockedAtLength !== null &&
           model.getValueLength() < checkpointBlockedAtLength &&

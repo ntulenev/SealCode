@@ -440,6 +440,10 @@ Yjs metadata and locally retained undo content can change checkpoint size.
 For example, 4 MiB of Base64 checkpoint data represents roughly 3 MiB of
 decoded CRDT state; `MaxSnapshotCharacters` counts UTF-16 code units, not bytes.
 An update can temporarily take the live document beyond the snapshot limit.
+The editor warns as soon as its text crosses the advertised snapshot length
+and offers a local download. It does not reject the edit: the current Monaco
+integration cannot intercept every typing, paste, IME and undo operation before
+the document changes.
 When a checkpoint cannot be written, the journal continues to grow until the
 document is reduced or its quota is reached. Use **Download local text** from a
 size warning before leaving the tab if changes are unsynced.

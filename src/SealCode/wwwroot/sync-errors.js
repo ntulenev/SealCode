@@ -18,6 +18,7 @@ export class SyncErrors {
   current() {
     for (const kind of [
       'update-size',
+      'text-size',
       'checkpoint-size',
       'rejoin',
       'recovery',

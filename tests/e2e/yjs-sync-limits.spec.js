@@ -162,6 +162,24 @@ test('oversized edits remain local and visible without retrying the transport', 
   await page.evaluate(() => probe.stop());
 });
 
+test('text snapshot limit warns immediately and offers a local download', async ({ page }) => {
+  await page.route('**/features', (route) =>
+    route.fulfill({ json: { Limits: { MaxSnapshotCharacters: 1000 } } })
+  );
+  const roomId = await createAndJoin(page, { clock: false });
+  await insertText(page, 1001);
+  await expect(page.locator('#syncError')).toContainText('1000-character snapshot limit');
+  const downloaded = page.waitForEvent('download');
+  await page.locator('#downloadLocalText').click();
+  expect(await readFile(await (await downloaded).path(), 'utf8')).toBe('x'.repeat(1001));
+  await page.evaluate(() => {
+    const model = monaco.editor.getModels()[0];
+    model.applyEdits([{ range: model.getFullModelRange(), text: 'short' }]);
+  });
+  await expect(page.locator('#syncError')).toHaveClass(/hidden/);
+  await page.evaluate(() => probe.stop());
+});
+
 test('only the latest author checkpoints after the revision threshold', async ({
   page,
   context
