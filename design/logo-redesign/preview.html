@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SealCode — варианты логотипа</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f1f2f4; color: #20242b; font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 1240px; margin: auto; padding: 36px 32px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
+  h1 { margin: 0; font-size: 30px; font-weight: 650; letter-spacing: -1px; }
+  h1 span { color: #3375c7; }
+  .status { color: #657080; font-size: 13px; }
+  .intro { margin: 8px 0 28px; color: #657080; }
+  .variant { display: grid; grid-template-columns: 215px 1fr 1fr 1fr; margin: 18px 0; gap: 14px; align-items: stretch; }
+  .description { padding: 20px 20px 20px 0; }
+  h2 { font-size: 20px; margin: 0 0 10px; font-weight: 650; }
+  .description p { margin: 0; color: #657080; font-size: 14px; }
+  .surface { min-width: 0; height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px; padding: 18px; }
+  .surface img { width: 100%; height: 180px; object-fit: contain; }
+  .surface span { font-size: 11px; letter-spacing: .08em; margin-top: 10px; text-transform: uppercase; }
+  .dark { background: #0f1116; color: #9ca3af; }
+  .light { background: #ffffff; color: #657080; }
+  .color { background: #9fc8df; color: #31596e; }
+  .sizes { display: flex; align-items: center; gap: 26px; margin-top: 28px; padding-top: 24px; border-top: 1px solid #d9dee5; }
+  .sizes p { width: 189px; flex-shrink: 0; margin: 0; color: #657080; font-size: 13px; }
+  .sample { display: flex; align-items: center; gap: 20px; }
+  .sample span { color: #657080; font-size: 12px; }
+  .sample img { width: 90px; height: auto; display: block; }
+  a { color: #285f9f; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  footer { margin-top: 26px; color: #657080; font-size: 12px; }
+  @media (max-width: 800px) { main { padding: 24px 16px; } header { display: block; } .variant { grid-template-columns: repeat(3, 1fr); } .description { grid-column: 1 / -1; padding: 10px 0 0; } .surface { padding: 10px; height: 170px; } .surface img { height: 120px; } .sizes { flex-wrap: wrap; } .sizes p { width: 100%; } }
+</style>
+<main>
+  <header><h1>Seal<span>Code</span> / логотип</h1><span class="status">codex/logo-redesign · эскизы на согласование</span></header>
+  <p class="intro">Тот же тюлень, наушники и код. Прозрачный PNG на трёх разных фонах.</p>
+  <section class="variant" aria-labelledby="minimal-title">
+    <div class="description"><h2 id="minimal-title">01 / Минимализм</h2><p>Ближе к исходному образу. Чище контур, светлее силуэт и более выразительная мордочка.</p><p style="margin-top:18px"><a href="sealcode-minimal-v1.png">Открыть PNG</a></p></div>
+    <div class="surface dark"><img src="sealcode-minimal-v1.png" alt="Минималистичный логотип на тёмном фоне"><span>Тёмный</span></div>
+    <div class="surface light"><img src="sealcode-minimal-v1.png" alt="Минималистичный логотип на белом фоне"><span>Светлый</span></div>
+    <div class="surface color"><img src="sealcode-minimal-v1.png" alt="Минималистичный логотип на голубом фоне"><span>Цветной</span></div>
+  </section>
+  <section class="variant" aria-labelledby="pixel-title">
+    <div class="description"><h2 id="pixel-title">02 / Pixel Art</h2><p>Тот же персонаж с пиксельным силуэтом и более выраженным игровым характером.</p><p style="margin-top:18px"><a href="sealcode-pixel-v1.png">Открыть PNG</a></p></div>
+    <div class="surface dark"><img src="sealcode-pixel-v1.png" alt="Пиксельный логотип на тёмном фоне"><span>Тёмный</span></div>
+    <div class="surface light"><img src="sealcode-pixel-v1.png" alt="Пиксельный логотип на белом фоне"><span>Светлый</span></div>
+    <div class="surface color"><img src="sealcode-pixel-v1.png" alt="Пиксельный логотип на голубом фоне"><span>Цветной</span></div>
+  </section>
+  <section class="sizes" aria-label="Проверка маленького размера">
+    <p>В размере шапки комнаты<br>Ширина изображения — 90 px</p>
+    <div class="sample"><img src="sealcode-minimal-v1.png" alt="Минимализм, 90 пикселей"><span>Минимализм</span></div>
+    <div class="sample"><img src="sealcode-pixel-v1.png" alt="Pixel Art, 90 пикселей"><span>Pixel Art</span></div>
+  </section>
+  <footer>Фоны добавлены только для сравнения. В PNG сохранён настоящий альфа-канал. Ресурсы сайта будут обновлены после выбора варианта.</footer>
+</main>
+</html>
