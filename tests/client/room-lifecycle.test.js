@@ -103,6 +103,60 @@ test('rejoin backs off through every configured delay and caps at the last', asy
   assert.equal(jobs.size, 0);
 });
 
+test('a server close retries transport and rejoins after capacity returns', async () => {
+  const { lifecycle, connection, jobs, delays } = create(async () => ({}));
+  const events = new Map();
+  let starts = 0;
+  lifecycle.random = () => 0.5;
+  connection.onreconnected = () => {};
+  connection.onreconnecting = () => {};
+  let closed;
+  connection.onclose = (handler) => { closed = handler; };
+  lifecycle.start = async () => {
+    starts++;
+    if (starts === 1) return false;
+    connection.state = 'Connected';
+    return true;
+  };
+  lifecycle.registerConnectivity({ addEventListener: (name, handler) => events.set(name, handler) });
+  connection.state = 'Disconnected';
+  closed();
+  assert.deepEqual(delays, [3000]);
+  let [id, run] = jobs.entries().next().value;
+  jobs.delete(id);
+  await run();
+  assert.deepEqual(delays, [3000, 6000]);
+  [id, run] = jobs.entries().next().value;
+  jobs.delete(id);
+  await run();
+  assert.equal(starts, 2);
+  assert.equal(lifecycle.participating, true);
+  assert.equal(jobs.size, 0);
+});
+
+test('a refused first connection retries the requested join', async () => {
+  let joins = 0;
+  const { lifecycle, connection, jobs } = create(async () => {
+    joins++;
+    return {};
+  });
+  lifecycle.joined = false;
+  lifecycle.initialJoinRequested = true;
+  lifecycle.random = () => 0.5;
+  lifecycle.start = async () => {
+    connection.state = 'Connected';
+    return true;
+  };
+  connection.state = 'Disconnected';
+  lifecycle.scheduleTransportRetry();
+  const [id, run] = jobs.entries().next().value;
+  jobs.delete(id);
+  await run();
+  assert.equal(joins, 1);
+  assert.equal(lifecycle.joined, true);
+  assert.equal(lifecycle.initialJoinRequested, false);
+});
+
 test('RoomKilled during rejoin prevents a late reply from reopening the room', async () => {
   let resolve;
   const result = create(

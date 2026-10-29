@@ -30,6 +30,7 @@ import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
 import { readClientLimits, checkCheckpointSize, timeoutSignal } from './client-limits.js';
 import { SyncErrors } from './sync-errors.js';
+import { compactCheckpoint } from './compact-checkpoint.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
 
@@ -60,6 +61,7 @@ export function createRoomApplication({
     syncError
   } = elements;
   const syncErrors = new SyncErrors();
+  const downloadLocalText = document.getElementById('downloadLocalText');
   let collaborativeUndoEnabled = true;
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
   let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
@@ -155,6 +157,8 @@ export function createRoomApplication({
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
+      setEditorReadOnly(false);
+      setLanguageReadOnly(false);
       clearSyncError('rejoin');
       lastSentSelectionMultiLine = undefined;
       recoveryController.schedule();
@@ -386,10 +390,11 @@ export function createRoomApplication({
     current: isCurrentSyncContext,
     revision: () => yjs.currentDocumentRevision,
     payload: (revision) => {
+      const compact = compactCheckpoint(Y, yjs.ydoc);
       const args = [
         roomId,
-        base64FromUint8(Y.encodeStateAsUpdate(yjs.ydoc)),
-        yjs.ytext.toString(),
+        base64FromUint8(compact.state),
+        compact.text,
         revision
       ];
       checkCheckpointSize(
@@ -450,7 +455,22 @@ export function createRoomApplication({
     syncError.dataset.kind = error?.kind ?? '';
     syncError.textContent = error?.message ?? '';
     syncError.classList.toggle('hidden', error === null);
+    downloadLocalText?.classList.toggle(
+      'hidden', error?.kind !== 'update-size' && error?.kind !== 'checkpoint-size'
+    );
   }
+  downloadLocalText?.addEventListener('click', () => {
+    if (!model) return;
+    const blob = new Blob([model.getValue()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sealcode-${roomId}.txt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
 
   function showSyncError(kind, message) {
     renderSyncError(syncErrors.show(kind, message));
@@ -758,19 +778,21 @@ export function createRoomApplication({
     displayNameInput.disabled = true;
     try {
       await Promise.all([editorReady, featuresReady, languagesReady]);
+      lifecycle.initialJoinRequested = true;
       if (connection.state === signalR.HubConnectionState.Disconnected) {
         const started = await connectionLifecycle.start();
         if (!started) {
           setStatus('disconnected');
-          joinError.textContent = 'Failed to connect. Try again.';
+          joinError.textContent = 'Waiting to reconnect. Keep this page open.';
           joinError.classList.remove('hidden');
+          lifecycle.scheduleTransportRetry();
           return;
         }
       }
       setStatus('connected');
       setLanguageReadOnly(true);
       const joined = await lifecycle.joinRoom();
-      if (!joined && !lifecycle.joined) await connection.stop();
+      if (!joined && !lifecycle.joined && !lifecycle.initialJoinRequested) await connection.stop();
       if (joined) {
         setEditorReadOnly(false);
         setLanguageReadOnly(false);

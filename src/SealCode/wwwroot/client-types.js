@@ -93,7 +93,7 @@
  * onJoinError: (error: unknown) => void, onRejoinError?: (error: unknown) => void,
  * onSynchronizationEnd: () => void, onClose: (reason: string) => void,
  * setStatus: (status: string) => void, setReadOnly: (value: boolean) => void,
- * resetTransport: () => void, rejoinRetryDelaysMs?: number[]
+ * resetTransport: () => void, rejoinRetryDelaysMs?: number[], random?: () => number
  * }} RoomLifecycleOptions
  */
 /**
