@@ -1,0 +1,39 @@
+/* One eight-second cycle: type, look up at the visitor, then return to work.
+   All coordinates use the original 1355 x 1161 artwork, so the rig scales
+   with the illustration without moving the surrounding page. */
+.seal-mascot { display: block; width: 100%; height: auto; overflow: visible; }
+.seal-mascot .seal-paw { animation: seal-type 8s infinite; }
+.seal-mascot .seal-paw-near { transform-origin: 510px 720px; }
+.seal-mascot .seal-paw-far { transform-origin: 788px 687px; animation-name: seal-type-far; }
+.seal-mascot .seal-gaze-near { animation: seal-look-near 8s infinite; }
+.seal-mascot .seal-gaze-far { animation: seal-look-far 8s infinite; }
+.seal-mascot .seal-eye { animation: seal-blink 8s infinite; }
+.seal-mascot .seal-eye-near { transform-origin: 646px 469px; }
+.seal-mascot .seal-eye-far { transform-origin: 832px 477px; }
+
+@keyframes seal-type {
+  0%, 6%, 12%, 18%, 26%, 32%, 38%, 44%, 52%, 58%, 100% { transform: none; }
+  3%, 9%, 15%, 23%, 29%, 35%, 41%, 49%, 55%, 96% { transform: translateY(-9px) rotate(-1deg); }
+  62%, 92% { transform: none; }
+}
+@keyframes seal-type-far {
+  0%, 3%, 9%, 15%, 23%, 29%, 35%, 41%, 49%, 55%, 62%, 92%, 100% { transform: none; }
+  6%, 12%, 18%, 26%, 32%, 38%, 44%, 52%, 58%, 98% { transform: translateY(-11px) rotate(-2deg); }
+}
+/* The pupil extends behind the lid instead of exposing a white strip above it.
+   The farther eye travels less to preserve the three-quarter perspective. */
+@keyframes seal-look-near {
+  0%, 57%, 96%, 100% { transform: translate(5px, 2px); }
+  64%, 89% { transform: translate(-8px, 0); }
+}
+@keyframes seal-look-far {
+  0%, 57%, 96%, 100% { transform: translate(2px, 1px); }
+  64%, 89% { transform: translate(-4px, 0); }
+}
+@keyframes seal-blink {
+  0%, 25%, 28%, 59%, 62%, 86%, 89%, 100% { transform: scaleY(1); }
+  26.5%, 60.5%, 87.5% { transform: scaleY(.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seal-mascot .seal-paw, .seal-mascot .seal-gaze, .seal-mascot .seal-eye { animation: none; }
+}
