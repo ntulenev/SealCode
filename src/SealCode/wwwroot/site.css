@@ -128,6 +128,7 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
 .auth-form .error { margin-bottom: 0; }
 .google-login { margin-top: 28px; }
 .google-login-divider { margin-bottom: 16px; color: var(--muted); font-size: 0.9rem; }
+#google-signin { width: 100%; overflow: hidden; }
 .google-login .error { margin-top: 12px; }
 .about-layout { gap: 64px; }
 .about-content p:not(.eyebrow) { color: var(--muted); }
@@ -179,7 +180,7 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
   .auth-layout, .about-layout { grid-template-columns: 1fr; gap: 24px; padding: 12px 24px 40px; }
   .auth-art, .about-art { width: 200px; margin: auto; }
   .auth-art .eyebrow { display: none; }
-  .auth-content { max-width: none; }
+  .auth-content { max-width: 400px; margin-inline: auto; }
   .privacy-policy { padding: 36px 24px 48px; }
 }
 @media (prefers-reduced-motion: reduce) {

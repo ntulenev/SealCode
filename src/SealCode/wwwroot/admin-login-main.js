@@ -26,6 +26,7 @@ async function startGoogleSignIn() {
       client_id: ClientId,
       callback: async ({ credential }) => {
         googleError.classList.add('hidden');
+        let errorMessage = 'Google sign-in failed. Try again.';
         try {
           const response = await fetch('/admin/google-login', {
             method: 'POST',
@@ -35,18 +36,24 @@ async function startGoogleSignIn() {
             },
             body: JSON.stringify({ Credential: credential })
           });
-          if (!response.ok) throw new Error('Google sign-in failed.');
-          window.location.assign('/admin');
-        } catch {
-          googleError.classList.remove('hidden');
-        }
+          if (response.ok) {
+            window.location.assign('/admin');
+            return;
+          }
+          if (response.status === 401)
+            errorMessage = 'Google sign-in failed. This account may not belong to an organization allowed to access this site.';
+        } catch { /* Network or token request failed. */ }
+        googleError.textContent = errorMessage;
+        googleError.classList.remove('hidden');
       }
     });
-    google.accounts.id.renderButton(
-      /** @type {HTMLElement} */ (document.getElementById('google-signin')),
-      { theme: 'outline', size: 'large', width: 320 }
-    );
     googleSection.classList.remove('hidden');
+    const buttonContainer = /** @type {HTMLElement} */ (document.getElementById('google-signin'));
+    google.accounts.id.renderButton(buttonContainer, {
+      theme: 'outline',
+      size: 'large',
+      width: Math.min(400, Math.floor(buttonContainer.getBoundingClientRect().width))
+    });
   };
   script.onerror = () => {
     googleError.textContent = 'Google sign-in is unavailable. Try again later.';
