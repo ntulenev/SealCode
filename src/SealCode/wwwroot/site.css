@@ -126,6 +126,9 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
 .auth-form label:not(:first-child) { margin-top: 8px; }
 .auth-form button { margin-top: 14px; }
 .auth-form .error { margin-bottom: 0; }
+.google-login { margin-top: 28px; }
+.google-login-divider { margin-bottom: 16px; color: var(--muted); font-size: 0.9rem; }
+.google-login .error { margin-top: 12px; }
 .about-layout { gap: 64px; }
 .about-content p:not(.eyebrow) { color: var(--muted); }
 .about-note { padding: 18px 0; margin: 22px 0; border-block: 1px solid var(--line); font-size: 13px; }

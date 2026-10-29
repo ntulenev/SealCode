@@ -42,7 +42,7 @@ internal sealed class AdminMcpTools
         return [.. rooms.GetRoomsSnapshot(admin).Select(room => new McpRoomSummary(
             new RoomSummary(room.RoomId.Value, room.Name.Value,
                 room.Language.Value, room.UsersCount, room.LastUpdatedUtc,
-                room.CreatedBy.Name, room.CanDelete),
+                room.CreatedBy.DisplayName, room.CanDelete),
             InvitationPath(room.RoomId), InvitationUrl(accessor, room.RoomId)))];
     }
 
@@ -88,7 +88,7 @@ internal sealed class AdminMcpTools
 
             var room = rooms.CreateRoom(new RoomName(name), roomLanguage, admin);
             return new McpCreatedRoom(room.RoomId.Value, room.Name.Value,
-                room.Language.Value, room.CreatedBy.Name,
+                room.Language.Value, room.CreatedBy.DisplayName,
                 InvitationPath(room.RoomId), InvitationUrl(accessor, room.RoomId));
         }
         catch (ArgumentException)

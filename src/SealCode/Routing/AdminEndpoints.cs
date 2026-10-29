@@ -1,6 +1,9 @@
 using Abstractions;
 
+using Microsoft.Extensions.Options;
+
 using Models;
+using Models.Configuration;
 
 using SealCode.Security;
 using SealCode.Hosting;
@@ -36,6 +39,32 @@ internal static class AdminEndpoints
                 : Results.Redirect("/admin/login?error=1");
         }).AddEndpointFilter(app.Services.GetRequiredService<AdminHttpSecurity>().FilterLoginAsync);
 
+        _ = app.MapGet("/admin/google-config", (IOptions<ApplicationConfiguration> settings, HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Json(new { settings.Value.GoogleSignIn.ClientId });
+        });
+
+        _ = app.MapPost("/admin/google-login",
+            async (GoogleLoginRequest request,
+                   IOptions<ApplicationConfiguration> settings,
+                   IGoogleIdentityVerifier verifier,
+                   IAdminUserManager admins) =>
+        {
+            var clientId = settings.Value.GoogleSignIn.ClientId;
+            if (string.IsNullOrWhiteSpace(clientId)
+                || string.IsNullOrWhiteSpace(request.Credential)
+                || request.Credential.Length > 8192)
+            {
+                return Results.Unauthorized();
+            }
+
+            var identity = await verifier.VerifyAsync(request.Credential, clientId).ConfigureAwait(false);
+            return identity is not null && await admins.TrySetGoogleCurrentUserAsync(identity).ConfigureAwait(false)
+                ? Results.Ok()
+                : Results.Unauthorized();
+        }).AddEndpointFilter(app.Services.GetRequiredService<AdminHttpSecurity>().FilterGoogleLoginAsync);
+
         _ = app.MapPost("/admin/logout", async (IAdminUserManager adminUserManager) =>
         {
             await adminUserManager.ClearCurrentAdminUserAsync().ConfigureAwait(false);
@@ -68,7 +97,7 @@ internal static class AdminEndpoints
                     room.Language.Value,
                     room.UsersCount,
                     room.LastUpdatedUtc,
-                    room.CreatedBy.Name,
+                    room.CreatedBy.DisplayName,
                     room.CanDelete))
                 .ToArray();
 
@@ -131,7 +160,7 @@ internal static class AdminEndpoints
                 RoomId = room.RoomId.Value,
                 Name = room.Name.Value,
                 Language = room.Language.Value,
-                CreatedBy = room.CreatedBy.Name
+                CreatedBy = room.CreatedBy.DisplayName
             });
         });
 
@@ -158,3 +187,5 @@ internal static class AdminEndpoints
 
     }
 }
+
+internal sealed record GoogleLoginRequest(string Credential);

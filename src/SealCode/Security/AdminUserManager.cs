@@ -47,6 +47,24 @@ internal sealed class AdminUserManager : IAdminUserManager
             return false;
         }
 
+        if (context.User.Identity.AuthenticationType == CookieAuthenticationDefaults.AuthenticationScheme
+            && context.User.FindFirstValue("admin_provider") == "google")
+        {
+            var subject = context.User.FindFirstValue("google_sub");
+            var identity = new GoogleIdentity(
+                subject ?? "",
+                context.User.FindFirstValue(ClaimTypes.Email) ?? "",
+                context.User.FindFirstValue("google_hd") ?? "",
+                true);
+            if (context.User.Identity.Name == $"google:{subject}"
+                && GoogleSignInAccess.IsAllowed(identity, _settings.GoogleSignIn))
+            {
+                adminUser = new AdminUser(context.User.Identity.Name, displayName: identity.Email);
+                return true;
+            }
+            return false;
+        }
+
         var user = _settings.AdminUsers.FirstOrDefault(user =>
             string.Equals(user.Name.Trim(), context.User.Identity.Name, StringComparison.OrdinalIgnoreCase));
         if (user is null || context.User.FindFirstValue("credential") != CredentialStamp(user))
@@ -104,6 +122,30 @@ internal sealed class AdminUserManager : IAdminUserManager
     /// <inheritdoc />
     public Task ClearCurrentAdminUserAsync()
         => Context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+    /// <inheritdoc />
+    public async Task<bool> TrySetGoogleCurrentUserAsync(GoogleIdentity identity)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.GoogleSignIn.ClientId)
+            || !GoogleSignInAccess.IsAllowed(identity, _settings.GoogleSignIn))
+        {
+            return false;
+        }
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.Name, $"google:{identity.Subject}"),
+            new Claim(ClaimTypes.Email, identity.Email),
+            new Claim("admin_provider", "google"),
+            new Claim("google_sub", identity.Subject),
+            new Claim("google_hd", identity.HostedDomain)
+        };
+        await Context.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)))
+            .ConfigureAwait(false);
+        return true;
+    }
 
     /// <summary>
     /// Creates the credential fingerprint bound to an admin authentication ticket.

@@ -74,9 +74,14 @@
         <button type="submit">Login <span aria-hidden="true">→</span></button>
         <p id="error" class="error hidden" role="alert">Invalid credentials. Try again.</p>
       </form>
+      <div id="google-login" class="google-login hidden">
+        <p class="google-login-divider">Or sign in with your organization account</p>
+        <div id="google-signin"></div>
+        <p id="google-error" class="error hidden" role="alert">Google sign-in failed. Try again.</p>
+      </div>
     </section>
   </main>
   <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
-  <script src="/admin-login.js?v=1.9.1" defer></script>
+  <script type="module" src="/admin-login-main.js?v=1.9.1"></script>
 </body>
 </html>

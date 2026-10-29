@@ -23,7 +23,7 @@ For a description of how the backend and real-time collaboration work, see [Back
 - Admin panel to create rooms, copy invitation links, inspect participant counts and delete rooms. Regular admins can delete their own rooms; super admins can delete any room.
 - Authenticated MCP tools to list rooms and languages, create rooms with complete invitation URLs, and delete rooms from an MCP client.
 - Configurable capacity of 1–5 participants per room, resource budgets and optional expiration of empty rooms.
-- Locally bundled browser dependencies and workers; no CDN is required at runtime.
+- Locally bundled editor dependencies and workers. Optional Google sign-in loads Google's identity script.
 - Build version and commit in the footer, plus an About page with the project repository link.
 
 ## Screenshots
@@ -127,6 +127,38 @@ port (5087) or the production HTTPS check port (5088).
 | `npm run typecheck` | Static JavaScript type checking |
 | `dotnet test src/SealCode.slnx` | Server domain, service, hub, API and configuration tests |
 
+## Optional Google organization sign-in
+
+Google sign-in is disabled until both a web client ID and one or more allowed
+Google Workspace hosted domains are configured. Existing password accounts
+continue to work. Every permitted Google user receives ordinary admin rights:
+they may create rooms and delete their own rooms, but cannot delete another
+admin's rooms. Google sign-in never issues an MCP token; MCP remains limited
+to bearer tokens on configured `AdminUsers` accounts.
+
+1. In your own Google Cloud project, configure the Google Auth Platform branding
+   and an **External** audience. Create an OAuth client of type **Web application**.
+2. Add the site's exact HTTPS origin, for example `https://portal.example.org`,
+   under **Authorized JavaScript origins**. For local testing, add the local
+   origin separately, for example `https://localhost:61670`. This button uses
+   a JavaScript callback, so no redirect URI or client secret is used.
+3. Configure `GoogleSignIn__ClientId` with the web client ID and
+   `GoogleSignIn__AllowedHostedDomains__0` with an exact Workspace hosted
+   domain, such as `example.org`. Additional domains use index `__1`,
+   `__2`, and so on. Restart the application.
+4. Publish the External app in Google Auth Platform when it is ready for
+   organization-wide use; Testing mode admits only listed test users.
+
+The backend validates the Google-signed ID token, its audience and verified
+email, then requires an exact match on the token's `hd` hosted-domain claim.
+An email address ending in the allowed domain without that Google Workspace
+claim is not sufficient. A Google user's stable `sub` identifies room ownership;
+their email is displayed as the owner. Domain changes in configuration take
+effect for existing sessions on the next request. Existing signed-in sessions
+can otherwise remain valid for up to eight hours after an account is disabled
+at Google. A Google Workspace administrator may block third-party sign-in
+under organization policy.
+
 ## Admin MCP
 
 The same server exposes admin room management at `/mcp` over Streamable HTTP
@@ -215,6 +247,7 @@ away to leave. No participant account or installation is required.
 
 - `src/SealCode/appsettings.json`
 - `AdminUsers`: unique admin names and Identity V3 `PasswordHash` values. Include `IsSuperAdmin` to allow deleting rooms created by other admins. Legacy `Password` is accepted only in Development.
+- `GoogleSignIn`: optional web `ClientId` and exact `AllowedHostedDomains`; both must be set together.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 - `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
