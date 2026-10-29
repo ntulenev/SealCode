@@ -75,6 +75,26 @@ internal static class AdminEndpoints
             return Results.Json(rooms);
         });
 
+        _ = app.MapGet("/admin/rooms/{roomId:ShortGuid}",
+                    (RoomId roomId,
+                     IRoomManager roomManager,
+                     IAdminUserManager adminUserManager,
+                     HttpContext context) =>
+        {
+            if (!adminUserManager.TryGetAdminUser(out var adminUser))
+            {
+                return Results.Unauthorized();
+            }
+
+            if (!roomManager.TryGetRoom(roomId, out var room))
+            {
+                return Results.NotFound();
+            }
+
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Json(new { CanDelete = room.CanDelete(adminUser) });
+        });
+
         _ = app.MapPost("/admin/rooms",
                     async (HttpContext context,
                            IRoomManager roomManager,

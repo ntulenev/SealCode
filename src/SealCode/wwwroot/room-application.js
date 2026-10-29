@@ -33,6 +33,7 @@ import { SyncErrors } from './sync-errors.js';
 import { compactCheckpoint } from './compact-checkpoint.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
+import { createRoomDeletion } from './room-deletion.js';
 
 /** Creates the room controllers and wires their UI and transport callbacks. */
 export function createRoomApplication({
@@ -58,7 +59,9 @@ export function createRoomApplication({
     joinBtn,
     displayNameInput,
     joinError,
-    syncError
+    syncError,
+    deleteRoomBtn,
+    deleteRoomError
   } = elements;
   const syncErrors = new SyncErrors();
   const downloadLocalText = document.getElementById('downloadLocalText');
@@ -107,6 +110,14 @@ export function createRoomApplication({
 
   const syncScheduler = new SyncScheduler();
   let lifecycle;
+  const roomDeletion = createRoomDeletion({
+    button: deleteRoomBtn,
+    error: deleteRoomError,
+    roomId,
+    window,
+    fetch,
+    isClosed: () => lifecycle.closed
+  });
   let updateSender;
   let recoveryController;
   let checkpointWriter;
@@ -159,6 +170,7 @@ export function createRoomApplication({
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
+      void roomDeletion.refresh();
       setStatus('connected');
       setEditorReadOnly(false);
       setLanguageReadOnly(false);
@@ -181,6 +193,7 @@ export function createRoomApplication({
       checkpointWriter.schedule();
     },
     onClose: (reason) => {
+      roomDeletion.hide();
       lastSentSelectionMultiLine = undefined;
       yjs.disposeYjs();
       joinError.textContent = reason || 'Room closed.';

@@ -9,6 +9,9 @@
 .room-info strong { font-weight: 500; color: var(--text); }
 .room-meta { display: flex; align-items: flex-end; gap: 24px; flex-shrink: 0; }
 .room-meta label { min-width: 150px; }
+.room-delete { width: 46px; height: 46px; min-height: 46px; padding: 0; flex: 0 0 46px; color: var(--muted); }
+.room-delete svg { width: 17px; height: 17px; }
+.room-delete:hover:not(:disabled) { color: var(--error); }
 .version { padding-bottom: 13px; font: 11px/1.5 var(--mono); color: var(--muted); white-space: nowrap; }
 .room-main { display: flex; flex: 1; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .participants-bar { min-height: 55px; padding: 12px 18px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
@@ -33,7 +36,7 @@
   .room-container { padding: 0 16px; margin-top: 12px; }
   .room-header { display: block; }
   .room-heading h1 { font-size: 26px; }
-  .room-meta { margin-top: 18px; align-items: center; gap: 16px; }
+  .room-meta { margin-top: 18px; align-items: center; gap: 16px; flex-wrap: wrap; }
   .room-meta label { display: flex; align-items: center; gap: 12px; }
   .room-meta select { max-width: 180px; }
   .version { padding: 0; margin-left: auto; }
