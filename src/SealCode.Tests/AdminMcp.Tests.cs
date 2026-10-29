@@ -64,6 +64,12 @@ public sealed class AdminMcpTests
         var tools = await admin.ListToolsAsync();
         Assert.Equal(["create_room", "delete_room", "list_languages", "list_rooms"],
             [.. tools.Select(tool => tool.Name).Order(StringComparer.Ordinal)]);
+        foreach (var name in new[] { "create_room", "delete_room", "list_rooms" })
+        {
+            var schema = tools.Single(tool => tool.Name == name).ProtocolTool.OutputSchema;
+            Assert.NotNull(schema);
+            Assert.Contains("roomId", schema.Value.GetRawText(), StringComparison.Ordinal);
+        }
         var languages = await admin.CallToolAsync("list_languages");
         Assert.Contains("csharp", languages.Content.OfType<TextContentBlock>().Single().Text, StringComparison.Ordinal);
 
@@ -113,7 +119,7 @@ public sealed class AdminMcpTests
     }
 
     [Fact]
-    public async Task BrowserCookieAloneCannotAuthenticateMcp()
+    public async Task BrowserCookiesCannotAuthenticateOrElevateMcpRequests()
     {
         using var factory = CreateFactory();
         using var http = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -121,8 +127,8 @@ public sealed class AdminMcpTests
         http.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token.GetProperty("Token").GetString());
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["name"] = "Admin",
-            ["password"] = "pass1"
+            ["name"] = "Root",
+            ["password"] = "pass2"
         });
         using var login = await http.PostAsync("/admin/login", form);
         Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
@@ -130,6 +136,38 @@ public sealed class AdminMcpTests
         Assert.Equal(HttpStatusCode.OK, browser.StatusCode);
         using var mcp = await http.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
         Assert.Equal(HttpStatusCode.Unauthorized, mcp.StatusCode);
+
+        // Refresh antiforgery for the authenticated browser identity.
+        token = await http.GetFromJsonAsync<JsonElement>("/admin/token");
+        http.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        http.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token.GetProperty("Token").GetString());
+        using var browserCreated = await http.PostAsJsonAsync("/admin/rooms", new { Name = "Browser root room", Language = (string?)null });
+        Assert.Equal(HttpStatusCode.OK, browserCreated.StatusCode);
+        var rootRoom = await browserCreated.Content.ReadFromJsonAsync<JsonElement>();
+        var rootId = rootRoom.GetProperty("RoomId").GetString()!;
+
+        // A super-admin cookie must not elevate the regular admin's bearer token.
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ADMIN_TOKEN);
+        await using var client = await ConnectAsync(http);
+        Assert.True((await DeleteAsync(client, rootId)).IsError);
+        var created = Payload(await client.CallToolAsync("create_room", new Dictionary<string, object?>
+        {
+            ["name"] = "MCP regular room",
+            ["language"] = "csharp"
+        }));
+        Assert.Equal("Admin", created.GetProperty("createdBy").GetString());
+        Assert.Equal(rootRoom.GetProperty("Language").GetString(), created.GetProperty("language").GetString());
+        var ownId = created.GetProperty("roomId").GetString()!;
+
+        // The browser still operates as Root and can delete the room created through MCP.
+        var listing = await http.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
+        Assert.Equal(2, listing!.Length);
+        Assert.All(listing, room => Assert.True(room.GetProperty("CanDelete").GetBoolean()));
+        using var removed = await http.DeleteAsync($"/admin/rooms/{ownId}");
+        Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
+        var remaining = Assert.Single(Payload(await client.CallToolAsync("list_rooms")).EnumerateArray());
+        Assert.Equal(rootId, remaining.GetProperty("room").GetProperty("roomId").GetString());
+        Assert.False(remaining.GetProperty("room").GetProperty("canDelete").GetBoolean());
     }
 
     [Theory]
