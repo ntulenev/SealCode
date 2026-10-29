@@ -6,19 +6,70 @@ The backend uses ASP.NET Core Minimal API and SignalR on .NET 10; the browser us
 
 For a description of how the backend and real-time collaboration work, see [Backend architecture](docs/backend.md).
 
-![Screenshot](Room.png)
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
+
+![SealCode in dark theme: a JavaScript room with four participants, shared code and live activity indicators](Room.png)
 
 ## Features
 
-- Real-time multi-user editing with presence and cursors.
-- Dark and light themes across the site and editor, with a browser-local preference.
+- Real-time multi-user editing in Monaco, with syntax highlighting, participant presence and remote cursors.
+- Join through an invitation link or paste it on the home page; participants only need a display name, not an account.
+- Responsive desktop and mobile layouts with the pixel-art seal identity.
+- Dark and light themes across every page and the editor. Dark is the default; the browser remembers the choice and synchronizes it between tabs.
 - Selective local undo/redo that preserves concurrent edits from other users.
 - Shared language switching by any participant; the checked-in configuration offers C#, SQL and JavaScript.
 - Participant list with cursor line/column and typing, selection and copy indicators.
 - Automatic reconnection, room rejoin and synchronization recovery, retaining local undo history in the open tab.
 - Admin panel to create rooms, copy invitation links, inspect participant counts and delete rooms. Regular admins can delete their own rooms; super admins can delete any room.
+- Authenticated MCP tools to list rooms and languages, create rooms with complete invitation URLs, and delete rooms from an MCP client.
 - Configurable capacity of 1–5 participants per room, resource budgets and optional expiration of empty rooms.
 - Locally bundled browser dependencies and workers; no CDN is required at runtime.
+- Build version and commit in the footer, plus an About page with the project repository link.
+
+## Screenshots
+
+These screenshots show the running application with disposable demo accounts and sample room data.
+
+### Home page and themes
+
+Paste a link to join a room, open room management, or change the theme from the header.
+
+| Dark theme (default) | Light theme |
+| --- | --- |
+| ![Home page in dark theme with the pixel seal and invitation form](docs/images/home-dark.png) | ![Home page in light theme with the same invitation form](docs/images/home-light.png) |
+
+### Room management and joining
+
+The admin view shows participant counts, room languages, owners and update times. Guests enter a display name before opening the shared editor.
+
+| Admin room management | Join a shared room |
+| --- | --- |
+| ![Admin panel with JavaScript, SQL and C# rooms, four connected users, and copy-link and delete actions](docs/images/admin-rooms.png) | ![Join dialog with a display-name field and a theme switch](docs/images/join-room.png) |
+
+<details>
+<summary>Shared editor in light theme</summary>
+
+The editor, participant bar and surrounding controls follow the same theme.
+
+![Shared JavaScript editor in light theme with four participants](docs/images/room-light.png)
+
+</details>
+
+<details>
+<summary>Mobile home and room management</summary>
+
+| Home | Room management |
+| --- | --- |
+| <img src="docs/images/home-mobile.png" alt="Mobile home page in light theme with a compact theme button and stacked invitation form" width="280" /> | <img src="docs/images/admin-mobile.png" alt="Mobile room management with stacked room details and copy-link and delete buttons" width="280" /> |
+
+</details>
+
+<details>
+<summary>Admin sign-in</summary>
+
+![Admin login screen with the pixel seal, username and password fields](docs/images/admin-login.png)
+
+</details>
 
 ## Scope and room lifetime
 
@@ -69,8 +120,9 @@ port (5087) or the production HTTPS check port (5088).
 | Command | Coverage |
 | --- | --- |
 | `npm run test:smoke` | Admin login, room creation, multi-user editing, language switching, late join, selective undo, leaving and room deletion |
-| `npm run test:client` | Client synchronization, recovery, undo, presence and lifecycle unit tests |
+| `npm run test:client` | Client synchronization, recovery, undo, presence, lifecycle, invitation validation and theme unit tests |
 | `npm run test:e2e` | Browser collaboration, recovery, limits, security and UI tests, including smoke |
+| `npx playwright test tests/e2e/appearance.spec.js` | Theme persistence and tab synchronization, blocked storage, first-render theme, desktop/mobile layouts, keyboard joining, slow editor loading, and preserving text/selection/undo when changing theme |
 | `npm test` | Client unit tests and the browser suite |
 | `npm run typecheck` | Static JavaScript type checking |
 | `dotnet test src/SealCode.slnx` | Server domain, service, hub, API and configuration tests |
@@ -133,18 +185,31 @@ Invalid inputs, missing rooms and forbidden deletions return MCP tool errors.
 
 ## Admin Workflow
 
-1. Visit `/admin/login`.
+1. Open **Manage rooms** on the home page, or visit `/admin/login`.
 2. Sign in with an admin account configured before startup.
-3. Choose a room name and language, create the room and share its link.
+3. Enter a room name, choose its default language, and select **Create room**.
+4. Use **Copy link** on the room row and share the invitation with participants.
 
-The panel lists all rooms with language, user count, last update time and creator.
-Use **Copy link** to invite participants and **Delete** to close a room you are allowed to manage.
+The panel lists all rooms with language, participant count, last update time and
+creator. **Delete** closes the room and disconnects its participants. Regular
+admins can delete only their own rooms; super admins can delete any room. Use
+**Logout** to end the admin session. The same room-management operations are also
+available through the [MCP endpoint](#admin-mcp).
 
 ## Join a Room
 
-Open the room link in a browser and enter a display name. Names are trimmed,
+Open an invitation directly, or paste a room link from the same SealCode instance
+into the home page and select **Join room**. Invalid links show an inline error.
+
+The join dialog waits for the editor to load before enabling its controls. Enter
+a display name and select **Join room**, or press **Enter**. Names are trimmed,
 limited to 64 characters and must be unique within the room (case-insensitive).
-Joining a full room is rejected. Close the tab or navigate away to leave.
+Joining a full room is rejected.
+
+Inside the room, participants share the document and the **Language** selection.
+The header shows the connection state, creator and room version; the participant
+bar shows who is present and where they are working. Close the tab or navigate
+away to leave. No participant account or installation is required.
 
 ## Configuration
 
@@ -201,6 +266,7 @@ are rejected before Base64 decoding, with the locked check remaining authoritati
 - `/admin/rooms` list/create rooms (GET/POST, admin only)
 - `/admin/rooms/{roomId}` delete a room (DELETE, owner or super admin)
 - `/admin/token` antiforgery token for admin requests
+- `/mcp` authenticated admin tools over Streamable HTTP
 - `/languages` configured language identifiers
 - `/features` collaborative undo flag and synchronization/resource limits
 - `/health` health check
@@ -220,13 +286,21 @@ are rejected before Base64 decoding, with the locked check remaining authoritati
   uncommitted source changes; publish committed code for an identifiable release.
 
 
-## UI Indication
+## Themes and presence
+
+### Appearance
 
 The header's theme button switches the interface and Monaco editor between dark
-and light. Dark is the default. The choice is saved in this browser's local storage
+and light. It is also available in the join dialog; on smaller screens the header
+uses a compact sun/moon button. Dark is the default regardless of the operating
+system's color preference. The choice is saved in this browser's local storage
 under `sealcode.theme`, persists across pages and reloads, and synchronizes between
 tabs. If browser storage is blocked, switching still works for the current page.
-Theme changes preserve the document, selection, and undo history.
+The preference stays on the client, independently of other participants' themes.
+Saved preferences are applied before the page stylesheet loads. Theme changes
+preserve the document, selection, and undo history.
+
+### Participant activity
 
 The user's cursor position is displayed in the following format:
 
@@ -238,15 +312,21 @@ Where:
 - `14` — the line number  
 - `25` — the column number (character position within the line)
 
-🎨 The interface uses color cues to reflect user actions and interaction states.
+Long display names are abbreviated in the participant bar; hover over a label to
+see the full name. Colored carets inside the editor identify other participants.
+The participant bar uses separate color cues for their current activity:
 
-![UIColors](UIColors.png)
+![Live participant bar with Alex editing in green, Maya selecting in amber and Sam copying in red](UIColors.png)
 
 | Color  | Meaning | Description |
 |--------|----------|-------------|
 | 🟢 Green | Editing | Recent text activity in the shared editor. |
 | 🟠 Orange | Selection | A non-empty text selection, including a single-line selection. |
 | 🔴 Red | Copy activity | A copy action with selected editor text; this does not verify clipboard write success. |
+
+Editing and copy indicators are brief; the selection indicator follows whether
+the participant has a non-empty selection. Copying with no selected text does
+not copy the current line.
 
 ## Production setup and migration
 
@@ -404,10 +484,26 @@ Coverage reports are separate:
 - **Client:** `c8 --all` covers root `wwwroot/*.js` modules, including the untested
   `room-application.js`, `room-connection.js` and `monaco-adapter.js`. Tests, typedef-only
   `client-types.js`, `*-main.js`, `room.js` and `version.js` are excluded.
-  The enforced floors are 68% lines, 86% branches and 87% functions; LCOV is written
+  The enforced floors are 68% lines, 87% branches and 90% functions; LCOV is written
   to `coverage/client/lcov.info`. c8 is the only coverage reporter.
   The goal is to raise line coverage to at least 80% by covering the browser composition
   and Monaco adapters.
+
+### Refreshing the README screenshots
+
+With Node.js 20+, the .NET 10 SDK and the repository dependencies installed:
+
+```bash
+npx playwright install chromium
+node scripts/capture-readme.mjs
+```
+
+The script builds the client and server, starts an isolated loopback instance
+with disposable demo settings, creates three rooms, and connects four participants.
+Typing, selection and copy indicators come from actual editor actions. It replaces
+`Room.png`, `UIColors.png` and the images in `docs/images/`, then closes its browser
+and server and removes the temporary settings. It does not use or change local
+admin credentials or a running deployment.
 
 ### Production HTTPS check
 
