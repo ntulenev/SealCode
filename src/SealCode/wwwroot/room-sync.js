@@ -54,6 +54,7 @@ export class UpdateQueue {
     this.timer = null;
     this.inFlight = false;
     this.blocked = false;
+    this.pausedForJournal = false;
     this.generation = 0;
     /** @type {Uint8Array[]} */
     this.flight = [];
@@ -85,14 +86,14 @@ export class UpdateQueue {
    * @param {number} delay
    */
   schedule(delay) {
-    if (this.blocked || this.timer || this.inFlight || !this.pending.length) return;
+    if (this.blocked || this.pausedForJournal || this.timer || this.inFlight || !this.pending.length) return;
     this.timer = this.setTimer(() => {
       this.timer = null;
       return this.flush();
     }, delay);
   }
   async flush() {
-    if (this.blocked || this.inFlight || !this.pending.length || !this.ready()) return;
+    if (this.blocked || this.pausedForJournal || this.inFlight || !this.pending.length || !this.ready()) return;
     const generation = this.generation;
     let count = 1;
     let estimate = 4 * Math.ceil(this.pending[0].length / 3);
@@ -122,10 +123,12 @@ export class UpdateQueue {
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
+      const journalFull = !merging && /LimitExceeded: JournalFull/.test(String(error?.message));
       const limited = !merging && classifyHubError(error) === HubErrorCode.LimitExceeded;
-      if ((merging || limited) && updates.length > 1)
+      if ((merging || (limited && !journalFull)) && updates.length > 1)
         this.singleRemaining = updates.length;
-      this.blocked = limited && updates.length === 1;
+      this.pausedForJournal = journalFull;
+      this.blocked = limited && updates.length === 1 && !journalFull;
       retryDelay = classifyHubError(error) === HubErrorCode.RateLimited ? 1100 : 500;
       this.onError(error, this.blocked);
     } finally {
@@ -137,6 +140,10 @@ export class UpdateQueue {
       }
     }
   }
+  resumeAfterCheckpoint() {
+    this.pausedForJournal = false;
+    this.schedule(60);
+  }
   reset() {
     this.generation++;
     this.singleRemaining = 0;
@@ -146,6 +153,7 @@ export class UpdateQueue {
     this.timer = null;
     this.inFlight = false;
     this.blocked = false;
+    this.pausedForJournal = false;
   }
 }
 

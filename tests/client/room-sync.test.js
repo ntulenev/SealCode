@@ -65,6 +65,25 @@ test('rate limit retains updates and backs off before successful retry', async (
   assert.equal(f.queue.pending.length, 0);
   assert.equal(calls, 2);
 });
+test('full journal pauses the queue and resumes its original order after checkpoint', async () => {
+  const sent = [];
+  let full = true;
+  const f = fixture((update) => {
+    if (full) throw new Error('HubException: LimitExceeded: JournalFull');
+    sent.push([...update]);
+  });
+  f.queue.enqueue(Uint8Array.of(1));
+  await f.tick();
+  f.queue.enqueue(Uint8Array.of(2));
+  assert.equal(f.queue.pausedForJournal, true);
+  assert.equal(f.queue.blocked, false);
+  assert.equal(f.timers.size, 0);
+  full = false;
+  f.queue.resumeAfterCheckpoint();
+  await f.tick();
+  assert.deepEqual(sent, [[1, 2]]);
+  assert.equal(f.queue.pending.length, 0);
+});
 test('queue counts in-flight bytes against its budget', async () => {
   let release;
   const f = fixture(

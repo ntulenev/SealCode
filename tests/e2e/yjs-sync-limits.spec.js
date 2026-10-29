@@ -411,3 +411,36 @@ test('offline edits are split to the server update budget after reconnect', asyn
     await context.close();
   }
 });
+
+test('a full journal checkpoints acknowledged state and sends the waiting edit', async ({
+  browser,
+  isolatedHost
+}) => {
+  const host = await isolatedHost({ Limits: { MaxJournalCount: 4, CheckpointEveryRevisions: 1 } });
+  const context = await browser.newContext({ baseURL: host.baseURL });
+  try {
+    const page = await context.newPage();
+    const login = await page.request.post('/admin/login', {
+      headers: await csrf(page.request),
+      form: { name: 'BrowserAdmin', password: 'browser-pass' }
+    });
+    expect(login.ok()).toBeTruthy();
+    const roomId = await createAndJoin(page);
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 2000));
+    for (let revision = 1; revision <= 5; revision++) {
+      await insertText(page, 1);
+      await advance(page, 100);
+      if (revision < 5)
+        await expect.poll(async () => (await revisions(page, roomId)).DocumentRevision).toBe(revision);
+    }
+    await advance(page, 1500);
+    await expect.poll(async () => (await revisions(page, roomId)).DocumentRevision).toBe(5);
+    const state = await syncState(page, roomId);
+    expect(state.CheckpointRevision).toBeGreaterThan(0);
+    expect(state.Text).toBe('xxxxx');
+    await expect(page.locator('#syncError')).toHaveClass(/hidden/);
+    await page.evaluate(() => probe.stop());
+  } finally {
+    await context.close();
+  }
+});

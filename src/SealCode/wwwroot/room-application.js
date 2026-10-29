@@ -3,7 +3,7 @@
 import { RoomLifecycle, isRoomNotFound, registerHubHandlers } from './room-lifecycle.js';
 import { YjsSession } from './yjs-session.js';
 import { PresenceView } from './presence-ui.js';
-import { base64FromUint8 } from './encoding.js';
+import { base64FromUint8, uint8FromBase64 } from './encoding.js';
 import {
   isCopyShortcut,
   isUndoShortcut,
@@ -107,6 +107,7 @@ export function createRoomApplication({
   let updateSender;
   let recoveryController;
   let checkpointWriter;
+  let recoveringJournal = false;
 
   const yjs = new YjsSession({
     Y,
@@ -159,6 +160,7 @@ export function createRoomApplication({
       recoveryController.schedule();
       joinOverlay.classList.add('hidden');
       sendCursor();
+      if (updateSender.pausedForJournal) void recoverJournal();
     },
     onJoinError: (error) => {
       joinError.textContent = error?.message || 'Failed to join room.';
@@ -206,6 +208,12 @@ export function createRoomApplication({
     onIdle: () => checkpointWriter.schedule(),
     onError: (error, permanent) => {
       if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
+      if (updateSender.pausedForJournal) {
+        setEditorReadOnly(true);
+        showSyncError('transport', 'The room journal is full. Recovering synchronization; keep this page open.');
+        void recoverJournal();
+        return;
+      }
       if (permanent) {
         setEditorReadOnly(true);
         showSyncError(
@@ -219,6 +227,62 @@ export function createRoomApplication({
         );
     }
   });
+
+  async function recoverJournal() {
+    if (recoveringJournal || !updateSender.pausedForJournal) return;
+    recoveringJournal = true;
+    const session = yjs.yjsSession;
+    try {
+      while (updateSender.pausedForJournal && !lifecycle.closed && session === yjs.yjsSession) {
+        if (!lifecycle.participating || connection.state !== signalR.HubConnectionState.Connected)
+          return;
+        try {
+          const sync = readSyncResult(await connection.invoke(HubMethods.SyncYjs, roomId));
+          if (session !== yjs.yjsSession || !lifecycle.participating) return;
+          const compact = new Y.Doc();
+          let args;
+          try {
+            if (sync.yjsState) Y.applyUpdate(compact, uint8FromBase64(sync.yjsState));
+            for (const item of sync.yjsUpdates)
+              Y.applyUpdate(compact, uint8FromBase64(item.Update ?? item.update));
+            args = [roomId, base64FromUint8(Y.encodeStateAsUpdate(compact)),
+              compact.getText('monaco').toString(), sync.documentRevision];
+          } finally {
+            compact.destroy();
+          }
+          checkCheckpointSize(
+            { stateBase64Length: args[1].length, textLength: args[2].length },
+            { maxEncodedCheckpointBytes, maxSnapshotCharacters }
+          );
+          if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
+            throw createHubError(HubErrorCode.LimitExceeded, 'CheckpointTooLarge');
+          const accepted = await connection.invoke(HubMethods.CheckpointYjs, ...args);
+          if (session !== yjs.yjsSession || !lifecycle.participating) return;
+          if (accepted) {
+            yjs.checkpointJournal.noteCheckpoint(sync.documentRevision);
+            updateSender.resumeAfterCheckpoint();
+            clearSyncError('transport');
+            setEditorReadOnly(false);
+            return;
+          }
+        } catch (error) {
+          if (classifyJournalRecoveryError(error)) {
+            showSyncError('checkpoint-size',
+              'The room state cannot be compacted. Copy your text before reloading.');
+            return;
+          }
+          if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+      }
+    } finally {
+      recoveringJournal = false;
+    }
+  }
+
+  function classifyJournalRecoveryError(error) {
+    return /LimitExceeded|too large/.test(String(error?.message));
+  }
 
   function syncState() {
     return {
