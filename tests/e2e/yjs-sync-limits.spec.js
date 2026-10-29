@@ -1,6 +1,7 @@
 import { csrf } from './admin-token.js';
 import { expect, test } from './fixtures.js';
 import * as Y from 'yjs';
+import { readFile } from 'node:fs/promises';
 import { advance } from './advance.js';
 
 async function createAndJoin(page, { clock = true } = {}) {
@@ -137,6 +138,9 @@ test('oversized edits remain local and visible without retrying the transport', 
   await insertText(page, 5000);
 
   await expect(page.locator('#syncError')).toContainText('some changes have not synced');
+  const downloaded = page.waitForEvent('download');
+  await page.locator('#downloadLocalText').click();
+  expect(await readFile(await (await downloaded).path(), 'utf8')).toBe('x'.repeat(5000));
   await advance(page, 1000);
   expect(updateMessages).toBe(0);
   expect(await page.evaluate(() => monaco.editor.getModels()[0].getValueLength())).toBe(

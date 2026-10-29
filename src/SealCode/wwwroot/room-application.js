@@ -110,6 +110,7 @@ export function createRoomApplication({
   let recoveryController;
   let checkpointWriter;
   let recoveringJournal = false;
+  let checkpointBlockedAtLength = null;
 
   const yjs = new YjsSession({
     Y,
@@ -407,11 +408,14 @@ export function createRoomApplication({
     },
     send: (args) => connection.invoke(HubMethods.CheckpointYjs, ...args),
     onSuccess: (revision) => {
+      checkpointBlockedAtLength = null;
       yjs.checkpointJournal.noteCheckpoint(revision);
       clearSyncError('checkpoint-size');
     },
     onError: (error, permanent) => {
       if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
+      if (permanent)
+        checkpointBlockedAtLength = model?.getValueLength() ?? null;
       if (permanent)
         showSyncError(
           'checkpoint-size',
@@ -619,6 +623,12 @@ export function createRoomApplication({
     yjs.editor = editor;
     editor.onDidChangeModelContent((event) => {
       if (yjs.isApplyingRemoteUpdate) return;
+      if (checkpointBlockedAtLength !== null &&
+          model.getValueLength() < checkpointBlockedAtLength &&
+          model.getValueLength() <= maxSnapshotCharacters) {
+        checkpointWriter.skippedRevision = -1;
+        checkpointBlockedAtLength = null;
+      }
       presence.hideRemoteCaretsTemporarily();
       yjs.applyRemoteCursorAdjustment(event.changes);
       presence.markActiveEditor(displayName);
