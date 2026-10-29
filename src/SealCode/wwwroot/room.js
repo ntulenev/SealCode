@@ -21,7 +21,11 @@ import { Awareness } from 'y-protocols/awareness';
         typescript: 'ts',
         javascript: 'ts'
       }[label] ?? 'editor';
-    return new Worker(`/assets/${name}.worker.js`, { type: 'module' });
+    // Relative module imports do not inherit a query string. Pass the entry
+    // point's asset version to workers explicitly so deployments refresh them too.
+    const entryUrl = new URL(import.meta.url);
+    const workerUrl = new URL(`${name}.worker.js${entryUrl.search}`, entryUrl);
+    return new Worker(workerUrl, { type: 'module' });
   }
 };
 

@@ -1,6 +1,43 @@
 import { expect, test } from './fixtures.js';
 import { csrf } from './admin-token.js';
 
+test('every page versions its assets, including images, icons and admin imports', async ({ page, request }) => {
+  const assetRequests = [];
+  const failures = [];
+  page.on('request', (request) => {
+    if (/\.(?:js|css|png|ico|ttf)$/.test(new URL(request.url()).pathname))
+      assetRequests.push(request.url());
+  });
+  page.on('pageerror', (error) => failures.push(error.message));
+  page.on('response', (response) => {
+    if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`);
+  });
+  const created = await request.post('/admin/rooms', {
+    headers: await csrf(request), data: { Name: 'Versioned assets', Language: 'javascript' }
+  });
+  let version;
+  for (const path of ['/', '/about.html', '/admin/login', '/admin', `/room/${(await created.json()).RoomId}`]) {
+    const response = await page.goto(path);
+    expect(response.headers()['cache-control']).toContain('no-cache');
+    const urls = await page.locator('script[src], link[rel="stylesheet"], link[rel="icon"], img[src]')
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute('src') || element.getAttribute('href')));
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      const assetVersion = new URL(url, page.url()).searchParams.get('v');
+      expect(assetVersion, url).toMatch(/^\d+\.\d+\.\d+$/);
+      version ??= assetVersion;
+      expect(assetVersion, url).toBe(version);
+    }
+    expect(await page.locator('img').evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
+  }
+  for (const url of assetRequests) {
+    const asset = new URL(url);
+    if (!/-[A-Z0-9]{8}\./.test(asset.pathname))
+      expect(asset.searchParams.get('v'), url).toBe(version);
+  }
+  expect(failures).toEqual([]);
+});
+
 test('room runs with local assets and CSP, including a language worker', async ({
   page,
   baseURL
@@ -41,7 +78,10 @@ test('room runs with local assets and CSP, including a language worker', async (
     const worker = await factory(model.uri);
     await worker.getSyntacticDiagnostics(model.uri.toString());
   });
-  expect(workers.some((url) => url.endsWith('/assets/ts.worker.js'))).toBeTruthy();
+  const entryUrl = await page.locator('script[src*="/assets/room.js"]').getAttribute('src');
+  const version = new URL(entryUrl, baseURL).searchParams.get('v');
+  expect(workers.some((url) => new URL(url).pathname === '/assets/ts.worker.js')).toBeTruthy();
+  for (const url of workers) expect(new URL(url).searchParams.get('v')).toBe(version);
   expect(external).toEqual([]);
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => window.cspViolations)).toEqual([]);

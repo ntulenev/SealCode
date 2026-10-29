@@ -4,6 +4,8 @@ rmSync('src/SealCode/wwwroot/assets', { recursive: true, force: true });
 await build({
   entryPoints: {
     room: 'src/SealCode/wwwroot/room.js',
+    'admin-main': 'src/SealCode/wwwroot/admin-main.js',
+    'admin-token-main': 'src/SealCode/wwwroot/admin-token-main.js',
     'editor.worker': 'node_modules/monaco-editor/esm/vs/editor/editor.worker.js',
     'json.worker': 'node_modules/monaco-editor/esm/vs/language/json/json.worker.js',
     'css.worker': 'node_modules/monaco-editor/esm/vs/language/css/css.worker.js',

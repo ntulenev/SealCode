@@ -91,7 +91,7 @@ test('join controls wait for the editor bundle before accepting input', async ({
   const roomPath = `/room/${(await created.json()).RoomId}`;
   let release;
   const editorReady = new Promise((done) => { release = done; });
-  await page.route('**/assets/room.js', async (route) => { await editorReady; await route.continue(); });
+  await page.route('**/assets/room.js?*', async (route) => { await editorReady; await route.continue(); });
   try {
     await page.goto(roomPath, { waitUntil: 'commit' });
     await expect(page.locator('#displayNameInput')).toBeDisabled();
