@@ -5,15 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="A small, shared workspace for writing code together." />
   <title>SealCode — code together</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.9.0" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=1.9.0" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=1.9.0" />
-  <script src="/theme.js?v=1.9.0"></script>
-  <link rel="stylesheet" href="/site.css?v=1.9.0" />
-  <script src="/version.js?v=1.9.0" defer></script>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.9.1" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=1.9.1" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=1.9.1" />
+  <script src="/theme.js?v=1.9.1"></script>
+  <link rel="stylesheet" href="/site.css?v=1.9.1" />
+  <link rel="stylesheet" href="/seal-mascot.css?v=1.9.1" />
+  <script src="/version.js?v=1.9.1" defer></script>
 </head>
 <body class="home-page">
-  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png?v=1.9.0" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/about.html">About</a><a href="/admin/login">Manage rooms <span aria-hidden="true">↗</span></a><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png?v=1.9.1" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/about.html">About</a><a href="/admin/login">Manage rooms <span aria-hidden="true">↗</span></a><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
   <main class="home-main">
     <section class="hero" aria-labelledby="home-title">
       <div class="hero-content">
@@ -28,11 +29,54 @@
         </form>
         <p class="hero-hint">Need a room? <a href="/admin/login">Open room management <span aria-hidden="true">↗</span></a></p>
       </div>
-      <div class="hero-art"><img src="/Logo.png?v=1.9.0" width="1355" height="1161" alt="A confident pixel-art seal writing code on a laptop" fetchpriority="high" /></div>
+      <div class="hero-art">
+        <svg class="seal-mascot" viewBox="0 0 1355 1161" width="1355" height="1161" role="img" aria-label="A pixel-art seal typing on a laptop and occasionally looking up at you" focusable="false" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <image id="seal-artwork" href="/Logo.png?v=1.9.1" width="1355" height="1161" />
+            <clipPath id="seal-paw-near"><path d="M478 631 526 678 568 707 641 741 691 783 716 808 716 841 690 850 671 838 651 852 619 833 559 836 538 812 487 777 460 716Z" /></clipPath>
+            <clipPath id="seal-paw-far"><path d="M780 663 808 680 818 695 851 710 879 731 890 755 888 781 872 789 850 779 830 793 805 775 778 747 767 711Z" /></clipPath>
+            <mask id="seal-keyboard" maskUnits="userSpaceOnUse" x="0" y="0" width="1355" height="1161">
+              <rect width="1355" height="1161" fill="white" />
+              <path d="M619 797 673 786 716 808 716 841 690 850 671 838 651 852 619 833Z M818 737 875 732 890 755 888 781 872 789 850 779 830 793 818 775Z" fill="black" />
+            </mask>
+            <clipPath id="seal-eye-near"><path d="M598 446H695V479H687V491H676V499H640V494H625V485H608V479H598Z" /></clipPath>
+            <clipPath id="seal-eye-far"><path d="M808 458 852 449V482L845 500 831 506 817 497 808 483Z" /></clipPath>
+          </defs>
+          <path d="M619 797 673 786 716 808 716 841 690 850 671 838 651 852 619 833Z M818 737 875 732 890 755 888 781 872 789 850 779 830 793 818 775Z" fill="#0b1020" />
+          <use href="#seal-artwork" mask="url(#seal-keyboard)" />
+          <g class="seal-paw seal-paw-far"><use href="#seal-artwork" clip-path="url(#seal-paw-far)" /></g>
+          <g class="seal-paw seal-paw-near"><use href="#seal-artwork" clip-path="url(#seal-paw-near)" /></g>
+          <!-- Fixed eye sockets keep the pupils tucked under the upper lids. -->
+          <path d="M584 432H704V482H694V497H680V507H626V497H607V488H594V482H584Z M798 454 862 439 862 483 850 509 830 518 808 505Z" fill="#fff8e3" />
+          <g class="seal-eye seal-eye-near">
+            <path d="M598 446H695V479H687V491H676V499H640V494H625V485H608V479H598Z" fill="#f8f7ee" />
+            <g clip-path="url(#seal-eye-near)">
+              <g class="seal-gaze seal-gaze-near">
+                <path d="M622 425H702V475H694V488H682V498H644V492H632V483H622Z" fill="#080e1d" />
+                <path d="M625 448H637V461H625Z" fill="#fff" />
+                <path d="M652 479H665V484H671V491H658V495H647V486H652Z" fill="#48bcf5" />
+                <path d="M657 480H664V487H657Z" fill="#d8f7ff" />
+              </g>
+            </g>
+            <path d="M586 435H655V440H681V443H700V453H665V449H607V477H598V453H586Z" fill="#0b1020" />
+          </g>
+          <g class="seal-eye seal-eye-far">
+            <path d="M808 458 852 449V482L845 500 831 506 817 497 808 483Z" fill="#f8f7ee" />
+            <g clip-path="url(#seal-eye-far)">
+              <g class="seal-gaze seal-gaze-far">
+                <path d="M819 436H857V482H849V497H840V505H827V496H819Z" fill="#080e1d" />
+                <path d="M819 461H829V472H819Z" fill="#fff" />
+                <path d="M833 486H841V494H833V499H827V491H833Z" fill="#48bcf5" />
+                <path d="M833 487H838V492H833Z" fill="#d8f7ff" />
+              </g>
+            </g>
+            <path d="M802 455 861 440V450L813 463V482H803Z" fill="#0b1020" />
+          </g>
+        </svg></div>
     </section>
     <div class="home-details"><span>01 <strong>Live editing</strong></span><span>02 <strong>Shared cursors</strong></span><span>03 <strong>Just send a link</strong></span></div>
   </main>
   <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
-  <script src="/home.js?v=1.9.0" defer></script>
+  <script src="/home.js?v=1.9.1" defer></script>
 </body>
 </html>
