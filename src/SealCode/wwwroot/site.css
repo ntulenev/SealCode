@@ -29,6 +29,9 @@ body {
 
 .site-logo img {
   display: block;
+  width: 297px;
+  max-width: 100%;
+  height: auto;
   transform: scale(0.68);
   transform-origin: top center;
   margin-bottom: -18px;
