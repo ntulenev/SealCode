@@ -97,16 +97,19 @@ internal sealed class RoomDocumentJournal
         }
         if (revision != DocumentRevision)
         {
+            RoomMetrics.CheckpointStale.Add(1);
             return false;
         }
         if (Base64Size.EncodedLength(state.Length) > _limits.MaxEncodedCheckpointBytes
             || text.Value.Length > _limits.MaxSnapshotCharacters)
         {
+            RoomMetrics.CheckpointRejected.Add(1);
             throw new RoomLimitException("CheckpointTooLarge");
         }
         _state = [.. state];
         YjsCheckpointRevision = revision;
         Clear();
+        RoomMetrics.CheckpointAccepted.Add(1);
         return true;
     }
 

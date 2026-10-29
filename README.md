@@ -404,6 +404,10 @@ Eligibility is checked again under the room lock before deletion. A concurrent p
 
 Configure these values in the `Limits` section:
 
+The section is optional: omitting it keeps the defaults defined in `RoomLimits`.
+It does not disable resource limits. These are admission and payload budgets, not
+a cap on the process's total RAM or a measured capacity guarantee.
+
 | Setting | Default | Budget |
 | --- | --- | --- |
 | `MaxEncodedUpdateBytes` | 4 MiB | Base64 characters per update |
@@ -420,22 +424,41 @@ Configure these values in the `Limits` section:
 
 For deployments behind shared NAT or proxies, increase `Limits:NewConnectionsPerSourcePerMinute`
 and `Limits:MaxConnectionsPerSource` to accommodate reconnect bursts and concurrent users.
+A browser tab consumes a connection slot. The 160 global slots exactly match
+32 full five-participant rooms and leave no reconnect reserve at that extreme.
+Empty rooms still count toward `MaxRooms`; with expiration disabled, delete them
+administratively to free slots. The new-connection limiter uses 256 bounded hash
+buckets, so unrelated source addresses can share a minute's allowance.
 A source is one IPv4 address or one IPv6 /64 prefix. IPv4-mapped IPv6 addresses use
 their IPv4 address; missing addresses share `unknown`. Configure `TrustedProxies`
 so the source address reflects the intended client boundary. Connections that do
 not join a room before `UnjoinedConnectionTimeoutSeconds` are closed.
 
 Defaults were verified with 500,000-character documents. Combined limits must fit a worst-case **16 MiB synchronization response**; invalid settings fail startup.
+The tested document size is not a guaranteed maximum for every editing history:
+Yjs metadata and locally retained undo content can change checkpoint size.
+For example, 4 MiB of Base64 checkpoint data represents roughly 3 MiB of
+decoded CRDT state; `MaxSnapshotCharacters` counts UTF-16 code units, not bytes.
+An update can temporarily take the live document beyond the snapshot limit.
+When a checkpoint cannot be written, the journal continues to grow until the
+document is reduced or its quota is reached. Use **Download local text** from a
+size warning before leaving the tab if changes are unsynced.
 
 ### Client limits and quota handling
 
 The browser pending/delivery budgets are **8 MiB / 2048 entries**.
 
-- A permanent refusal retains visible unsynced text and stops retries. **Copy the text before reloading.**
+- A permanently oversized update retains visible unsynced text and stops retries.
+  **Copy or download the text before reloading.** A full journal triggers a
+  checkpoint of the acknowledged server state, then retries queued edits.
 - A valid checkpoint frees journal capacity.
 - Accepted updates are never evicted to satisfy a quota.
 
 Resource counters are available from the `SealCode.Rooms` and `SealCode.Hub` diagnostic meters without document content.
+They include journal size/count, checkpoint outcomes, throttling and active hub
+connections. Run a load test on the intended host before sizing the process for
+many simultaneously active rooms: a connection count and a 16 MiB message limit
+do not bound transient allocations from serialization or document recovery.
 
 ### Checkpoint thresholds
 
