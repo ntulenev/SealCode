@@ -24,6 +24,30 @@
   --mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
 }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --input: #ffffff;
+  --editor-bg: #ffffff;
+  --text: #202a38;
+  --muted: #5a687a;
+  --accent: #086c9d;
+  --accent-hover: #07597f;
+  --accent-text: #ffffff;
+  --accent-soft: #e4f1f8;
+  --border: #c3cedb;
+  --line: #dce3ec;
+  --error: #b62e3a;
+  --overlay: #16253c65;
+  --selection: #c5e6f7;
+  --success: #187342;
+  --active-bg: #e0f3e9;
+  --selecting-bg: #fff0cd;
+  --selecting-text: #855500;
+  --copying-bg: #ffe9e9;
+  --copying-text: #a62935;
+}
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100svh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
 ::selection { background: var(--selection); color: var(--text); }
@@ -59,6 +83,11 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
 .header-actions a { color: var(--muted); white-space: nowrap; }
 .header-actions a:hover { color: var(--text); }
 .header-actions form { margin: 0; }
+.theme-toggle { min-height: 40px; padding: 8px 10px; gap: 8px; border-color: var(--border); background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; }
+.theme-toggle:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+.theme-toggle svg { width: 16px; height: 16px; flex-shrink: 0; }
+.theme-toggle .icon-moon, :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-moon { display: block; }
 .site-footer { width: min(1200px, 100%); margin: auto auto 0; padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; color: var(--muted); font-size: 12px; }
 .site-footer a { color: var(--muted); }
 .app-version { font: 11px/1.5 var(--mono); }
@@ -118,6 +147,9 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
   .brand { font-size: 18px; gap: 6px; }
   .brand img { width: 42px; height: 36px; }
   .header-actions { gap: 14px; font-size: 12px; }
+  .header-actions .theme-toggle [data-theme-label] { display: none; }
+  .header-actions .theme-toggle { min-width: 40px; padding: 10px; }
+  .header-actions button.ghost { padding-inline: 12px; }
   .home-page .header-actions > a:first-child { display: none; }
   .hero { grid-template-columns: 1fr; gap: 8px; padding: 8px 24px 16px; }
   .hero-art { grid-row: 1; width: 200px; margin: 0 auto; }

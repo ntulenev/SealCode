@@ -11,6 +11,7 @@ For a description of how the backend and real-time collaboration work, see [Back
 ## Features
 
 - Real-time multi-user editing with presence and cursors.
+- Dark and light themes across the site and editor, with a browser-local preference.
 - Selective local undo/redo that preserves concurrent edits from other users.
 - Shared language switching by any participant; the checked-in configuration offers C#, SQL and JavaScript.
 - Participant list with cursor line/column and typing, selection and copy indicators.
@@ -220,6 +221,12 @@ are rejected before Base64 decoding, with the locked check remaining authoritati
 
 
 ## UI Indication
+
+The header's theme button switches the interface and Monaco editor between dark
+and light. Dark is the default. The choice is saved in this browser's local storage
+under `sealcode.theme`, persists across pages and reloads, and synchronizes between
+tabs. If browser storage is blocked, switching still works for the current page.
+Theme changes preserve the document, selection, and undo history.
 
 The user's cursor position is displayed in the following format:
 

@@ -71,7 +71,11 @@ async function undoAll(page) {
 
 async function typeLines(page, lines) {
   for (let i = 0; i < lines.length; i += 1) {
-    if (i > 0) await page.keyboard.press('Enter');
+    if (i > 0) {
+      // This scenario inserts new lines; a word suggestion can otherwise consume Enter.
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Enter');
+    }
     await page.keyboard.type(lines[i]);
   }
 }

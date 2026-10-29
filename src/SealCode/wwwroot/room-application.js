@@ -723,4 +723,8 @@ export function createRoomApplication({
   });
 
   initMonaco();
+  // The native form must stay inert until its click handler and editor are ready.
+  joinBtn.querySelector('[data-join-label]').textContent = 'Join room';
+  displayNameInput.disabled = false;
+  joinBtn.disabled = false;
 }
