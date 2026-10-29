@@ -116,6 +116,13 @@ test('oversized checkpoints are skipped without retries or lost incremental chan
     Y.applyUpdate(doc, Buffer.from(update.Update, 'base64'));
   expect(doc.getText('monaco').toString()).toBe('x'.repeat(2063));
   doc.destroy();
+  await page.evaluate(() => {
+    const model = monaco.editor.getModels()[0];
+    model.applyEdits([{ range: model.getFullModelRange(), text: '' }]);
+  });
+  await advance(page, 1500);
+  await expect.poll(async () => (await syncState(page, roomId)).CheckpointRevision)
+    .toBeGreaterThan(0);
   await page.evaluate(() => probe.stop());
 });
 
