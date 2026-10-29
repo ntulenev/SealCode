@@ -5,6 +5,8 @@ using Microsoft.Extensions.Options;
 using Models;
 using Models.Configuration;
 
+using SealCode.Security;
+
 namespace SealCode.Hosting;
 
 /// <summary>
@@ -49,6 +51,17 @@ internal static class EndpointRouteBuilderExtensions
             var path = Path.Combine(env.WebRootPath, "room.html");
             StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
+        });
+
+        _ = app.MapGet("/room/{roomId:ShortGuid}/permissions",
+            (RoomId roomId, IRoomManager roomManager, IAdminUserManager adminUserManager, HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            // Guests need a normal response when deciding whether to show admin controls.
+            var canDelete = adminUserManager.TryGetAdminUser(out var adminUser)
+                && roomManager.TryGetRoom(roomId, out var room)
+                && room.CanDelete(adminUser);
+            return Results.Json(new { CanDelete = canDelete });
         });
 
         _ = app.MapGet("/health", () => Results.Ok("ok"));

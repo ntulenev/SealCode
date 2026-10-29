@@ -87,11 +87,11 @@ test('admin deletes a joined room without opening the admin page', async ({ page
     await guest.locator('#displayNameInput').fill('Candidate');
     const denied = guest.waitForResponse(
       (response) =>
-        response.url().endsWith(`/admin/rooms/${roomId}`) && response.status() === 401,
+        response.url().endsWith(`/room/${roomId}/permissions`) && response.status() === 200,
       { timeout: 10000 }
     );
     await guest.locator('#joinBtn').click();
-    await denied;
+    expect(await (await denied).json()).toEqual({ CanDelete: false });
     await expect(guest.locator('#joinOverlay')).toHaveClass(/hidden/);
     await expect(guest.locator('#deleteRoom')).toBeHidden();
 

@@ -133,7 +133,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         var rootRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
         rootRooms.Should().HaveCount(2);
         rootRooms!.All(room => room.GetProperty("CanDelete").GetBoolean()).Should().BeTrue();
-        var rootPermission = await client.GetFromJsonAsync<JsonElement>($"/admin/rooms/{otherId}");
+        var rootPermission = await client.GetFromJsonAsync<JsonElement>($"/room/{otherId}/permissions");
         rootPermission.GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         owner = await LoginAsAdminAsync(client);
         client.DefaultRequestHeaders.Remove("Cookie");
@@ -142,9 +142,9 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         rooms.Should().HaveCount(2);
         rooms!.Single(room => room.GetProperty("RoomId").GetString() == ownId).GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         rooms.Single(room => room.GetProperty("RoomId").GetString() == otherId).GetProperty("CanDelete").GetBoolean().Should().BeFalse();
-        var ownPermission = await client.GetFromJsonAsync<JsonElement>($"/admin/rooms/{ownId}");
+        var ownPermission = await client.GetFromJsonAsync<JsonElement>($"/room/{ownId}/permissions");
         ownPermission.GetProperty("CanDelete").GetBoolean().Should().BeTrue();
-        var otherPermission = await client.GetFromJsonAsync<JsonElement>($"/admin/rooms/{otherId}");
+        var otherPermission = await client.GetFromJsonAsync<JsonElement>($"/room/{otherId}/permissions");
         otherPermission.GetProperty("CanDelete").GetBoolean().Should().BeFalse();
         using var missingPermission = await client.GetAsync($"/admin/rooms/{RoomId.New().Value}");
         missingPermission.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -272,6 +272,21 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         using var roomPermission = await client.GetAsync($"/admin/rooms/{RoomId.New().Value}");
         roomPermission.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GuestRoomPermissionsReturnFalseWithoutBrowserErrors()
+    {
+        using var factory = CreateFactory();
+        using var admin = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var owner = await LoginAsAdminAsync(admin);
+        var roomId = await CreateRoomAsync(admin, owner);
+        using var guest = factory.CreateClient();
+        using var response = await guest.GetAsync($"/room/{roomId}/permissions");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var permission = await response.Content.ReadFromJsonAsync<JsonElement>();
+        permission.GetProperty("CanDelete").GetBoolean().Should().BeFalse();
     }
 
     [Fact(DisplayName = "POST /admin/rooms returns unauthorized without cookie")]

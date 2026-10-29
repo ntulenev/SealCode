@@ -11,7 +11,7 @@ export function createRoomDeletion({ button, error, roomId, window, fetch, isClo
   async function refresh() {
     hide();
     try {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(`/room/${encodeURIComponent(roomId)}/permissions`, { cache: 'no-store' });
       if (!response.ok || response.redirected || isClosed()) return;
       const permissions = await response.json();
       if (permissions.CanDelete && !isClosed()) button.classList.remove('hidden');
