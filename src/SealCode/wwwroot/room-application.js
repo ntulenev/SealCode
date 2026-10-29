@@ -158,6 +158,7 @@ export function createRoomApplication({
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
+      setStatus('connected');
       setEditorReadOnly(false);
       setLanguageReadOnly(false);
       clearSyncError('rejoin');

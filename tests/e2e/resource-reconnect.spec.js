@@ -18,18 +18,16 @@ test('a refused initial connection joins after its source slot is released', asy
     expect(created.ok()).toBeTruthy();
     const roomId = (await created.json()).RoomId;
     await holder.goto(`/room/${roomId}`);
-    await holder.evaluate(async (id) => {
-      window.holder = new signalR.HubConnectionBuilder().withUrl('/roomHub').build();
-      await window.holder.start();
-      await window.holder.invoke('JoinRoom', id, 'Holder');
-    }, roomId);
+    await holder.locator('#displayNameInput').fill('Holder');
+    await holder.locator('#joinBtn').click();
+    await expect(holder.locator('#joinOverlay')).toHaveClass(/hidden/);
 
     const waiting = await context.newPage();
     await waiting.goto(`/room/${roomId}`);
     await waiting.locator('#displayNameInput').fill('Waiting');
     await waiting.locator('#joinBtn').click();
     await expect(waiting.locator('#joinOverlay')).toBeVisible();
-    await holder.evaluate(() => window.holder.stop());
+    await holder.close();
     await expect(waiting.locator('#joinOverlay')).toHaveClass(/hidden/, { timeout: 30000 });
     await expect(waiting.locator('#connectionStatus')).toHaveText('connected');
   } finally {
