@@ -22,8 +22,17 @@ internal static class RoomMetrics
     /// </summary>
     internal static UpDownCounter<long> JournalEntries => _journalEntries;
 
+    internal static Counter<long> CheckpointAccepted => _checkpointAccepted;
+
+    internal static Counter<long> CheckpointStale => _checkpointStale;
+
+    internal static Counter<long> CheckpointRejected => _checkpointRejected;
+
     private static readonly Meter _meter = new("SealCode.Rooms");
     private static readonly Counter<long> _rejectedUpdates = _meter.CreateCounter<long>("room.updates.rejected");
     private static readonly UpDownCounter<long> _journalSize = _meter.CreateUpDownCounter<long>("room.journal.bytes");
     private static readonly UpDownCounter<long> _journalEntries = _meter.CreateUpDownCounter<long>("room.journal.count");
+    private static readonly Counter<long> _checkpointAccepted = _meter.CreateCounter<long>("room.checkpoint.accepted");
+    private static readonly Counter<long> _checkpointStale = _meter.CreateCounter<long>("room.checkpoint.stale");
+    private static readonly Counter<long> _checkpointRejected = _meter.CreateCounter<long>("room.checkpoint.rejected");
 }

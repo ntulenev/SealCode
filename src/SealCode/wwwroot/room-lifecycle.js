@@ -43,7 +43,8 @@ export class RoomLifecycle {
     resetTransport,
     setTimer = (fn, delay) => setTimeout(fn, delay),
     clearTimer = (timer) => clearTimeout(timer),
-    rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000]
+    rejoinRetryDelaysMs = [500, 1000, 2000, 5000, 10000],
+    random = Math.random
   }) {
     this.connection = connection;
     this.roomId = roomId;
@@ -65,6 +66,7 @@ export class RoomLifecycle {
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.rejoinRetryDelaysMs = rejoinRetryDelaysMs;
+    this.random = random;
     this.closed = false;
     this.joined = false;
     this.participating = false;
@@ -72,6 +74,9 @@ export class RoomLifecycle {
     this.rejoinToken = 0;
     this.retryTimer = null;
     this.retryAttempt = 0;
+    this.transportRetryAttempt = 0;
+    this.transportStarting = false;
+    this.initialJoinRequested = false;
   }
 
   clearRejoinRetryTimer() {
@@ -79,9 +84,37 @@ export class RoomLifecycle {
     this.clearTimer(this.retryTimer);
     this.retryTimer = null;
   }
+  scheduleTransportRetry() {
+    if (this.closed || (!this.joined && !this.initialJoinRequested) || this.retryTimer || this.transportStarting) return;
+    const base = Math.min(30000, 3000 * 2 ** Math.min(this.transportRetryAttempt++, 4));
+    const delay = Math.round(base * (0.8 + 0.4 * this.random()));
+    this.retryTimer = this.setTimer(async () => {
+      this.retryTimer = null;
+      if (this.closed || (!this.joined && !this.initialJoinRequested) || this.transportStarting) return;
+      this.transportStarting = true;
+      let started = false;
+      try {
+        started = await this.start();
+      } catch (error) {
+        console.warn('Failed to reconnect to the room.', error);
+      } finally {
+        this.transportStarting = false;
+      }
+      if (this.closed || (!this.joined && !this.initialJoinRequested)) return;
+      if (started && this.connection.state === this.connectedState) {
+        this.transportRetryAttempt = 0;
+        if (this.joined) await this.rejoinRoomWithRetry();
+        else if (!(await this.joinRoom()) && this.initialJoinRequested)
+          this.scheduleTransportRetry();
+      } else {
+        this.scheduleTransportRetry();
+      }
+    }, delay);
+  }
 
   async joinRoom() {
     if (this.closed) return false;
+    this.initialJoinRequested = true;
     this.participating = false;
     this.onJoinStart();
     this.session.isSynchronizingYjs = true;
@@ -95,12 +128,16 @@ export class RoomLifecycle {
       if (this.closed || epoch !== this.session.synchronizationEpoch) return false;
       this.applyJoin(result);
       this.joined = true;
+      this.initialJoinRequested = false;
       this.participating = true;
       this.retryAttempt = 0;
       this.clearRejoinRetryTimer();
       this.onJoinSuccess();
       return true;
     } catch (error) {
+      if (classifyHubError(error) !== HubErrorCode.RateLimited &&
+          this.connection.state === this.connectedState)
+        this.initialJoinRequested = false;
       if (isRoomNotFound(error)) {
         this.closeRoom('Room not found.');
         return false;
@@ -134,6 +171,7 @@ export class RoomLifecycle {
     if (token !== this.rejoinToken) return;
     if (joined) {
       this.retryAttempt = 0;
+      this.transportRetryAttempt = 0;
       this.setStatus('connected');
       this.setReadOnly(false);
       this.onSynchronizationEnd();
@@ -157,6 +195,7 @@ export class RoomLifecycle {
   closeRoom(reason) {
     if (this.closed) return;
     this.closed = true;
+    this.initialJoinRequested = false;
     this.joined = false;
     this.participating = false;
     this.session.synchronizationEpoch += 1;
@@ -195,7 +234,10 @@ export class RoomLifecycle {
       this.setStatus('connected');
     });
     this.connection.onreconnecting(() => this.pause('reconnecting'));
-    this.connection.onclose(() => this.pause('disconnected'));
+    this.connection.onclose(() => {
+      this.pause('disconnected');
+      this.scheduleTransportRetry();
+    });
     events.addEventListener('offline', () => {
       if (!this.joined || this.closed) return;
       this.session.synchronizationEpoch += 1;

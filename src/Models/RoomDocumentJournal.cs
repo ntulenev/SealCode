@@ -60,11 +60,15 @@ internal sealed class RoomDocumentJournal
             throw new ArgumentException("Document update cannot be empty.", nameof(update));
         }
         if (Base64Size.EncodedLength(update.Length) > _limits.MaxEncodedUpdateBytes
-            || Bytes + update.Length > _limits.MaxJournalBytes
-            || Count >= _limits.MaxJournalCount)
+            || update.Length > _limits.MaxJournalBytes)
         {
             RoomMetrics.RejectedUpdates.Add(1);
-            throw new RoomLimitException();
+            throw new RoomLimitException("UpdateTooLarge");
+        }
+        if (Bytes + update.Length > _limits.MaxJournalBytes || Count >= _limits.MaxJournalCount)
+        {
+            RoomMetrics.RejectedUpdates.Add(1);
+            throw new RoomLimitException("JournalFull");
         }
         DocumentRevision = DocumentRevision.Next();
         _updates.Add(new RoomDocumentUpdate(DocumentRevision, update));
@@ -93,16 +97,19 @@ internal sealed class RoomDocumentJournal
         }
         if (revision != DocumentRevision)
         {
+            RoomMetrics.CheckpointStale.Add(1);
             return false;
         }
         if (Base64Size.EncodedLength(state.Length) > _limits.MaxEncodedCheckpointBytes
             || text.Value.Length > _limits.MaxSnapshotCharacters)
         {
-            throw new RoomLimitException();
+            RoomMetrics.CheckpointRejected.Add(1);
+            throw new RoomLimitException("CheckpointTooLarge");
         }
         _state = [.. state];
         YjsCheckpointRevision = revision;
         Clear();
+        RoomMetrics.CheckpointAccepted.Add(1);
         return true;
     }
 

@@ -3,7 +3,7 @@
 import { RoomLifecycle, isRoomNotFound, registerHubHandlers } from './room-lifecycle.js';
 import { YjsSession } from './yjs-session.js';
 import { PresenceView } from './presence-ui.js';
-import { base64FromUint8 } from './encoding.js';
+import { base64FromUint8, uint8FromBase64 } from './encoding.js';
 import {
   isCopyShortcut,
   isUndoShortcut,
@@ -30,6 +30,7 @@ import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
 import { readClientLimits, checkCheckpointSize, timeoutSignal } from './client-limits.js';
 import { SyncErrors } from './sync-errors.js';
+import { compactCheckpoint } from './compact-checkpoint.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
 
@@ -60,10 +61,12 @@ export function createRoomApplication({
     syncError
   } = elements;
   const syncErrors = new SyncErrors();
+  const downloadLocalText = document.getElementById('downloadLocalText');
   let collaborativeUndoEnabled = true;
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
   let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
   let maxSnapshotCharacters = 1024 * 1024;
+  let textSizeExceeded = false;
 
   let displayName = '';
   const presence = new PresenceView({
@@ -107,6 +110,8 @@ export function createRoomApplication({
   let updateSender;
   let recoveryController;
   let checkpointWriter;
+  let recoveringJournal = false;
+  let checkpointBlockedAtLength = null;
 
   const yjs = new YjsSession({
     Y,
@@ -154,11 +159,15 @@ export function createRoomApplication({
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
+      setStatus('connected');
+      setEditorReadOnly(false);
+      setLanguageReadOnly(false);
       clearSyncError('rejoin');
       lastSentSelectionMultiLine = undefined;
       recoveryController.schedule();
       joinOverlay.classList.add('hidden');
       sendCursor();
+      if (updateSender.pausedForJournal) void recoverJournal();
     },
     onJoinError: (error) => {
       joinError.textContent = error?.message || 'Failed to join room.';
@@ -206,6 +215,12 @@ export function createRoomApplication({
     onIdle: () => checkpointWriter.schedule(),
     onError: (error, permanent) => {
       if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
+      if (updateSender.pausedForJournal) {
+        setEditorReadOnly(true);
+        showSyncError('transport', 'The room journal is full. Recovering synchronization; keep this page open.');
+        void recoverJournal();
+        return;
+      }
       if (permanent) {
         setEditorReadOnly(true);
         showSyncError(
@@ -219,6 +234,62 @@ export function createRoomApplication({
         );
     }
   });
+
+  async function recoverJournal() {
+    if (recoveringJournal || !updateSender.pausedForJournal) return;
+    recoveringJournal = true;
+    const session = yjs.yjsSession;
+    try {
+      while (updateSender.pausedForJournal && !lifecycle.closed && session === yjs.yjsSession) {
+        if (!lifecycle.participating || connection.state !== signalR.HubConnectionState.Connected)
+          return;
+        try {
+          const sync = readSyncResult(await connection.invoke(HubMethods.SyncYjs, roomId));
+          if (session !== yjs.yjsSession || !lifecycle.participating) return;
+          const compact = new Y.Doc();
+          let args;
+          try {
+            if (sync.yjsState) Y.applyUpdate(compact, uint8FromBase64(sync.yjsState));
+            for (const item of sync.yjsUpdates)
+              Y.applyUpdate(compact, uint8FromBase64(item.Update ?? item.update));
+            args = [roomId, base64FromUint8(Y.encodeStateAsUpdate(compact)),
+              compact.getText('monaco').toString(), sync.documentRevision];
+          } finally {
+            compact.destroy();
+          }
+          checkCheckpointSize(
+            { stateBase64Length: args[1].length, textLength: args[2].length },
+            { maxEncodedCheckpointBytes, maxSnapshotCharacters }
+          );
+          if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
+            throw createHubError(HubErrorCode.LimitExceeded, 'CheckpointTooLarge');
+          const accepted = await connection.invoke(HubMethods.CheckpointYjs, ...args);
+          if (session !== yjs.yjsSession || !lifecycle.participating) return;
+          if (accepted) {
+            yjs.checkpointJournal.noteCheckpoint(sync.documentRevision);
+            updateSender.resumeAfterCheckpoint();
+            clearSyncError('transport');
+            setEditorReadOnly(false);
+            return;
+          }
+        } catch (error) {
+          if (classifyJournalRecoveryError(error)) {
+            showSyncError('checkpoint-size',
+              'The room state cannot be compacted. Copy your text before reloading.');
+            return;
+          }
+          if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+      }
+    } finally {
+      recoveringJournal = false;
+    }
+  }
+
+  function classifyJournalRecoveryError(error) {
+    return /LimitExceeded|too large/.test(String(error?.message));
+  }
 
   function syncState() {
     return {
@@ -322,10 +393,11 @@ export function createRoomApplication({
     current: isCurrentSyncContext,
     revision: () => yjs.currentDocumentRevision,
     payload: (revision) => {
+      const compact = compactCheckpoint(Y, yjs.ydoc);
       const args = [
         roomId,
-        base64FromUint8(Y.encodeStateAsUpdate(yjs.ydoc)),
-        yjs.ytext.toString(),
+        base64FromUint8(compact.state),
+        compact.text,
         revision
       ];
       checkCheckpointSize(
@@ -338,11 +410,14 @@ export function createRoomApplication({
     },
     send: (args) => connection.invoke(HubMethods.CheckpointYjs, ...args),
     onSuccess: (revision) => {
+      checkpointBlockedAtLength = null;
       yjs.checkpointJournal.noteCheckpoint(revision);
       clearSyncError('checkpoint-size');
     },
     onError: (error, permanent) => {
       if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
+      if (permanent)
+        checkpointBlockedAtLength = model?.getValueLength() ?? null;
       if (permanent)
         showSyncError(
           'checkpoint-size',
@@ -386,7 +461,22 @@ export function createRoomApplication({
     syncError.dataset.kind = error?.kind ?? '';
     syncError.textContent = error?.message ?? '';
     syncError.classList.toggle('hidden', error === null);
+    downloadLocalText?.classList.toggle(
+      'hidden', !['update-size', 'text-size', 'checkpoint-size'].includes(error?.kind)
+    );
   }
+  downloadLocalText?.addEventListener('click', () => {
+    if (!model) return;
+    const blob = new Blob([model.getValue()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sealcode-${roomId}.txt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
 
   function showSyncError(kind, message) {
     renderSyncError(syncErrors.show(kind, message));
@@ -534,7 +624,22 @@ export function createRoomApplication({
     presence.editor = editor;
     yjs.editor = editor;
     editor.onDidChangeModelContent((event) => {
+      const exceedsTextLimit = model.getValueLength() > maxSnapshotCharacters;
+      if (exceedsTextLimit !== textSizeExceeded) {
+        textSizeExceeded = exceedsTextLimit;
+        if (exceedsTextLimit)
+          showSyncError('text-size',
+            `The document exceeds the ${maxSnapshotCharacters}-character snapshot limit. Reduce its size or download local text before leaving.`);
+        else
+          clearSyncError('text-size');
+      }
       if (yjs.isApplyingRemoteUpdate) return;
+      if (checkpointBlockedAtLength !== null &&
+          model.getValueLength() < checkpointBlockedAtLength &&
+          model.getValueLength() <= maxSnapshotCharacters) {
+        checkpointWriter.skippedRevision = -1;
+        checkpointBlockedAtLength = null;
+      }
       presence.hideRemoteCaretsTemporarily();
       yjs.applyRemoteCursorAdjustment(event.changes);
       presence.markActiveEditor(displayName);
@@ -694,19 +799,21 @@ export function createRoomApplication({
     displayNameInput.disabled = true;
     try {
       await Promise.all([editorReady, featuresReady, languagesReady]);
+      lifecycle.initialJoinRequested = true;
       if (connection.state === signalR.HubConnectionState.Disconnected) {
         const started = await connectionLifecycle.start();
         if (!started) {
           setStatus('disconnected');
-          joinError.textContent = 'Failed to connect. Try again.';
+          joinError.textContent = 'Waiting to reconnect. Keep this page open.';
           joinError.classList.remove('hidden');
+          lifecycle.scheduleTransportRetry();
           return;
         }
       }
       setStatus('connected');
       setLanguageReadOnly(true);
       const joined = await lifecycle.joinRoom();
-      if (!joined && !lifecycle.joined) await connection.stop();
+      if (!joined && !lifecycle.joined && !lifecycle.initialJoinRequested) await connection.stop();
       if (joined) {
         setEditorReadOnly(false);
         setLanguageReadOnly(false);

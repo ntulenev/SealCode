@@ -124,6 +124,21 @@ public sealed class ResourceBudgetTests
     }
 
     [Fact]
+    public void JournalRefusalDistinguishesPermanentAndRecoverableLimits()
+    {
+        var room = Create(new RoomLimits { MaxJournalBytes = 1024, MaxJournalCount = 1 });
+        room.AppendAsTestParticipant(new byte[512], DateTimeOffset.UnixEpoch);
+
+        var full = Assert.Throws<RoomLimitException>(() =>
+            room.AppendAsTestParticipant(new byte[1], DateTimeOffset.UnixEpoch));
+        Assert.Equal("JournalFull", full.Resource);
+
+        var tooLarge = Assert.Throws<RoomLimitException>(() =>
+            room.AppendAsTestParticipant(new byte[1025], DateTimeOffset.UnixEpoch));
+        Assert.Equal("UpdateTooLarge", tooLarge.Resource);
+    }
+
+    [Fact]
     public void ConcurrentAppendsCannotExceedBudgetAndCheckpointReleasesIt()
     {
         var room = Create(new()

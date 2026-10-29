@@ -1,6 +1,7 @@
 import { csrf } from './admin-token.js';
 import { expect, test } from './fixtures.js';
 import * as Y from 'yjs';
+import { readFile } from 'node:fs/promises';
 import { advance } from './advance.js';
 
 async function createAndJoin(page, { clock = true } = {}) {
@@ -115,6 +116,13 @@ test('oversized checkpoints are skipped without retries or lost incremental chan
     Y.applyUpdate(doc, Buffer.from(update.Update, 'base64'));
   expect(doc.getText('monaco').toString()).toBe('x'.repeat(2063));
   doc.destroy();
+  await page.evaluate(() => {
+    const model = monaco.editor.getModels()[0];
+    model.applyEdits([{ range: model.getFullModelRange(), text: '' }]);
+  });
+  await advance(page, 1500);
+  await expect.poll(async () => (await syncState(page, roomId)).CheckpointRevision)
+    .toBeGreaterThan(0);
   await page.evaluate(() => probe.stop());
 });
 
@@ -137,6 +145,9 @@ test('oversized edits remain local and visible without retrying the transport', 
   await insertText(page, 5000);
 
   await expect(page.locator('#syncError')).toContainText('some changes have not synced');
+  const downloaded = page.waitForEvent('download');
+  await page.locator('#downloadLocalText').click();
+  expect(await readFile(await (await downloaded).path(), 'utf8')).toBe('x'.repeat(5000));
   await advance(page, 1000);
   expect(updateMessages).toBe(0);
   expect(await page.evaluate(() => monaco.editor.getModels()[0].getValueLength())).toBe(
@@ -148,6 +159,24 @@ test('oversized edits remain local and visible without retrying the transport', 
     roomId
   );
   expect(state.DocumentRevision).toBe(0);
+  await page.evaluate(() => probe.stop());
+});
+
+test('text snapshot limit warns immediately and offers a local download', async ({ page }) => {
+  await page.route('**/features', (route) =>
+    route.fulfill({ json: { Limits: { MaxSnapshotCharacters: 1000 } } })
+  );
+  const roomId = await createAndJoin(page, { clock: false });
+  await insertText(page, 1001);
+  await expect(page.locator('#syncError')).toContainText('1000-character snapshot limit');
+  const downloaded = page.waitForEvent('download');
+  await page.locator('#downloadLocalText').click();
+  expect(await readFile(await (await downloaded).path(), 'utf8')).toBe('x'.repeat(1001));
+  await page.evaluate(() => {
+    const model = monaco.editor.getModels()[0];
+    model.applyEdits([{ range: model.getFullModelRange(), text: 'short' }]);
+  });
+  await expect(page.locator('#syncError')).toHaveClass(/hidden/);
   await page.evaluate(() => probe.stop());
 });
 
@@ -407,6 +436,39 @@ test('offline edits are split to the server update budget after reconnect', asyn
     } finally {
       await observerContext.close();
     }
+  } finally {
+    await context.close();
+  }
+});
+
+test('a full journal checkpoints acknowledged state and sends the waiting edit', async ({
+  browser,
+  isolatedHost
+}) => {
+  const host = await isolatedHost({ Limits: { MaxJournalCount: 4, CheckpointEveryRevisions: 1 } });
+  const context = await browser.newContext({ baseURL: host.baseURL });
+  try {
+    const page = await context.newPage();
+    const login = await page.request.post('/admin/login', {
+      headers: await csrf(page.request),
+      form: { name: 'BrowserAdmin', password: 'browser-pass' }
+    });
+    expect(login.ok()).toBeTruthy();
+    const roomId = await createAndJoin(page);
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 2000));
+    for (let revision = 1; revision <= 5; revision++) {
+      await insertText(page, 1);
+      await advance(page, 100);
+      if (revision < 5)
+        await expect.poll(async () => (await revisions(page, roomId)).DocumentRevision).toBe(revision);
+    }
+    await advance(page, 1500);
+    await expect.poll(async () => (await revisions(page, roomId)).DocumentRevision).toBe(5);
+    const state = await syncState(page, roomId);
+    expect(state.CheckpointRevision).toBeGreaterThan(0);
+    expect(state.Text).toBe('xxxxx');
+    await expect(page.locator('#syncError')).toHaveClass(/hidden/);
+    await page.evaluate(() => probe.stop());
   } finally {
     await context.close();
   }

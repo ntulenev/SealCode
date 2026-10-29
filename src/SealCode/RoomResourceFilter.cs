@@ -60,6 +60,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         }
         context.Context.Items["connectionSource"] = address;
         context.Context.Items["connectionPermit"] = true;
+        _activeConnections.Add(1);
         try
         {
             context.Context.Items["unjoinedTimer"] = _timeProvider.CreateTimer(_ =>
@@ -151,6 +152,7 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
         }
         if (context.Context.Items.Remove("connectionPermit"))
         {
+            _activeConnections.Add(-1);
             _ = _connections.Release();
         }
 
@@ -181,4 +183,5 @@ internal sealed class RoomResourceFilter : IHubFilter, IDisposable
     private readonly Func<int, TimeSpan, RateLimiter> _limiterFactory;
     private static readonly Meter _meter = new("SealCode.Hub");
     private static readonly Counter<long> _throttled = _meter.CreateCounter<long>("hub.throttled");
+    private static readonly UpDownCounter<long> _activeConnections = _meter.CreateUpDownCounter<long>("hub.connections.active");
 }

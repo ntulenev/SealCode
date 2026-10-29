@@ -64,8 +64,8 @@ test('Ctrl+Z and redo affect only the current user concurrent edits', async ({
 
   await Promise.all([focusEditor(alice), focusEditor(bob)]);
   await Promise.all([
-    alice.keyboard.type('alice-change'),
-    bob.keyboard.type('bob-change')
+    alice.keyboard.insertText('alice-change'),
+    bob.keyboard.insertText('bob-change')
   ]);
   await expectConverged(
     alice,

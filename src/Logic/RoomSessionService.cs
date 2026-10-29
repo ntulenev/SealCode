@@ -60,7 +60,7 @@ public sealed class RoomSessionService : IRoomSessionService
         var room = GetParticipant(roomId, connection, out var author);
         if (updateBase64.Length > room.Limits.MaxEncodedUpdateBytes)
         {
-            throw new RoomLimitException("Update size");
+            throw new RoomLimitException("UpdateTooLarge");
         }
         var update = Decode(updateBase64);
         var result = room.Append(connection, update, _timeProvider.GetUtcNow());
@@ -87,7 +87,7 @@ public sealed class RoomSessionService : IRoomSessionService
         if (stateBase64.Length > room.Limits.MaxEncodedCheckpointBytes
             || (textSnapshot?.Length ?? 0) > room.Limits.MaxSnapshotCharacters)
         {
-            throw new RoomLimitException("Checkpoint size");
+            throw new RoomLimitException("CheckpointTooLarge");
         }
         if (revision != room.DocumentRevision)
         {
