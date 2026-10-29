@@ -133,6 +133,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         var rootRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
         rootRooms.Should().HaveCount(2);
         rootRooms!.All(room => room.GetProperty("CanDelete").GetBoolean()).Should().BeTrue();
+        var rootPermission = await client.GetFromJsonAsync<JsonElement>($"/admin/rooms/{otherId}");
+        rootPermission.GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         owner = await LoginAsAdminAsync(client);
         client.DefaultRequestHeaders.Remove("Cookie");
         client.DefaultRequestHeaders.Add("Cookie", $"{owner.Name}={owner.Value}");
@@ -140,6 +142,12 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         rooms.Should().HaveCount(2);
         rooms!.Single(room => room.GetProperty("RoomId").GetString() == ownId).GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         rooms.Single(room => room.GetProperty("RoomId").GetString() == otherId).GetProperty("CanDelete").GetBoolean().Should().BeFalse();
+        var ownPermission = await client.GetFromJsonAsync<JsonElement>($"/admin/rooms/{ownId}");
+        ownPermission.GetProperty("CanDelete").GetBoolean().Should().BeTrue();
+        var otherPermission = await client.GetFromJsonAsync<JsonElement>($"/admin/rooms/{otherId}");
+        otherPermission.GetProperty("CanDelete").GetBoolean().Should().BeFalse();
+        using var missingPermission = await client.GetAsync($"/admin/rooms/{RoomId.New().Value}");
+        missingPermission.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -262,6 +270,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         var response = await client.GetAsync("/admin/rooms");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var roomPermission = await client.GetAsync($"/admin/rooms/{RoomId.New().Value}");
+        roomPermission.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact(DisplayName = "POST /admin/rooms returns unauthorized without cookie")]

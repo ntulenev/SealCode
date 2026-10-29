@@ -48,6 +48,8 @@ const joinBtn = document.getElementById('joinBtn');
 const displayNameInput = document.getElementById('displayNameInput');
 const joinError = document.getElementById('joinError');
 const syncError = document.getElementById('syncError');
+const deleteRoomBtn = document.getElementById('deleteRoom');
+const deleteRoomError = document.getElementById('deleteRoomError');
 
 const pathSegments = new URL(window.location.href).pathname.split('/').filter(Boolean);
 const roomId = pathSegments[pathSegments.length - 1] ?? '';
@@ -72,6 +74,8 @@ createRoomApplication({
     joinBtn,
     displayNameInput,
     joinError,
-    syncError
+    syncError,
+    deleteRoomBtn,
+    deleteRoomError
   }
 });
