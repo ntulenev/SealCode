@@ -62,6 +62,8 @@ internal static class ServiceCollectionExtensions
         _ = services.AddHttpContextAccessor();
         _ = services.AddScoped<IAdminUserManager, AdminUserManager>();
         _ = services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, McpTokenAuthenticationHandler>(
+                McpTokenAuthenticationHandler.SCHEME_NAME, _ => { })
             .AddCookie(options =>
             {
                 options.Cookie.Name = "admin_auth";
@@ -71,6 +73,11 @@ internal static class ServiceCollectionExtensions
                 options.Cookie.SameSite = SameSiteMode.Lax;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
             });
+
+        _ = services.AddAuthorization(options => options.AddPolicy(
+            McpTokenAuthenticationHandler.SCHEME_NAME,
+            policy => policy.AddAuthenticationSchemes(McpTokenAuthenticationHandler.SCHEME_NAME)
+                .RequireAuthenticatedUser()));
 
         _ = services.AddSingleton<IConfigureOptions<ForwardedHeadersOptions>, TrustedProxyOptions>();
         return services;

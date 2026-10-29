@@ -35,6 +35,7 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
                 errors.Add($"TrustedProxies contains an invalid IP address: {proxy}");
             }
         }
+        var tokens = new HashSet<string>(StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var admin in options.AdminUsers ?? [])
         {
@@ -54,6 +55,14 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
                 || !names.Add(admin.Name.Trim()))
             {
                 errors.Add("Admin names must be unique and contain 2–64 characters.");
+            }
+
+            if (!string.IsNullOrEmpty(admin.McpToken)
+                && (admin.McpToken.Length is < 32 or > 1024
+                    || admin.McpToken.Any(character => character is < (char)33 or > (char)126)
+                    || !tokens.Add(admin.McpToken)))
+            {
+                errors.Add("MCP tokens must be unique and contain 32–1024 visible ASCII characters.");
             }
 
             if (!_environment.IsDevelopment()
