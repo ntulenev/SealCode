@@ -3,9 +3,12 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -79,6 +82,8 @@ public sealed class AdminMcpTests
         Assert.Equal("csharp", Payload(created).GetProperty("language").GetString());
         Assert.Equal("Admin", Payload(created).GetProperty("createdBy").GetString());
         Assert.Equal($"/room/{ownId}", Payload(created).GetProperty("invitationPath").GetString());
+        Assert.Equal(new Uri(adminHttp.BaseAddress!, $"/room/{ownId}").AbsoluteUri,
+            Payload(created).GetProperty("invitationUrl").GetString());
 
         var rootCreated = await root.CallToolAsync("create_room", new Dictionary<string, object?> { ["name"] = "Root room", ["language"] = "sql" });
         var rootId = Payload(rootCreated).GetProperty("roomId").GetString()!;
@@ -97,6 +102,50 @@ public sealed class AdminMcpTests
         Assert.True((await DeleteAsync(admin, ownId)).IsError);
         Assert.NotEqual(true, (await DeleteAsync(root, rootId)).IsError);
         Assert.Empty(Payload(await root.CallToolAsync("list_rooms")).EnumerateArray());
+    }
+
+    [Theory]
+    [InlineData("http://localhost:5454")]
+    [InlineData("https://seal-code.com")]
+    [InlineData("https://seal-code.com:8443")]
+    public async Task InvitationsIncludeTheActualRequestDomainSchemeAndPort(string address)
+    {
+        using var factory = CreateFactory();
+        using var http = CreateHttpClient(factory, ADMIN_TOKEN, new Uri(address));
+        await using var client = await ConnectAsync(http);
+        var created = Payload(await client.CallToolAsync("create_room", new Dictionary<string, object?>
+        {
+            ["name"] = "Absolute URL"
+        }));
+        var path = created.GetProperty("invitationPath").GetString()!;
+        var expected = new Uri(http.BaseAddress!, path).AbsoluteUri;
+        Assert.Equal(expected, created.GetProperty("invitationUrl").GetString());
+        var listed = Assert.Single(Payload(await client.CallToolAsync("list_rooms")).EnumerateArray());
+        Assert.Equal(path, listed.GetProperty("invitationPath").GetString());
+        Assert.Equal(expected, listed.GetProperty("invitationUrl").GetString());
+    }
+
+    [Theory]
+    [InlineData(true, "https")]
+    [InlineData(false, "http")]
+    public async Task InvitationsUseApplicationPathBaseAndOnlyTrustConfiguredProxies(bool trusted, string scheme)
+    {
+        using var original = CreateFactory();
+        using var factory = original.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["TrustedProxies:0"] = trusted ? "127.0.0.1" : "127.0.0.2" }));
+            builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(new ProxyRequestStartupFilter()));
+        });
+        using var http = CreateHttpClient(factory, ADMIN_TOKEN, new Uri("http://seal-code.com"));
+        http.DefaultRequestHeaders.Add("X-Forwarded-Proto", "https");
+        http.DefaultRequestHeaders.Add("X-Forwarded-Host", "untrusted.example");
+        await using var client = await ConnectAsync(http);
+        var created = Payload(await client.CallToolAsync("create_room", new Dictionary<string, object?> { ["name"] = "Proxy URL" }));
+        var expected = $"{scheme}://seal-code.com/seal{created.GetProperty("invitationPath").GetString()}";
+        Assert.Equal(expected, created.GetProperty("invitationUrl").GetString());
+        var listed = Assert.Single(Payload(await client.CallToolAsync("list_rooms")).EnumerateArray());
+        Assert.Equal(expected, listed.GetProperty("invitationUrl").GetString());
     }
 
     [Theory]
@@ -254,14 +303,33 @@ public sealed class AdminMcpTests
         }
     }
 
-    private static HttpClient CreateHttpClient(WebApplicationFactory<Program> factory, string token)
+    private static HttpClient CreateHttpClient(WebApplicationFactory<Program> factory, string token, Uri? baseAddress = null)
     {
-        var http = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var http = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            BaseAddress = baseAddress ?? new Uri("http://localhost")
+        });
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return http;
     }
 
     private static McpAppFactory CreateFactory() => new();
+
+    private sealed class ProxyRequestStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+            => app =>
+            {
+                app.Use((context, proceed) =>
+                {
+                    context.Connection.RemoteIpAddress = IPAddress.Loopback;
+                    context.Request.PathBase = new PathString("/seal");
+                    return proceed(context);
+                });
+                next(app);
+            };
+    }
 
     private sealed class McpAppFactory : WebApplicationFactory<Program>
     {

@@ -2,6 +2,7 @@ using System.ComponentModel;
 
 using Abstractions;
 
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Options;
 
 using ModelContextProtocol;
@@ -28,17 +29,21 @@ internal sealed class AdminMcpTools
     /// </summary>
     /// <param name="rooms">The room manager shared with the admin panel.</param>
     /// <param name="admins">The current admin identity provider.</param>
-    /// <returns>The visible rooms and invitation paths.</returns>
+    /// <param name="accessor">The current MCP request used to construct absolute invitation URLs.</param>
+    /// <returns>The visible rooms with invitation paths and absolute URLs.</returns>
     [McpServerTool(Name = "list_rooms", ReadOnly = true, UseStructuredContent = true),
-     Description("List all rooms, participant counts, owners, deletion permissions and invitation paths.")]
-    public static McpRoomSummary[] ListRooms(IRoomManager rooms, IAdminUserManager admins)
+     Description("List all rooms, participant counts, owners and deletion permissions. Share invitationUrl as the complete room link.")]
+    public static McpRoomSummary[] ListRooms(
+        IRoomManager rooms,
+        IAdminUserManager admins,
+        IHttpContextAccessor accessor)
     {
         var admin = GetAdmin(admins);
         return [.. rooms.GetRoomsSnapshot(admin).Select(room => new McpRoomSummary(
             new RoomSummary(room.RoomId.Value, room.Name.Value,
                 room.Language.Value, room.UsersCount, room.LastUpdatedUtc,
                 room.CreatedBy.Name, room.CanDelete),
-            InvitationPath(room.RoomId)))];
+            InvitationPath(room.RoomId), InvitationUrl(accessor, room.RoomId)))];
     }
 
     /// <summary>
@@ -57,16 +62,18 @@ internal sealed class AdminMcpTools
     /// <param name="rooms">The shared room manager.</param>
     /// <param name="admins">The current admin identity provider.</param>
     /// <param name="languages">The configured language validator.</param>
+    /// <param name="accessor">The current MCP request used to construct the absolute invitation URL.</param>
     /// <param name="name">The requested room name.</param>
     /// <param name="language">The optional room language; null defaults to csharp.</param>
-    /// <returns>The created room and its invitation path.</returns>
+    /// <returns>The created room with its invitation path and absolute URL.</returns>
     /// <exception cref="McpException">Thrown when authentication, validation or capacity checks fail.</exception>
     [McpServerTool(Name = "create_room", Destructive = false, UseStructuredContent = true),
-     Description("Create a room as the authenticated admin and return its invitation path.")]
+     Description("Create a room as the authenticated admin. Share invitationUrl as the complete room link, including the site's domain.")]
     public static McpCreatedRoom CreateRoom(
         IRoomManager rooms,
         IAdminUserManager admins,
         ILanguageValidator languages,
+        IHttpContextAccessor accessor,
         [Description("Room name, required. Same name rules as the admin panel.")] string name,
         [Description("Language from list_languages; defaults to csharp.")] string? language = "csharp")
     {
@@ -81,7 +88,8 @@ internal sealed class AdminMcpTools
 
             var room = rooms.CreateRoom(new RoomName(name), roomLanguage, admin);
             return new McpCreatedRoom(room.RoomId.Value, room.Name.Value,
-                room.Language.Value, room.CreatedBy.Name, InvitationPath(room.RoomId));
+                room.Language.Value, room.CreatedBy.Name,
+                InvitationPath(room.RoomId), InvitationUrl(accessor, room.RoomId));
         }
         catch (ArgumentException)
         {
@@ -132,4 +140,12 @@ internal sealed class AdminMcpTools
             : throw new McpException("Admin authentication required.");
 
     private static string InvitationPath(RoomId id) => $"/room/{id.Value}";
+
+    private static Uri InvitationUrl(IHttpContextAccessor accessor, RoomId id)
+    {
+        var request = accessor.HttpContext?.Request
+            ?? throw new InvalidOperationException("An HTTP request is required to construct invitation URLs.");
+        return new Uri(UriHelper.BuildAbsolute(request.Scheme, request.Host,
+            request.PathBase, new PathString(InvitationPath(id))));
+    }
 }
