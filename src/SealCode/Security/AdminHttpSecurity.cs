@@ -21,6 +21,7 @@ internal sealed class AdminHttpSecurity : IDisposable
         limiterFactory ??= CreateLimiter;
         _sources = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(30, TimeSpan.FromMinutes(1)))];
         _names = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(10, TimeSpan.FromMinutes(1)))];
+        _googleSources = [.. Enumerable.Range(0, 256).Select(_ => limiterFactory(30, TimeSpan.FromMinutes(1)))];
     }
 
     /// <summary>
@@ -88,10 +89,23 @@ internal sealed class AdminHttpSecurity : IDisposable
         return await next(invocation).ConfigureAwait(false);
     }
 
+    /// <summary>Bounds Google token verification requests by source address.</summary>
+    public async ValueTask<object?> FilterGoogleLoginAsync(
+        EndpointFilterInvocationContext invocation,
+        EndpointFilterDelegate next)
+    {
+        var source = ConnectionSource.From(invocation.HttpContext.Connection.RemoteIpAddress);
+        using var lease = _googleSources[(uint)StringComparer.Ordinal.GetHashCode(source) % 256]
+            .AttemptAcquire();
+        return lease.IsAcquired
+            ? await next(invocation).ConfigureAwait(false)
+            : Results.StatusCode(StatusCodes.Status429TooManyRequests);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
-        foreach (var limiter in _sources.Concat(_names))
+        foreach (var limiter in _sources.Concat(_names).Concat(_googleSources))
         {
             limiter.Dispose();
         }
@@ -107,4 +121,5 @@ internal sealed class AdminHttpSecurity : IDisposable
     // Hash buckets bound limiter state for arbitrary names/addresses.
     private readonly RateLimiter[] _sources;
     private readonly RateLimiter[] _names;
+    private readonly RateLimiter[] _googleSources;
 }

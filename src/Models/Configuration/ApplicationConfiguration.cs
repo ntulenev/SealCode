@@ -7,6 +7,9 @@ namespace Models.Configuration;
 /// </summary>
 public sealed class ApplicationConfiguration
 {
+    /// <summary>Optional Google Workspace sign-in settings.</summary>
+    public GoogleSignInConfiguration GoogleSignIn { get; init; } = new();
+
     /// <summary>
     /// Gets trusted reverse proxy IP addresses.
     /// </summary>
@@ -41,6 +44,16 @@ public sealed class ApplicationConfiguration
     /// Gets or sets whether selective collaborative undo and redo are enabled.
     /// </summary>
     public bool CollaborativeUndoEnabled { get; init; } = true;
+}
+
+/// <summary>Controls which Google-hosted organizations may sign in as ordinary admins.</summary>
+public sealed class GoogleSignInConfiguration
+{
+    /// <summary>Web application OAuth client ID. Omit to disable Google sign-in.</summary>
+    public string? ClientId { get; init; }
+
+    /// <summary>Exact hosted domains accepted from verified Google ID tokens.</summary>
+    public string[] AllowedHostedDomains { get; init; } = [];
 }
 
 /// <summary>

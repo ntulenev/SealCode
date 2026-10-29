@@ -37,6 +37,30 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
         }
         var tokens = new HashSet<string>(StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var google = options.GoogleSignIn;
+        if (google is null)
+        {
+            errors.Add("GoogleSignIn configuration cannot be null.");
+        }
+        else
+        {
+            var hasClientId = !string.IsNullOrWhiteSpace(google.ClientId);
+            var domains = google.AllowedHostedDomains;
+            if (domains is null || hasClientId != (domains.Length > 0)
+                || (hasClientId && !google.ClientId!.EndsWith(".apps.googleusercontent.com", StringComparison.Ordinal)))
+            {
+                errors.Add("GoogleSignIn requires a web client ID and at least one hosted domain, or neither.");
+            }
+            if (domains is not null && (domains.Any(domain =>
+                    string.IsNullOrWhiteSpace(domain)
+                    || domain != domain.Trim()
+                    || Uri.CheckHostName(domain) != UriHostNameType.Dns
+                    || !domain.Contains('.', StringComparison.Ordinal))
+                || domains.Distinct(StringComparer.OrdinalIgnoreCase).Count() != domains.Length))
+            {
+                errors.Add("GoogleSignIn hosted domains must be unique DNS names.");
+            }
+        }
         foreach (var admin in options.AdminUsers ?? [])
         {
             if (admin is null)
@@ -52,6 +76,7 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
 
             if (string.IsNullOrWhiteSpace(admin.Name)
                 || admin.Name.Trim().Length is < 2 or > 64
+                || admin.Name.Trim().StartsWith("google:", StringComparison.OrdinalIgnoreCase)
                 || !names.Add(admin.Name.Trim()))
             {
                 errors.Add("Admin names must be unique and contain 2–64 characters.");

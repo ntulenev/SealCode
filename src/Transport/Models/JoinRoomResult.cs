@@ -54,7 +54,7 @@ public sealed record JoinRoomResult(
             syncState.Text.Value,
             syncState.Version.Value,
             [.. syncState.Users.Select(x => x.Value)],
-            room.CreatedBy.Name,
+            room.CreatedBy.DisplayName,
             syncState.DocumentRevision.Value,
             syncState.CheckpointRevision.Value,
             syncState.Checkpoint.Length > 0 ? Convert.ToBase64String(syncState.Checkpoint) : null,

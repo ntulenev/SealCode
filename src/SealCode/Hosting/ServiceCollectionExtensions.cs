@@ -65,6 +65,7 @@ internal static class ServiceCollectionExtensions
         _ = services.AddSingleton<AdminHttpSecurity>();
         _ = services.AddHttpContextAccessor();
         _ = services.AddScoped<IAdminUserManager, AdminUserManager>();
+        _ = services.AddSingleton<IGoogleIdentityVerifier, GoogleIdentityVerifier>();
         _ = services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
             .AddScheme<AuthenticationSchemeOptions, McpTokenAuthenticationHandler>(
                 McpTokenAuthenticationHandler.SCHEME_NAME, _ => { })

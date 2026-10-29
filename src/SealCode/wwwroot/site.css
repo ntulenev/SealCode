@@ -126,10 +126,19 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
 .auth-form label:not(:first-child) { margin-top: 8px; }
 .auth-form button { margin-top: 14px; }
 .auth-form .error { margin-bottom: 0; }
+.google-login { margin-top: 28px; }
+.google-login-divider { margin-bottom: 16px; color: var(--muted); font-size: 0.9rem; }
+.google-login .error { margin-top: 12px; }
 .about-layout { gap: 64px; }
 .about-content p:not(.eyebrow) { color: var(--muted); }
 .about-note { padding: 18px 0; margin: 22px 0; border-block: 1px solid var(--line); font-size: 13px; }
 .about-note p { margin: 0; }
+.about-privacy-link { margin: 18px 0 0; font-size: 13px; }
+.privacy-policy { width: min(1020px, 100%); margin: 0 auto; padding: 48px 32px 64px; border-top: 1px solid var(--line); }
+.privacy-policy > :not(.eyebrow) { max-width: 720px; }
+.privacy-policy h2 { font-size: clamp(26px, 3vw, 34px); }
+.privacy-policy h3 { margin: 30px 0 8px; font-size: 16px; }
+.privacy-policy p:not(.eyebrow) { color: var(--muted); }
 @keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 800px) {
   .site-header { padding: 14px 22px; }
@@ -171,6 +180,7 @@ h2 { margin-bottom: 20px; font-size: 20px; letter-spacing: -.4px; font-weight: 6
   .auth-art, .about-art { width: 200px; margin: auto; }
   .auth-art .eyebrow { display: none; }
   .auth-content { max-width: none; }
+  .privacy-policy { padding: 36px 24px 48px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

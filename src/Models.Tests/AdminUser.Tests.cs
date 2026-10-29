@@ -51,4 +51,11 @@ public sealed class AdminUserTests
 
         owner.Matches(other).Should().BeTrue();
     }
+
+    [Fact]
+    public void GoogleSubjectMatchingIsCaseSensitive()
+    {
+        new AdminUser("google:Subject").Matches(new AdminUser("google:subject")).Should().BeFalse();
+        new AdminUser("google:Subject").Matches(new AdminUser("google:Subject")).Should().BeTrue();
+    }
 }

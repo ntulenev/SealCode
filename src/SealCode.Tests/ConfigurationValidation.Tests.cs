@@ -11,10 +11,12 @@ public sealed class ConfigurationValidationTests
 {
     private static ApplicationConfiguration Settings(
         AdminUserConfiguration[] admins,
-        string[]? languages = null) => new()
+        string[]? languages = null,
+        GoogleSignInConfiguration? google = null) => new()
         {
             AdminUsers = admins,
             Languages = languages ?? ["csharp"],
+            GoogleSignIn = google ?? new(),
             MaxUsersPerRoom = 3
         };
     private static ApplicationConfigurationValidator Validator(string environment = "Production")
@@ -66,5 +68,36 @@ public sealed class ConfigurationValidationTests
         Assert.True(Validator("Development").Validate(null, Settings([new() { Name = "A", Password = "valid" }])).Failed);
         Assert.True(Validator("Development").Validate(null, Settings([new() { Name = "Admin", Password = "valid" }, new() { Name = " admin ", Password = "valid" }])).Failed);
         Assert.True(Validator("Development").Validate(null, Settings([new() { Name = "Admin", Password = "valid" }], [" ", "\t"])).Failed);
+        Assert.True(Validator("Development").Validate(null, Settings([new() { Name = "google:123", Password = "valid" }])).Failed);
+    }
+
+    [Fact]
+    public void GoogleSignInRequiresBothClientIdAndUniqueHostedDomains()
+    {
+        var admins = new[] { new AdminUserConfiguration { Name = "Admin", Password = "valid" } };
+        Assert.True(Validator("Development").Validate(null, Settings(admins)).Succeeded);
+        Assert.True(Validator("Development").Validate(null, Settings(admins, google: new()
+        {
+            ClientId = "client.apps.googleusercontent.com",
+            AllowedHostedDomains = ["example.org"]
+        })).Succeeded);
+        Assert.True(Validator("Development").Validate(null, Settings(admins, google: new()
+        {
+            ClientId = "client.apps.googleusercontent.com"
+        })).Failed);
+        Assert.True(Validator("Development").Validate(null, Settings(admins, google: new()
+        {
+            AllowedHostedDomains = ["example.org"]
+        })).Failed);
+        Assert.True(Validator("Development").Validate(null, Settings(admins, google: new()
+        {
+            ClientId = "client.apps.googleusercontent.com",
+            AllowedHostedDomains = ["example.org", "EXAMPLE.ORG"]
+        })).Failed);
+        Assert.True(Validator("Development").Validate(null, Settings(admins, google: new()
+        {
+            ClientId = "client.apps.googleusercontent.com",
+            AllowedHostedDomains = ["not a domain"]
+        })).Failed);
     }
 }
