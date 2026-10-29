@@ -3,56 +3,37 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin - SealCode</title>
+  <meta name="description" content="A small, shared workspace for writing code together." />
+  <title>Rooms — SealCode</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-  <link rel="stylesheet" href="/site.css?v=20260210" />
-  <link rel="stylesheet" href="/admin.css?v=20260210" />
-  <script src="/version.js" defer></script>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/site.css?v=20261029" />
+  <link rel="stylesheet" href="/admin.css?v=20261029" />
   <script type="module" src="/admin-token-main.js"></script>
+  <script src="/version.js" defer></script>
 </head>
 <body>
-  <main class="container">
-    <header class="site-logo">
-      <div class="site-title">
-        <span class="brand-seal">Seal</span><span class="brand-code">Code</span>
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/about.html">About</a><form method="post" action="/admin/logout"><button type="submit" class="ghost">Logout</button></form><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
+  <main class="workspace admin-workspace">
+    <div class="page-heading"><div><p class="eyebrow">Room management</p><h1>Your shared spaces<span class="accent">.</span></h1><p class="section-description">Create a room and invite your people.</p></div></div>
+    <section class="workspace-section create-section" aria-labelledby="create-title">
+      <h2 id="create-title">Create room</h2>
+      <div class="create-grid">
+        <label for="roomName">Room name<input id="roomName" type="text" placeholder="e.g. Friday pair session" maxlength="1024" /></label>
+        <label for="roomLanguage">Default language<select id="roomLanguage" disabled><option value="">Loading...</option></select></label>
+        <button id="createRoom">Create room <span aria-hidden="true">+</span></button>
       </div>
-      <img src="/Logo.png" alt="SealCode logo" />
-    </header>
-    <header class="admin-header">
-      <form method="post" action="/admin/logout">
-        <button type="submit" class="ghost">Logout</button>
-      </form>
-    </header>
-
-    <section class="card">
-      <h2>Create Room</h2>
-      <div class="grid">
-        <label>
-          Room name
-          <input id="roomName" type="text" placeholder="Team Notes" />
-        </label>
-        <label>
-          Default language
-          <select id="roomLanguage" disabled>
-            <option value="">Loading...</option>
-          </select>
-        </label>
-        <button id="createRoom">Create</button>
-      </div>
-      <p id="createResult" class="muted"></p>
+      <p id="createResult" class="muted result-message" role="status"></p>
     </section>
-
-    <section class="card">
-      <h2>Rooms</h2>
+    <section class="workspace-section" aria-labelledby="rooms-title">
+      <div class="section-heading"><h2 id="rooms-title">Rooms</h2><span class="muted">Pick up where you left off.</span></div>
+      <div class="room-table-heading" aria-hidden="true"><span>Room</span><span>Language</span><span>People</span><span>Updated</span><span>Created by</span><span>Actions</span></div>
       <div id="rooms"></div>
     </section>
   </main>
-  <footer class="tiny-footer">
-    Personal pet project for private use · Not intended for public use
-    <div class="app-version" data-app-version>SealCode</div>
-  </footer>
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
   <script type="module" src="/admin-main.js"></script>
 </body>
 </html>

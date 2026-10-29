@@ -1,164 +1,44 @@
-.room-container {
-  max-width: 1100px;
-  margin: 1.5vh auto;
-  padding: 24px;
+.room-page .site-header, .room-page .site-footer { width: 100%; max-width: 1600px; }
+.room-page .site-header { min-height: 76px; padding-block: 14px; }
+.room-container { width: min(1600px, 100%); margin: 18px auto 0; padding: 0 32px; flex: 1; display: flex; flex-direction: column; }
+.room-header { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 24px; }
+.room-heading { min-width: 0; }
+.room-heading .eyebrow { margin-bottom: 8px; }
+.room-heading h1 { margin: 0 0 10px; font-size: 30px; overflow-wrap: anywhere; }
+.room-info { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; color: var(--muted); font-size: 12px; }
+.room-info strong { font-weight: 500; color: var(--text); }
+.room-meta { display: flex; align-items: flex-end; gap: 24px; flex-shrink: 0; }
+.room-meta label { min-width: 150px; }
+.version { padding-bottom: 13px; font: 11px/1.5 var(--mono); color: var(--muted); white-space: nowrap; }
+.room-main { display: flex; flex: 1; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.participants-bar { min-height: 55px; padding: 12px 18px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.participants-bar h2 { margin: 0; font: 11px/1.5 var(--mono); color: var(--muted); }
+.participants-bar ul { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.participants-bar li { padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--input); font: 11px/1.5 var(--mono); color: var(--text); }
+.participants-bar li.active { border-color: var(--success); background: var(--active-bg); font-weight: 600; }
+.participants-bar li.copied { border-color: var(--selecting-text); background: var(--selecting-bg); color: var(--selecting-text); font-weight: 600; }
+.participants-bar li.copying { border-color: var(--copying-text); background: var(--copying-bg); color: var(--copying-text); font-weight: 600; }
+.editor { background: var(--editor-bg); flex: 1; min-width: 0; }
+.monaco-host { width: 100%; height: max(440px, calc(100svh - 330px)); min-height: 440px; background: var(--editor-bg); }
+.overlay { position: fixed; inset: 0; background: var(--overlay); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow: auto; z-index: 10; }
+.overlay-card { display: grid; gap: 12px; background: var(--panel); padding: 28px 32px 32px; border: 1px solid var(--border); border-radius: 10px; width: min(400px, 100%); max-height: calc(100svh - 48px); overflow-y: auto; animation: enter 220ms ease-out both; }
+.dialog-top { display: flex; align-items: center; justify-content: space-between; }
+.dialog-top img { display: block; }
+.overlay-card .eyebrow { margin: 0; font-size: 10px; }
+.overlay-card h2 { margin: 0; font-size: 28px; letter-spacing: -.8px; }
+.overlay-card p { margin: 0 0 4px; font-size: 13px; }
+.overlay-card label { margin-top: 8px; }
+.overlay-card button { margin-top: 6px; }
+@media (max-width: 700px) {
+  .room-container { padding: 0 16px; margin-top: 12px; }
+  .room-header { display: block; }
+  .room-heading h1 { font-size: 26px; }
+  .room-meta { margin-top: 18px; align-items: center; gap: 16px; }
+  .room-meta label { display: flex; align-items: center; gap: 12px; }
+  .room-meta select { max-width: 180px; }
+  .version { padding: 0; margin-left: auto; }
+  .room-info { gap: 6px 16px; }
+  .participants-bar { padding: 12px; gap: 10px; }
+  .monaco-host { height: max(400px, calc(100svh - 375px)); min-height: 400px; }
+  .overlay-card { padding: 24px; }
 }
-
-.room-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-}
-
-.room-brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.room-logo {
-  width: 90px;
-  height: auto;
-  display: block;
-}
-
-.room-brand .site-title {
-  font-size: 24px;
-  margin: 0 0 6px;
-}
-
-.room-brand h1 {
-  margin: 0;
-}
-
-.room-brand .muted {
-  margin: 4px 0 0;
-}
-
-.room-meta {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.room-main {
-  margin-top: 10px;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 16px;
-}
-
-.participants-bar {
-  background: #151922;
-  border-radius: 12px;
-  padding: 12px 16px;
-  border: 1px solid #2f343d;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.participants-bar h3 {
-  margin: 0;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #9ca3af;
-}
-
-.participants-bar ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-family: "IBM Plex Mono", monospace;
-}
-
-.participants-bar li {
-  background: #0b0f15;
-  border: 1px solid #2f343d;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: #e5e7eb;
-}
-
-.participants-bar li.active {
-  border-color: #22c55e;
-  color: #e5e7eb;
-  font-weight: 700;
-  animation: active-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes active-pulse {
-  0% {
-    border-color: #2f343d;
-  }
-  50% {
-    border-color: #22c55e;
-  }
-  100% {
-    border-color: #2f343d;
-  }
-}
-
-.participants-bar li.copied {
-  background: #3b1d04;
-  border-color: #f59e0b;
-  color: #fde68a;
-  font-weight: 700;
-}
-
-.participants-bar li.copying {
-  background: #3a0b0b;
-  border-color: #ef4444;
-  color: #fecaca;
-  font-weight: 700;
-}
-
-.monaco-host {
-  min-height: 120vh;
-  height: 120vh;
-  border-radius: 12px;
-  border: 1px solid #2f343d;
-  background: #0f131a;
-  overflow: visible;
-}
-
-.version {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 13px;
-}
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
-
-.overlay-card {
-  background: #151922;
-  padding: 24px;
-  border-radius: 14px;
-  width: min(360px, 90vw);
-  display: grid;
-  gap: 12px;
-  border: 1px solid #2f343d;
-}
-
-.hidden { display: none; }
-
-.error { color: #b91c1c; }
-
-@media (max-width: 900px) {
-  .room-main { grid-template-rows: auto 1fr; }
-}
-

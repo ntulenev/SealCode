@@ -681,7 +681,8 @@ export function createRoomApplication({
     if (!lifecycle.joined) setLanguageReadOnly(true);
   });
 
-  joinBtn.addEventListener('click', async () => {
+  joinBtn.addEventListener('click', async (event) => {
+    event.preventDefault();
     if (joinBtn.disabled) return;
     displayName = displayNameInput.value.trim();
     if (!displayName) {
@@ -722,4 +723,8 @@ export function createRoomApplication({
   });
 
   initMonaco();
+  // The native form must stay inert until its click handler and editor are ready.
+  joinBtn.querySelector('[data-join-label]').textContent = 'Join room';
+  displayNameInput.disabled = false;
+  joinBtn.disabled = false;
 }

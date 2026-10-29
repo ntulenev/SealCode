@@ -3,37 +3,36 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin Login - SealCode</title>
+  <meta name="description" content="A small, shared workspace for writing code together." />
+  <title>Admin login — SealCode</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-  <link rel="stylesheet" href="/site.css?v=20260210" />
-  <link rel="stylesheet" href="/admin.css?v=20260210" />
-  <script src="/version.js" defer></script>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/site.css?v=20261029" />
+  <link rel="stylesheet" href="/admin.css?v=20261029" />
   <script type="module" src="/admin-token-main.js"></script>
+  <script src="/version.js" defer></script>
 </head>
 <body>
-  <main class="container">
-    <header class="site-logo">
-      <div class="site-title">
-        <span class="brand-seal">Seal</span><span class="brand-code">Code</span>
-      </div>
-      <img src="/Logo.png" alt="SealCode logo" />
-    </header>
-    <h2 class="page-subtitle">Admin Login</h2>
-    <form class="card" method="post" action="/admin/login">
-      <label for="name">Admin name</label>
-      <input id="name" name="name" type="text" autocomplete="username" required />
-      <label for="password">Admin password</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required />
-      <button type="submit">Login</button>
-      <p id="error" class="error hidden">Invalid credentials. Try again.</p>
-    </form>
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/">Back to home <span aria-hidden="true">↗</span></a><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
+  <main class="auth-layout">
+    <div class="auth-art"><img src="/Logo.png" width="1355" height="1161" alt="The SealCode seal, ready to code" /><p class="eyebrow">A little space for big ideas</p></div>
+    <section class="auth-content" aria-labelledby="login-title">
+      <p class="eyebrow">Your workspace</p>
+      <h1 id="login-title">Admin login</h1>
+      <p class="section-description">Sign in to create and manage rooms.</p>
+      <form class="auth-form" method="post" action="/admin/login">
+        <label for="name">Admin name</label>
+        <input id="name" name="name" type="text" autocomplete="username" required />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+        <button type="submit">Login <span aria-hidden="true">→</span></button>
+        <p id="error" class="error hidden" role="alert">Invalid credentials. Try again.</p>
+      </form>
+    </section>
   </main>
-  <footer class="tiny-footer">
-    Personal pet project for private use · Not intended for public use
-    <div class="app-version" data-app-version>SealCode</div>
-  </footer>
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
   <script src="/admin-login.js" defer></script>
 </body>
 </html>

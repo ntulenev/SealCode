@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SealCode — новый пиксельный персонаж</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #f1f2f4; color: #20242b; font: 15px/1.5 system-ui, sans-serif; }
+main { max-width: 1240px; margin: auto; padding: 32px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
+h1 { margin: 0; font-size: 28px; letter-spacing: -1px; font-weight: 650; }
+h1 span { color: #3375c7; }
+.status, p, footer { color: #657080; }
+.status, footer { font-size: 12px; }
+p { margin: 8px 0 24px; }
+.backgrounds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.surface { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 330px; padding: 18px; border-radius: 12px; }
+.surface img { width: 100%; height: 260px; object-fit: contain; }
+.surface span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.dark { background: #0f1116; color: #9ca3af; }
+.light { background: white; color: #657080; }
+.color { background: #9fc8df; color: #31596e; }
+.sizes { display: flex; gap: 32px; align-items: center; border-top: 1px solid #d9dee5; margin-top: 24px; padding-top: 16px; }
+.sizes p { margin: 0; font-size: 13px; }
+.sample { display: flex; align-items: center; gap: 16px; color: #657080; font-size: 12px; }
+.sample img { height: auto; }
+footer { margin-top: 20px; }
+@media(max-width: 700px) { main { padding: 20px; } header { display: block; } .backgrounds { grid-template-columns: 1fr; } .sizes { flex-wrap: wrap; } }
+</style>
+<main>
+<header><h1>Seal<span>Code</span> / новый персонаж</h1><span class="status">codex/logo-redesign · концепт на согласование</span></header>
+<p>Нарисован с нуля: тюлень в ракурсе три четверти печатает ластами на ноутбуке.</p>
+<section class="backgrounds" aria-label="Проверка прозрачного логотипа на разных фонах">
+<div class="surface dark"><img src="sealcode-pixel-original-v1.png" alt="Новый пиксельный тюлень на тёмном фоне"><span>Тёмный фон</span></div>
+<div class="surface light"><img src="sealcode-pixel-original-v1.png" alt="Новый пиксельный тюлень на белом фоне"><span>Светлый фон</span></div>
+<div class="surface color"><img src="sealcode-pixel-original-v1.png" alt="Новый пиксельный тюлень на голубом фоне"><span>Цветной фон</span></div>
+</section>
+<section class="sizes" aria-label="Проверка маленьких размеров">
+<p>В небольшом размере</p>
+<div class="sample"><img src="sealcode-pixel-original-v1.png" width="90" alt="Логотип шириной 90 пикселей"><span>90 px</span></div>
+<div class="sample"><img src="sealcode-pixel-original-v1.png" width="150" alt="Логотип шириной 150 пикселей"><span>150 px</span></div>
+</section>
+<footer>Прозрачный PNG. Фоны добавлены для просмотра. Ресурсы сайта будут обновлены после согласования.</footer>
+</main>
+</html>
