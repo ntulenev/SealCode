@@ -5,6 +5,7 @@ await build({
   entryPoints: {
     room: 'src/SealCode/wwwroot/room.js',
     'admin-main': 'src/SealCode/wwwroot/admin-main.js',
+    'admin-login-main': 'src/SealCode/wwwroot/admin-login-main.js',
     'admin-token-main': 'src/SealCode/wwwroot/admin-token-main.js',
     'editor.worker': 'node_modules/monaco-editor/esm/vs/editor/editor.worker.js',
     'json.worker': 'node_modules/monaco-editor/esm/vs/language/json/json.worker.js',
