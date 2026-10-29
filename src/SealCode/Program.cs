@@ -21,6 +21,7 @@ if (!app.Environment.IsDevelopment())
 app.UseMiddleware<ApiExceptionMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<WebSocketOriginGuardMiddleware>();
+app.UseMiddleware<McpOriginGuardMiddleware>();
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = StaticAssetCaching.Apply });
 app.UseAuthentication();

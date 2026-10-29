@@ -136,6 +136,8 @@ public sealed class AdminMcpTests
     [InlineData("https://untrusted.example")]
     [InlineData("null")]
     [InlineData("invalid origin")]
+    [InlineData("http://user@localhost")]
+    [InlineData("http://localhost/path")]
     public async Task UntrustedOriginsAreRejected(string origin)
     {
         using var factory = CreateFactory();
@@ -143,6 +145,9 @@ public sealed class AdminMcpTests
         http.DefaultRequestHeaders.TryAddWithoutValidation("Origin", origin);
         using var response = await http.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        http.DefaultRequestHeaders.Remove("Authorization");
+        using var anonymous = await http.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        Assert.Equal(HttpStatusCode.Forbidden, anonymous.StatusCode);
     }
 
     [Fact]
