@@ -114,12 +114,17 @@ server-side MCP sessions. Cross-origin browser requests are rejected; configure
 
 | Tool | Function |
 | --- | --- |
-| `list_rooms` | All rooms with names, languages, participant counts, owners, update times, deletion permissions and invitation paths |
+| `list_rooms` | All rooms with names, languages, participant counts, owners, update times, deletion permissions and complete invitation URLs |
 | `list_languages` | Allowed languages for room creation |
-| `create_room` | Create a room with `name` and optional `language` (default `csharp`); return its ID and invitation path |
+| `create_room` | Create a room with `name` and optional `language` (default `csharp`); return its ID and complete invitation URL |
 | `delete_room` | Delete `roomId` and notify connected participants |
 
-Invitation paths such as `/room/<id>` are relative to the application URL.
+Use `invitationUrl` as the ready-to-share room link, for example
+`https://seal-code.com/room/<id>`. It uses the MCP request's scheme, host, port
+and application path base. `invitationPath` remains available for existing clients.
+Behind a reverse proxy, preserve the public `Host` header and configure
+`TrustedProxies` so `X-Forwarded-Proto` from that proxy supplies the public scheme.
+The server ignores forwarded headers from untrusted sources.
 Room names, language validation, capacity limits and deletion permissions are
 the same as in the admin panel. The token identifies its configured admin:
 regular admins can delete their own rooms and super admins can delete any room.

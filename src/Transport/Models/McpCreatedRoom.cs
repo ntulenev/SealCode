@@ -8,9 +8,11 @@ namespace Transport.Models;
 /// <param name="Language">The normalized room language.</param>
 /// <param name="CreatedBy">The display name of the admin who created the room.</param>
 /// <param name="InvitationPath">The invitation path relative to the application URL.</param>
+/// <param name="InvitationUrl">The absolute invitation URL ready to share with participants.</param>
 public sealed record McpCreatedRoom(
     string RoomId,
     string Name,
     string Language,
     string CreatedBy,
-    string InvitationPath);
+    string InvitationPath,
+    Uri InvitationUrl);

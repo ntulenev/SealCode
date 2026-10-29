@@ -5,4 +5,5 @@ namespace Transport.Models;
 /// </summary>
 /// <param name="Room">The room summary and the current admin's deletion permission.</param>
 /// <param name="InvitationPath">The invitation path relative to the application URL.</param>
-public sealed record McpRoomSummary(RoomSummary Room, string InvitationPath);
+/// <param name="InvitationUrl">The absolute invitation URL ready to share with participants.</param>
+public sealed record McpRoomSummary(RoomSummary Room, string InvitationPath, Uri InvitationUrl);
