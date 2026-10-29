@@ -153,7 +153,7 @@ public sealed class AdminMcpTests
         var created = Payload(await client.CallToolAsync("create_room", new Dictionary<string, object?>
         {
             ["name"] = "MCP regular room",
-            ["language"] = "csharp"
+            ["language"] = null
         }));
         Assert.Equal("Admin", created.GetProperty("createdBy").GetString());
         Assert.Equal(rootRoom.GetProperty("Language").GetString(), created.GetProperty("language").GetString());

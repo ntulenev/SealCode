@@ -58,7 +58,7 @@ internal sealed class AdminMcpTools
     /// <param name="admins">The current admin identity provider.</param>
     /// <param name="languages">The configured language validator.</param>
     /// <param name="name">The requested room name.</param>
-    /// <param name="language">The optional room language; defaults to csharp.</param>
+    /// <param name="language">The optional room language; null defaults to csharp.</param>
     /// <returns>The created room and its invitation path.</returns>
     /// <exception cref="McpException">Thrown when authentication, validation or capacity checks fail.</exception>
     [McpServerTool(Name = "create_room", Destructive = false, UseStructuredContent = true),
@@ -68,12 +68,12 @@ internal sealed class AdminMcpTools
         IAdminUserManager admins,
         ILanguageValidator languages,
         [Description("Room name, required. Same name rules as the admin panel.")] string name,
-        [Description("Language from list_languages; defaults to csharp.")] string language = "csharp")
+        [Description("Language from list_languages; defaults to csharp.")] string? language = "csharp")
     {
         var admin = GetAdmin(admins);
         try
         {
-            var roomLanguage = new RoomLanguage(language);
+            var roomLanguage = new RoomLanguage(language ?? "csharp");
             if (!languages.IsValid(roomLanguage))
             {
                 throw new McpException("Invalid language. Use list_languages for allowed values.");
