@@ -74,7 +74,7 @@ internal sealed class AdminMcpTools
         IAdminUserManager admins,
         ILanguageValidator languages,
         IHttpContextAccessor accessor,
-        [Description("Room name, required. Same name rules as the admin panel.")] string name,
+        [Description("Room name, required. Up to 160 characters after trimming; saved in full.")] string name,
         [Description("Language from list_languages; defaults to csharp.")] string? language = "csharp")
     {
         var admin = GetAdmin(admins);

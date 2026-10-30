@@ -30,6 +30,7 @@ test('join waits for languages and ignores a second click', async ({ page, reque
   });
   await expect(page.locator('#joinBtn')).toBeDisabled();
   await expect(page.locator('#displayNameInput')).toBeDisabled();
+  await expect(page.locator('#generateDisplayName')).toBeDisabled();
   release();
   await expect(page.locator('#joinOverlay')).toHaveClass(/hidden/);
   await expect(page.locator('#languageSelect')).toHaveValue('sql');

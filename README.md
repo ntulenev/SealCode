@@ -220,21 +220,42 @@ Invalid inputs, missing rooms and forbidden deletions return MCP tool errors.
 1. Open **Manage rooms** on the home page, or visit `/admin/login`.
 2. Sign in with an admin account configured before startup.
 3. Enter a room name, choose its default language, and select **Create room**.
-4. Use **Copy link** on the room row and share the invitation with participants.
+4. Click a room name to open it in a new tab, or use **Copy link** to share the invitation with participants.
 
-The panel lists all rooms with language, participant count, last update time and
-creator. **Delete** closes the room and disconnects its participants. Regular
+Room names can contain up to 160 characters, enough for a candidate's full name,
+position and interview date. Names are saved in full and wrap in the room list
+and meeting heading; hovering over either name also shows the full text.
+
+The panel greets you with **Hello, <username or email>!** so you can identify the
+signed-in account. By default, **Only my rooms** is selected and the panel lists
+rooms created by your current account, including when signed in as a super admin.
+Clear **Only my rooms** to see all rooms with language, participant count, last
+update time and creator.
+**Delete** closes the room and disconnects its participants. Regular
 admins can delete only their own rooms; super admins can delete any room. Use
 **Logout** to end the admin session. The same room-management operations are also
 available through the [MCP endpoint](#admin-mcp).
+
+Open **Limits** in the admin navigation to view the running application's configured
+room, participant and connection limits, plus automatic cleanup and join timeouts.
+The expandable **Technical limits** section shows synchronization and request budgets.
+This page is read-only and available to every signed-in administrator. Values come
+from the server; changing configuration requires restarting the application.
 
 ## Join a Room
 
 Open an invitation directly, or paste a room link from the same SealCode instance
 into the home page and select **Join room**. Invalid links show an inline error.
 
-The join dialog waits for the editor to load before enabling its controls. Enter
-a display name and select **Join room**, or press **Enter**. Names are trimmed,
+The join dialog waits for the editor to load before enabling its controls. A random
+name such as **Wild Fox**, **Bold Seal** or **Shy Otter** is filled in automatically.
+Keep it, use the shuffle button beside the field for another random name, or replace
+it with your own. Then select **Join room** or press **Enter**.
+The generator uses browser cryptographic randomness and 256 short adjectives ×
+256 animal names (65,536 combinations). With five participants, the chance of any
+random name collision is about 0.015%; the server still rejects duplicate names.
+Names are generated per page load, are not stored, and stay the same during reconnects.
+Names are trimmed,
 limited to 64 characters and must be unique within the room (case-insensitive).
 Joining a full room is rejected.
 
@@ -294,9 +315,12 @@ are rejected before Base64 decoding, with the locked check remaining authoritati
 - `/about.html` about page with repository link
 - `/room/{roomId}` room UI
 - `/admin` admin panel
+- `/admin/limits` configured application limits (admin page)
+- `/admin/limits/config` current room, participant and resource limits (GET, admin only)
 - `/admin/login` admin login
 - `/admin/logout` admin logout (POST)
-- `/admin/rooms` list/create rooms (GET/POST, admin only)
+- `/admin/me` current admin display name (GET, admin only)
+- `/admin/rooms` list/create rooms (GET/POST, admin only); GET accepts `?mine=true` to list only the current admin's rooms
 - `/admin/rooms/{roomId}` delete a room (DELETE, owner or super admin)
 - `/admin/token` antiforgery token for admin requests
 - `/mcp` authenticated admin tools over Streamable HTTP
@@ -414,7 +438,7 @@ The provided UI handles this automatically.
 | --- | --- |
 | API input exceptions | Exceptions handled by the API middleware return ProblemDetails. |
 | Hub resource refusals | Stable `LimitExceeded` / `RateLimited` codes. |
-| Room names | Trimmed and shortened to 20 characters plus an ellipsis; raw inputs over 1024 characters are rejected. |
+| Room names | Trimmed and saved in full, up to 160 characters; longer names and raw inputs over 1024 characters are rejected. |
 | Participant names | Trimmed and limited to 64 characters. |
 
 ## Resource budgets
@@ -519,7 +543,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.10.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.11.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all five `wwwroot/*.html`
 pages. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.

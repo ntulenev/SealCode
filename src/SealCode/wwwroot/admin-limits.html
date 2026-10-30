@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A small, shared workspace for writing code together." />
+  <title>Limits — SealCode</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.11.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=1.11.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=1.11.0" />
+  <script src="/theme.js?v=1.11.0"></script>
+  <link rel="stylesheet" href="/site.css?v=1.11.0" />
+  <link rel="stylesheet" href="/admin.css?v=1.11.0" />
+  <script type="module" src="/assets/admin-token-main.js?v=1.11.0"></script>
+  <script src="/version.js?v=1.11.0" defer></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png?v=1.11.0" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/about.html">About</a><form method="post" action="/admin/logout"><button type="submit" class="ghost">Logout</button></form><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
+  <main class="workspace admin-workspace">
+    <p id="adminGreeting" class="admin-greeting" role="status"></p>
+    <nav class="admin-nav" aria-label="Administration"><a href="/admin">Rooms</a><a href="/admin/limits" aria-current="page">Limits</a></nav>
+    <div class="page-heading"><p class="eyebrow">Application settings</p><h1>Configured limits<span class="accent">.</span></h1><p class="section-description">The limits currently configured for this running application.</p><p class="muted">To change these values, update the server configuration and restart the application.</p></div>
+    <p id="limitsStatus" class="muted limits-status" role="status">Loading configured limits…</p>
+    <button id="retryLimits" type="button" class="ghost" hidden>Retry</button>
+    <div id="limitsContent" hidden>
+      <section class="workspace-section" aria-labelledby="capacity-title"><h2 id="capacity-title">Rooms and participants</h2><dl id="capacityLimits" class="limits-list"></dl></section>
+      <section class="workspace-section" aria-labelledby="lifecycle-title"><h2 id="lifecycle-title">Room lifecycle</h2><dl id="lifecycleLimits" class="limits-list"></dl></section>
+      <details class="workspace-section limits-details"><summary>Technical limits</summary><p class="muted">Document synchronization and request limits. Encoded sizes include Base64 overhead; 1 KiB = 1,024 bytes.</p><dl id="technicalLimits" class="limits-list"></dl></details>
+    </div>
+  </main>
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
+  <script type="module" src="/assets/admin-limits-main.js?v=1.11.0"></script>
+</body>
+</html>

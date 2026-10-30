@@ -21,10 +21,11 @@ test('participant colors are stable per name and remain within the palette', () 
   assert.equal(presence.assignColor('Alice'), first);
 });
 
-test('names retain the existing truncation boundary', () => {
+test('participant labels show generated names in full and truncate longer custom names', () => {
   assert.equal(truncateName(''), '');
-  assert.equal(truncateName('1234567890'), '1234567890');
-  assert.equal(truncateName('12345678901'), '123456789...');
+  assert.equal(truncateName('Nocturnal Chinchilla'), 'Nocturnal Chinchilla');
+  assert.equal(truncateName('12345678901234567890'), '12345678901234567890');
+  assert.equal(truncateName('123456789012345678901'), '1234567890123456789...');
 });
 
 test('active and copy states expire while selection follows transitions', (context) => {
