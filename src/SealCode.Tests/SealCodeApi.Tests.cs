@@ -122,6 +122,45 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
     }
 
     [Fact]
+    public async Task AdminLimitsRequireLoginAndExposeOnlyEffectiveLimits()
+    {
+        using var source = CreateFactory();
+        using var factory = source.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["MaxUsersPerRoom"] = "2",
+                    ["Limits:MaxRooms"] = "7",
+                    ["Limits:MaxConnections"] = "12",
+                    ["Limits:MaxConnectionsPerSource"] = "3",
+                    ["Limits:RoomIdleTimeoutMinutes"] = "45"
+                })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var denied = await client.GetAsync("/admin/limits/config");
+        denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var loginRedirect = await client.GetAsync("/admin/limits");
+        loginRedirect.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        loginRedirect.Headers.Location!.OriginalString.Should().Be("/admin/login");
+
+        _ = await LoginAsAdminAsync(client);
+        using var page = await client.GetAsync("/admin/limits");
+        page.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var response = await client.GetAsync("/admin/limits/config");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("MaxUsersPerRoom", "Limits");
+        payload.GetProperty("MaxUsersPerRoom").GetInt32().Should().Be(2);
+        var limits = payload.GetProperty("Limits");
+        limits.GetProperty("MaxRooms").GetInt32().Should().Be(7);
+        limits.GetProperty("MaxConnections").GetInt32().Should().Be(12);
+        limits.GetProperty("MaxConnectionsPerSource").GetInt32().Should().Be(3);
+        limits.GetProperty("RoomIdleTimeoutMinutes").GetInt32().Should().Be(45);
+        var expected = factory.Services.GetRequiredService<IOptions<Models.Configuration.ApplicationConfiguration>>().Value.Limits;
+        limits.GetRawText().Should().Be(JsonSerializer.Serialize(expected));
+    }
+
+    [Fact]
     public async Task AllAdminsSeeAllRoomsWithRoleSpecificDeleteRights()
     {
         using var factory = CreateFactory();
@@ -133,6 +172,10 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         var rootRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
         rootRooms.Should().HaveCount(2);
         rootRooms!.All(room => room.GetProperty("CanDelete").GetBoolean()).Should().BeTrue();
+        var rootOwnRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms?mine=true");
+        rootOwnRooms.Should().ContainSingle().Which.GetProperty("RoomId").GetString().Should().Be(otherId);
+        var rootUser = await client.GetFromJsonAsync<JsonElement>("/admin/me");
+        rootUser.GetProperty("DisplayName").GetString().Should().Be("Root");
         var rootPermission = await client.GetFromJsonAsync<JsonElement>($"/room/{otherId}/permissions");
         rootPermission.GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         owner = await LoginAsAdminAsync(client);
@@ -142,6 +185,14 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         rooms.Should().HaveCount(2);
         rooms!.Single(room => room.GetProperty("RoomId").GetString() == ownId).GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         rooms.Single(room => room.GetProperty("RoomId").GetString() == otherId).GetProperty("CanDelete").GetBoolean().Should().BeFalse();
+        var ownRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms?mine=true");
+        ownRooms.Should().ContainSingle().Which.GetProperty("RoomId").GetString().Should().Be(ownId);
+        var allRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms?mine=false");
+        allRooms.Should().HaveCount(2);
+        using var currentUser = await client.GetAsync("/admin/me");
+        currentUser.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var user = await currentUser.Content.ReadFromJsonAsync<JsonElement>();
+        user.GetProperty("DisplayName").GetString().Should().Be("Admin");
         var ownPermission = await client.GetFromJsonAsync<JsonElement>($"/room/{ownId}/permissions");
         ownPermission.GetProperty("CanDelete").GetBoolean().Should().BeTrue();
         var otherPermission = await client.GetFromJsonAsync<JsonElement>($"/room/{otherId}/permissions");
@@ -272,6 +323,10 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         using var roomPermission = await client.GetAsync($"/admin/rooms/{RoomId.New().Value}");
         roomPermission.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var currentUser = await client.GetAsync("/admin/me");
+        currentUser.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var ownRooms = await client.GetAsync("/admin/rooms?mine=true");
+        ownRooms.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -1070,6 +1125,12 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
             ArgumentNullException.ThrowIfNull(builder);
             builder.ConfigureAppConfiguration((_, config) =>
             {
+                // Keep local Google credentials and domain arrays out of the default test host.
+                var settingsWithoutGoogle = config.Build().AsEnumerable()
+                    .Where(setting => !setting.Key.StartsWith("GoogleSignIn", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                config.Sources.Clear();
+                config.AddInMemoryCollection(settingsWithoutGoogle);
                 var settings = new Dictionary<string, string?>
                 {
                     ["AdminUsers:0:Name"] = "Admin",

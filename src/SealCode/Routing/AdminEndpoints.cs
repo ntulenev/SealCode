@@ -83,14 +83,49 @@ internal static class AdminEndpoints
             return Results.File(path, "text/html");
         });
 
-        _ = app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUserManager) =>
+        _ = app.MapGet("/admin/limits", (IWebHostEnvironment env, IAdminUserManager adminUserManager, HttpContext context) =>
         {
+            if (!adminUserManager.IsAdmin())
+            {
+                return Results.Redirect("/admin/login");
+            }
+
+            var path = Path.Combine(env.WebRootPath, "admin-limits.html");
+            StaticAssetCaching.Apply(context.Response, path);
+            return Results.File(path, "text/html");
+        });
+
+        _ = app.MapGet("/admin/limits/config", (IOptions<ApplicationConfiguration> settings,
+            IAdminUserManager adminUserManager, HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            if (!adminUserManager.IsAdmin())
+            {
+                return Results.Unauthorized();
+            }
+
+            return Results.Json(new { settings.Value.MaxUsersPerRoom, settings.Value.Limits });
+        });
+
+        _ = app.MapGet("/admin/me", (IAdminUserManager adminUserManager, HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return adminUserManager.TryGetAdminUser(out var adminUser)
+                ? Results.Json(new { adminUser.DisplayName })
+                : Results.Unauthorized();
+        });
+
+        _ = app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUserManager,
+            HttpContext context, bool mine = false) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
             if (!adminUserManager.TryGetAdminUser(out var adminUser))
             {
                 return Results.Unauthorized();
             }
 
             var rooms = roomManager.GetRoomsSnapshot(adminUser)
+                .Where(room => !mine || room.CreatedBy.Matches(adminUser))
                 .Select(room => new RoomSummary(
                     room.RoomId.Value,
                     room.Name.Value,

@@ -13,6 +13,22 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
     document.getElementById('roomLanguage')
   );
   const resultEl = document.getElementById('createResult');
+  const greetingEl = document.getElementById('adminGreeting');
+  const myRoomsOnly = /** @type {HTMLInputElement} */ (document.getElementById('myRoomsOnly'));
+  let roomsRequest = 0;
+
+  async function loadCurrentUser() {
+    try {
+      const res = await fetch('/admin/me');
+      if (!res.ok || res.redirected) {
+        throw requestError(res);
+      }
+      const user = await res.json();
+      greetingEl.textContent = `Hello, ${user.DisplayName}!`;
+    } catch (error) {
+      showError(error);
+    }
+  }
 
   async function loadLanguages() {
     try {
@@ -29,22 +45,25 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
   }
 
   async function fetchRooms() {
+    const request = ++roomsRequest;
     try {
-      const res = await fetch('/admin/rooms');
+      const res = await fetch(myRoomsOnly.checked ? '/admin/rooms?mine=true' : '/admin/rooms');
       if (!res.ok || res.redirected) {
         throw requestError(res);
       }
       const rooms = await res.json();
-      renderRooms(rooms);
+      if (request === roomsRequest) renderRooms(rooms);
     } catch (error) {
-      showError(error);
+      if (request === roomsRequest) showError(error);
     }
   }
 
   /** @param {Array<Record<string, any>>} rooms */
   function renderRooms(rooms) {
     if (!rooms.length) {
-      roomsEl.innerHTML = '<p class="muted">No rooms yet.</p>';
+      roomsEl.innerHTML = myRoomsOnly.checked
+        ? '<p class="muted">You haven\'t created any rooms yet.</p>'
+        : '<p class="muted">No rooms yet.</p>';
       return;
     }
 
@@ -54,11 +73,17 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
       row.className = 'room-row';
 
       const name = document.createElement('div');
+      const roomLink = document.createElement('a');
+      roomLink.href = `/room/${encodeURIComponent(room.RoomId)}`;
+      roomLink.target = '_blank';
+      roomLink.rel = 'noopener noreferrer';
       const title = document.createElement('strong');
       title.textContent = room.Name ?? '';
+      title.title = room.Name ?? '';
+      roomLink.append(title);
       const id = document.createElement('small');
       id.textContent = room.RoomId;
-      name.append(title, document.createElement('br'), id);
+      name.append(roomLink, document.createElement('br'), id);
 
       const lang = document.createElement('div');
       const languageBadge = document.createElement('span');
@@ -136,6 +161,10 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
         resultEl.textContent = 'Room name is required.';
         return;
       }
+      if (name.length > nameInput.maxLength) {
+        resultEl.textContent = `Room name must be at most ${nameInput.maxLength} characters.`;
+        return;
+      }
       if (!language) {
         resultEl.textContent = 'Language is required.';
         return;
@@ -182,6 +211,7 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
         : 'Request failed. Try again.';
   }
 
-  const ready = Promise.all([fetchRooms(), loadLanguages()]);
+  myRoomsOnly.addEventListener('change', fetchRooms);
+  const ready = Promise.all([fetchRooms(), loadLanguages(), loadCurrentUser()]);
   return { ready };
 }

@@ -7,7 +7,7 @@
 .room-table-heading { padding: 10px 0; border-bottom: 1px solid var(--border); color: var(--muted); font: 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
 .room-row { padding: 20px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .room-row > div { min-width: 0; overflow-wrap: anywhere; }
-.room-row strong { font-size: 14px; font-weight: 600; }
+.room-row strong { font-size: 14px; font-weight: 600; line-height: 1.5; white-space: normal; }
 .room-row small { color: var(--muted); font-size: 10px; font-family: var(--mono); }
 .room-row .badge { display: inline-block; padding: 3px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font: 11px/1.5 var(--mono); max-width: 100%; overflow-wrap: anywhere; }
 .room-actions { display: flex; gap: 8px; }
@@ -33,4 +33,24 @@
 @media (max-width: 600px) {
   .create-grid { grid-template-columns: 1fr; gap: 16px; }
   .create-grid button { width: 100%; }
+}
+.admin-greeting { margin: 0 0 16px; color: var(--muted); overflow-wrap: anywhere; }
+.admin-greeting:empty { display: none; }
+.room-filter { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
+.room-filter input { width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); }
+.admin-nav { display: flex; gap: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
+.admin-nav a { padding: 10px 0; color: var(--muted); }
+.admin-nav a[aria-current="page"] { color: var(--text); border-bottom: 2px solid var(--accent); }
+.limits-list { margin: 0; }
+.limit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: baseline; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.limit-row dt { font-size: 14px; font-weight: 600; }
+.limit-row dt small { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.limit-row dd { margin: 0; font: 16px/1.5 var(--mono); color: var(--accent); text-align: right; }
+.limits-details summary { cursor: pointer; font-size: 18px; font-weight: 600; padding: 4px 0; }
+.limits-details > p { margin-top: 16px; }
+.limits-status { margin-bottom: 20px; }
+#retryLimits[hidden] { display: none; }
+@media (max-width: 600px) {
+  .limit-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .limit-row dd { text-align: left; }
 }

@@ -2,8 +2,8 @@
 /** @param {string} name */
 export function truncateName(name) {
   if (!name) return '';
-  if (name.length <= 10) return name;
-  return `${name.slice(0, 9)}...`;
+  if (name.length <= 20) return name;
+  return `${name.slice(0, 19)}...`;
 }
 
 /** Renders room participants, remote carets and transient presence states. */

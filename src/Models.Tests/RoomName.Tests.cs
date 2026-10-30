@@ -14,13 +14,31 @@ public sealed class RoomNameTests
         name.ToString().Should().Be("Room A");
     }
 
-    [Fact(DisplayName = "CtorShouldTruncateLongValue")]
+    [Theory]
     [Trait("Category", "Unit")]
-    public void CtorShouldTruncateLongValue()
+    [InlineData("Собеседование с Иваном Ивановым — Senior .NET Developer — 30.10.2026")]
+    [InlineData("Interview with Ada Lovelace — Platform team 🦭")]
+    public void CtorShouldPreserveLongValue(string value)
     {
-        var name = new RoomName("1234567890123456789012345");
+        var name = new RoomName(value);
 
-        name.Value.Should().Be("12345678901234567890...");
+        name.Value.Should().Be(value);
+    }
+
+    [Fact]
+    public void CtorShouldAcceptMaximumLengthAfterTrimming()
+    {
+        var value = new string('я', 160);
+        new RoomName($"  {value}  ").Value.Should().Be(value);
+    }
+
+    [Theory]
+    [InlineData(161)]
+    [InlineData(1025)]
+    public void CtorShouldRejectOversizedNamesInsteadOfTruncating(int length)
+    {
+        var action = () => new RoomName(new string('я', length));
+        action.Should().Throw<ArgumentException>();
     }
 
     [Theory(DisplayName = "CtorShouldThrowWhenValueIsWhiteSpace")]

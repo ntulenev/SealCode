@@ -34,6 +34,7 @@ import { compactCheckpoint } from './compact-checkpoint.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
 import { createRoomDeletion } from './room-deletion.js';
+import { generateDisplayName } from './display-name.js';
 
 /** Creates the room controllers and wires their UI and transport callbacks. */
 export function createRoomApplication({
@@ -65,6 +66,7 @@ export function createRoomApplication({
   } = elements;
   const syncErrors = new SyncErrors();
   const downloadLocalText = document.getElementById('downloadLocalText');
+  const generateNameBtn = document.getElementById('generateDisplayName');
   let collaborativeUndoEnabled = true;
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
   let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
@@ -163,6 +165,7 @@ export function createRoomApplication({
     applyJoin: (result) => {
       const sync = readSyncResult(result);
       roomNameEl.textContent = sync.name;
+      roomNameEl.title = sync.name;
       if (createdByEl) createdByEl.textContent = sync.createdBy || 'unknown';
       roomView.apply(result);
       applyJoinDocument(yjs, sync, lifecycle.joined);
@@ -810,6 +813,7 @@ export function createRoomApplication({
     }
     joinBtn.disabled = true;
     displayNameInput.disabled = true;
+    generateNameBtn.disabled = true;
     try {
       await Promise.all([editorReady, featuresReady, languagesReady]);
       lifecycle.initialJoinRequested = true;
@@ -838,13 +842,27 @@ export function createRoomApplication({
       if (!lifecycle.joined && !lifecycle.closed) {
         joinBtn.disabled = false;
         displayNameInput.disabled = false;
+        generateNameBtn.disabled = false;
       }
     }
   });
 
+  generateNameBtn.addEventListener('click', () => {
+    if (displayNameInput.disabled || lifecycle.joined || lifecycle.closed) return;
+    let nextName;
+    do {
+      nextName = generateDisplayName();
+    } while (nextName === displayNameInput.value.trim());
+    displayNameInput.value = nextName;
+    joinError.classList.add('hidden');
+    displayNameInput.focus();
+  });
+
+  if (!displayNameInput.value) displayNameInput.value = generateDisplayName();
   initMonaco();
   // The native form must stay inert until its click handler and editor are ready.
   joinBtn.querySelector('[data-join-label]').textContent = 'Join room';
   displayNameInput.disabled = false;
+  generateNameBtn.disabled = false;
   joinBtn.disabled = false;
 }

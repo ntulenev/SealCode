@@ -2,7 +2,7 @@ import { expect, test } from './fixtures.js';
 
 test('admin language labels render untrusted values as text', async ({ page }) => {
   const language = '<img src=x onerror="window.__review_xss=true">';
-  await page.route('**/admin/rooms', (route) =>
+  await page.route('**/admin/rooms?mine=true', (route) =>
     route.fulfill({
       json: [
         {

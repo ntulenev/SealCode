@@ -5,11 +5,14 @@ namespace Models;
 /// </summary>
 public readonly record struct RoomName
 {
+    /// <summary>Maximum length of a trimmed room name.</summary>
+    private const int MAX_LENGTH = 160;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="RoomName"/> struct.
     /// </summary>
     /// <param name="value">The name value.</param>
-    /// <exception cref="ArgumentException">Thrown when the value is empty or whitespace.</exception>
+    /// <exception cref="ArgumentException">Thrown when the value is empty, whitespace or too long.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
     public RoomName(string value)
     {
@@ -26,9 +29,9 @@ public readonly record struct RoomName
             throw new ArgumentException("Room name is required", nameof(value));
         }
 
-        if (trimmed.Length > 20)
+        if (trimmed.Length > MAX_LENGTH)
         {
-            trimmed = $"{trimmed[..20]}...";
+            throw new ArgumentException($"Room name must be at most {MAX_LENGTH} characters", nameof(value));
         }
 
         Value = trimmed;

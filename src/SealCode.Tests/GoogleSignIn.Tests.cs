@@ -63,8 +63,13 @@ public sealed class GoogleSignInTests
 
         using var adminPage = await client.GetAsync("/admin");
         Assert.Equal(HttpStatusCode.OK, adminPage.StatusCode);
+        var currentUser = await client.GetFromJsonAsync<JsonElement>("/admin/me");
+        Assert.Equal("person@example.org", currentUser.GetProperty("DisplayName").GetString());
         var otherRoom = factory.Services.GetRequiredService<IRoomManager>()
-            .CreateRoom(new RoomName("Someone else's room"), new RoomLanguage("sql"), new AdminUser("Other"));
+            .CreateRoom(new RoomName("Someone else's room"), new RoomLanguage("sql"),
+                new AdminUser("google:GOOGLE-subject-1", displayName: "person@example.org"));
+        var emptyRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms?mine=true");
+        Assert.Empty(emptyRooms!);
         using var rooms = await client.GetAsync("/admin/rooms");
         Assert.Equal(HttpStatusCode.OK, rooms.StatusCode);
         var roomList = await rooms.Content.ReadFromJsonAsync<JsonElement[]>();
@@ -81,6 +86,9 @@ public sealed class GoogleSignInTests
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         var room = await created.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("person@example.org", room.GetProperty("CreatedBy").GetString());
+        var ownRooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms?mine=true");
+        Assert.Equal(room.GetProperty("RoomId").GetString(),
+            Assert.Single(ownRooms!).GetProperty("RoomId").GetString());
         using var deleted = await client.DeleteAsync($"/admin/rooms/{room.GetProperty("RoomId").GetString()}");
         Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
     }
