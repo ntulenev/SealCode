@@ -85,7 +85,7 @@ public sealed class SnippetLibraryTests
         Assert.ThrowsAny<ArgumentException>(() => new SnippetCategory(default, "Title", [question]));
         Assert.ThrowsAny<ArgumentException>(() => new SnippetCategory(new("sql"), " ", [question]));
         Assert.Throws<ArgumentNullException>(() => new SnippetCategory(new("sql"), "SQL", null!));
-        Assert.Throws<ArgumentException>(() => new SnippetCategory(new("sql"), "SQL", []));
+        Assert.Empty(new SnippetCategory(new("sql"), "SQL", []).Questions);
         Assert.Throws<ArgumentException>(() => new SnippetCategory(new("sql"), "SQL", [null!]));
         Assert.Throws<ArgumentException>(() => new SnippetCategory(new("sql"), "SQL", [question, question]));
     }

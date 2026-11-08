@@ -10,12 +10,19 @@ public readonly record struct SnippetLanguage
     /// </summary>
     /// <param name="value">A Monaco language identifier or general.</param>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when the value is blank.</exception>
+    /// <exception cref="ArgumentException">Thrown when the value is blank or violates the category key format.</exception>
     public SnippetLanguage(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
 
-        Value = value.Trim().ToLowerInvariant();
+        var normalized = value.Trim().ToLowerInvariant();
+        if (normalized.Length > 32 || !char.IsAsciiLetterLower(normalized[0])
+            || normalized.Any(character => !char.IsAsciiLetterLower(character)
+                && !char.IsAsciiDigit(character) && character is not ('_' or '-')))
+        {
+            throw new ArgumentException("Category keys require 1–32 lowercase letters, digits, underscores or hyphens and must start with a letter.", nameof(value));
+        }
+        Value = normalized;
     }
 
     /// <summary>

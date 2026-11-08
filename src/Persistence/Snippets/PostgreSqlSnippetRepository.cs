@@ -8,8 +8,8 @@ using Npgsql;
 
 namespace Persistence.Snippets;
 
-/// <summary>Reads PostgreSQL snapshots without writing data or applying migrations.</summary>
-public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
+/// <summary>Reads and atomically updates PostgreSQL snippets without applying migrations.</summary>
+public sealed partial class PostgreSqlSnippetRepository : IEditableSnippetRepository
 {
     /// <summary>Creates a repository backed by the host-owned connection pool.</summary>
     /// <param name="dataSource">The shared PostgreSQL data source.</param>
@@ -63,7 +63,7 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
                 SELECT language, question_number, number, title, markdown FROM snippets.question_steps
             )
             SELECT c.language, c.title, q.number, q.topic, q.description,
-                   e.number, e.title, e.markdown
+                   e.number, e.title, e.markdown, c.sort_order
             FROM snippets.categories c
             LEFT JOIN snippets.questions q ON q.language = c.language
             LEFT JOIN examples e ON e.language = q.language AND e.question_number = q.number
@@ -78,13 +78,13 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
                 {
                     if (await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false))
                     {
-                        rows.Add(new(reader.GetString(0), reader.GetString(1), null, "", "", 0, "", ""));
+                        rows.Add(new(reader.GetString(0), reader.GetString(1), null, "", "", 0, "", "", reader.GetInt32(8)));
                     }
                     else
                     {
                         rows.Add(new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
                             reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
-                            reader.GetString(6), reader.GetString(7)));
+                            reader.GetString(6), reader.GetString(7), reader.GetInt32(8)));
                     }
                 }
             }
@@ -93,7 +93,7 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
                     category.Where(row => row.QuestionNumber.HasValue).GroupBy(row => row.QuestionNumber!.Value)
                         .Select(question => new SnippetQuestion(question.Key, question.First().Topic,
                             question.First().Description, question.Select(row =>
-                                new SnippetStep(row.StepNumber, row.StepTitle, row.Markdown)))))));
+                                new SnippetStep(row.StepNumber, row.StepTitle, row.Markdown)))), category.First().SortOrder)));
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return new(version, library);
         }
@@ -101,6 +101,15 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
         {
             throw new InvalidDataException("The PostgreSQL snippet library violates domain invariants.", exception);
         }
+    }
+
+    /// <inheritdoc />
+    public Task<bool> UpdateQuestionAsync(SnippetLanguage language, SnippetQuestion question,
+        DateTimeOffset expectedVersion, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        return RelocateQuestionAsync(language, question.Number, language, question,
+            expectedVersion, cancellationToken);
     }
 
     private readonly Func<NpgsqlDataSource> _getDataSource;

@@ -118,7 +118,8 @@ internal static class ServiceCollectionExtensions
     {
         _ = services.AddMcpServer()
             .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
-            .WithTools<AdminMcpTools>();
+            .WithTools<AdminMcpTools>()
+            .WithTools<SnippetMcpTools>();
         return services;
     }
 
@@ -155,6 +156,7 @@ internal static class ServiceCollectionExtensions
             return NpgsqlDataSource.Create(connection);
         });
         _ = services.AddSingleton<ISnippetCatalog, SnippetCatalog>();
+        _ = services.AddSingleton<SnippetAdministration>();
         _ = services.AddHostedService<SnippetCatalogStartupService>();
         _ = services.AddHostedService<SnippetCatalogRefreshService>();
         return services;

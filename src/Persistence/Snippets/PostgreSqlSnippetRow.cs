@@ -9,6 +9,7 @@ namespace Persistence.Snippets;
 /// <param name="StepNumber">The example position.</param>
 /// <param name="StepTitle">The example title.</param>
 /// <param name="Markdown">The example Markdown.</param>
+/// <param name="SortOrder">The category display order.</param>
 internal sealed record PostgreSqlSnippetRow(string Language, string CategoryTitle,
     int? QuestionNumber, string Topic, string Description, int StepNumber,
-    string StepTitle, string Markdown);
+    string StepTitle, string Markdown, int SortOrder = 0);

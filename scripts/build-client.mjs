@@ -4,6 +4,7 @@ rmSync('src/SealCode/wwwroot/assets', { recursive: true, force: true });
 await build({
   entryPoints: {
     'snippet-launcher-main': 'src/SealCode/wwwroot/snippet-launcher-main.js',
+    'admin-snippets-main': 'src/SealCode/wwwroot/admin-snippets-main.js',
     'snippets-main': 'src/SealCode/wwwroot/snippets-main.js',
     room: 'src/SealCode/wwwroot/room.js',
     'admin-main': 'src/SealCode/wwwroot/admin-main.js',

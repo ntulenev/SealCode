@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A small, shared workspace for writing code together." />
+  <title>Edit snippets — SealCode</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.14.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=1.14.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=1.14.0" />
+  <script src="/theme.js?v=1.14.0"></script>
+  <link rel="stylesheet" href="/site.css?v=1.14.0" />
+  <link rel="stylesheet" href="/admin.css?v=1.14.0" />
+  <script type="module" src="/assets/admin-token-main.js?v=1.14.0"></script>
+  <script src="/version.js?v=1.14.0" defer></script>
+  <link rel="stylesheet" href="/snippets.css?v=1.14.0" />
+  <link rel="stylesheet" href="/admin-snippets.css?v=1.14.0" />
+  <script type="module" src="/assets/snippet-launcher-main.js?v=1.14.0"></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png?v=1.14.0" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/about.html">About</a><form method="post" action="/admin/logout"><button type="submit" class="ghost">Logout</button></form><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
+  <main class="workspace admin-workspace">
+    <nav class="admin-nav" aria-label="Administration"><a href="/admin">Rooms</a><a href="/admin/limits">Limits</a><a href="/admin/snippets/manage" aria-current="page">Edit snippets</a></nav>
+    <div class="page-heading"><div><p class="eyebrow">Snippet management</p><h1>Manage snippets<span class="accent">.</span></h1><p class="section-description">Manage categories and questions. Review Markdown before publishing changes.</p></div></div>
+    <p id="editStatus" role="status" aria-live="polite">Loading library…</p>
+    <section class="workspace-section snippet-edit-picker" aria-label="Select a question">
+      <label>Category<select id="editCategory" disabled></select></label>
+      <label>Question<select id="editQuestion" disabled></select></label>
+      <button id="reloadSnippets" class="ghost" type="button">Reload library</button>
+    </section>
+    <details class="workspace-section" id="categoryManagement">
+      <summary>Manage categories</summary>
+      <form id="categoryEditForm">
+        <p class="muted">Each category uses a language key, such as csharp or sql. General questions use general. The library shows general and configured room languages.</p>
+        <div class="snippet-category-fields">
+          <label>Category key<input id="categoryKey" maxlength="32" pattern="[a-z][a-z0-9_-]{0,31}" required /></label>
+          <label>Category title<input id="categoryTitle" maxlength="1000" required /></label>
+          <label>Display order<input id="categorySortOrder" type="number" step="1" min="-2147483648" max="2147483647" required value="0" /></label>
+        </div>
+        <div class="snippet-edit-actions"><button id="newCategory" type="button" class="ghost">New category</button><button id="saveCategory" type="submit">Save category</button><button id="deleteCategory" type="button" class="ghost">Delete category</button></div>
+      </form>
+    </details>
+    <div class="snippet-edit-actions"><button id="newQuestion" type="button" class="ghost">New question +</button><button id="deleteQuestion" type="button" class="ghost" disabled>Delete question</button></div>
+    <form id="snippetEditForm" class="workspace-section" hidden>
+      <div class="snippet-category-fields">
+        <label>Question category<select id="editQuestionCategory" required></select></label>
+        <label>Question number<input id="editQuestionNumber" type="number" min="1" max="2147483647" step="1" required /></label>
+      </div>
+      <label>Topic<input id="editTopic" maxlength="1000" required /></label>
+      <label>Description<textarea id="editDescription" rows="3" maxlength="10000" required></textarea></label>
+      <div class="section-heading"><h2>Examples</h2><button id="addExample" type="button" class="ghost">Add example +</button></div>
+      <p class="muted">Use fenced code blocks (```language). Preview matches the library: prose and highlighted code; HTML stays plain text.</p>
+      <div id="editSteps"></div>
+      <div class="snippet-edit-actions"><button id="previewSnippets" type="button" class="ghost">Preview before publishing</button><button id="publishSnippets" type="submit" disabled>Publish changes</button></div>
+      <section id="editPreview" class="snippet-detail" aria-label="Publication preview" hidden></section>
+    </form>
+  </main>
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><span class="app-version" data-app-version>SealCode</span></footer>
+  <script type="module" src="/assets/admin-snippets-main.js?v=1.14.0"></script>
+</body>
+</html>

@@ -45,9 +45,9 @@ public sealed class FileSnippetRepository : ISnippetRepository
             foreach (var group in manifest.Groups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (group is null || group.Questions is null)
+                if (group is null || group.Questions is null || group.Questions.Length == 0)
                 {
-                    throw new InvalidDataException("Snippet groups and question lists cannot be null.");
+                    throw new InvalidDataException("Snippet groups require nonempty question lists.");
                 }
                 var questions = new List<SnippetQuestion>();
                 foreach (var question in group.Questions)

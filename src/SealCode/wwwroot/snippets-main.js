@@ -1,3 +1,4 @@
+import { createMarkdownRenderer } from './snippet-markdown.js';
 import * as monaco from 'monaco-editor';
 import { bindEditorTheme } from './editor-theme.js';
 
@@ -12,7 +13,7 @@ if (window.self !== window.top) {
 
 /** @typedef {{ Number: number, Title: string, Markdown: string }} Step */
 /** @typedef {{ Number: number, Topic: string, Description: string, Markdown: string, Steps?: Step[] }} Question */
-/** @typedef {{ Language: string, Title: string, Questions: Question[] }} Category */
+/** @typedef {{ Language: string, Title: string, SortOrder?: number, Questions: Question[] }} Category */
 const tabs = document.getElementById('snippetTabs');
 const list = document.getElementById('snippetQuestions');
 const heading = document.getElementById('snippetTitle');
@@ -30,33 +31,9 @@ let activeCategory = null;
 /** @type {number | null} */
 let selectedNumber = null;
 bindEditorTheme(monaco, document);
+const renderMarkdown = createMarkdownRenderer({ document,
+  colorize: (source, language) => monaco.editor.colorize(source, language, {}) });
 
-/** Render only plain text and fenced code. Raw HTML and Markdown links cannot execute. */
-async function renderMarkdown(/** @type {string} */ markdown, /** @type {string} */ language,
-  /** @type {HTMLElement} */ target, /** @type {number} */ current) {
-  const blocks = markdown.split(/^```([^\r\n]*)\r?\n([\s\S]*?)^```\s*$/gm);
-  const code = [];
-  for (let i = 0; i < blocks.length; i += 3) {
-    if (blocks[i].trim()) {
-      const text = document.createElement('p');
-      text.className = 'snippet-prose';
-      text.textContent = blocks[i].trim();
-      target.append(text);
-    }
-    if (blocks[i + 2] !== undefined) {
-      const pre = document.createElement('pre');
-      pre.className = 'snippet-code';
-      const source = blocks[i + 2].replace(/\r?\n$/, '');
-      pre.textContent = source;
-      target.append(pre);
-      code.push(source);
-      const html = await monaco.editor.colorize(source, blocks[i + 1].trim() || language, {});
-      if (current !== revision) return null;
-      pre.innerHTML = html;
-    }
-  }
-  return code.length ? code.join('\n\n') : markdown.trim();
-}
 
 async function copyText(/** @type {string} */ text) {
   status.textContent = '';
@@ -110,7 +87,7 @@ async function renderQuestion(/** @type {Question} */ question, /** @type {strin
     } else {
       content.append(article);
     }
-    const text = await renderMarkdown(step.Markdown, language, article, current);
+    const text = await renderMarkdown(step.Markdown, language, article, () => current === revision);
     if (text === null || current !== revision) return;
     texts.push(text);
     if (stepCopy) {
@@ -175,8 +152,10 @@ function renderQuestionList() {
     ++revision;
     selectedNumber = null;
     selectedText = '';
-    heading.textContent = 'No matching questions';
-    description.textContent = 'Try another number, topic or description, or clear the search.';
+    heading.textContent = category.Questions.length ? 'No matching questions' : 'No questions in this category';
+    description.textContent = category.Questions.length
+      ? 'Try another number, topic or description, or clear the search.'
+      : 'Questions will appear here after publication.';
     content.replaceChildren();
     status.textContent = '';
     copy.disabled = true;
