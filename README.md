@@ -212,6 +212,13 @@ dotnet test src/Persistence.Tests --filter FullyQualifiedName~PostgreSqlSnippetR
 Without that variable, the database test is explicitly skipped. It never applies
 migrations or modifies content.
 
+For migration, mapping, invalid-content and trigger tests, set
+`SEALCODE_SNIPPETS_ISOLATED_TEST_CONNECTION` to a **disposable PostgreSQL test server**
+with `CREATE DATABASE` permission. These tests create uniquely named databases,
+apply the migration, exercise changes, and drop the databases in cleanup. Never
+point this separate variable at the production server. CI runs these tests against
+its own PostgreSQL service container; no deployment credentials are needed.
+
 | Popup from the admin panel | SQL library in a separate tab |
 | --- | --- |
 | ![Private C# question library popup above room management](docs/images/snippets-popup.png) | ![SQL question library with numbered topics, highlighted code and copy action](docs/images/snippets-tab.png) |
