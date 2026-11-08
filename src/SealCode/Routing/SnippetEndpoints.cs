@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Abstractions;
 
 using SealCode.Security;
@@ -33,9 +35,17 @@ internal static class SnippetEndpoints
             {
                 return Results.Unauthorized();
             }
-            return !catalog.Enabled ? Results.NotFound()
-                : !catalog.CanAccess(admin) ? Results.StatusCode(StatusCodes.Status403Forbidden)
-                : Results.Json(catalog.GetSnapshot(admin).Categories.Select(SnippetCategoryResponse.From).ToArray());
+            if (!catalog.Enabled)
+            {
+                return Results.NotFound();
+            }
+            if (!catalog.CanAccess(admin))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+            var snapshot = catalog.GetCatalogSnapshot(admin);
+            context.Response.Headers["X-Snippets-Synced-At"] = snapshot.LastSyncedAt.ToString("O", CultureInfo.InvariantCulture);
+            return Results.Json(snapshot.Library.Categories.Select(SnippetCategoryResponse.From).ToArray());
         });
 
         _ = app.MapGet("/admin/snippets", (HttpContext context, ISnippetCatalog catalog, IAdminUserManager admins, IWebHostEnvironment env) =>

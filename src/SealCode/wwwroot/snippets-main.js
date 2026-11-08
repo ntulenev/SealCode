@@ -20,6 +20,7 @@ const search = /** @type {HTMLInputElement} */ (document.getElementById('snippet
 const searchSummary = document.getElementById('snippetSearchSummary');
 const content = document.getElementById('snippetContent');
 const status = document.getElementById('snippetStatus');
+const syncTime = /** @type {HTMLTimeElement} */ (document.getElementById('snippetSyncTime'));
 const copy = /** @type {HTMLButtonElement} */ (document.getElementById('copySnippet'));
 let selectedText = '';
 let revision = 0;
@@ -136,6 +137,17 @@ copy.onclick = async () => {
 fetch('/admin/snippets/catalog', { cache: 'no-store' }).then(async response => {
   if (!response.ok) throw new Error('Access unavailable');
   const categories = /** @type {Category[]} */ (await response.json());
+  const syncedAt = response.headers.get('X-Snippets-Synced-At');
+  const date = syncedAt ? new Date(syncedAt) : null;
+  if (date && Number.isFinite(date.getTime())) {
+    syncTime.dateTime = date.toISOString();
+    syncTime.textContent = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
+    }).format(date);
+  } else {
+    syncTime.textContent = 'Unavailable';
+  }
   for (const category of categories) {
     const button = document.createElement('button');
     button.textContent = category.Title;
@@ -149,4 +161,7 @@ fetch('/admin/snippets/catalog', { cache: 'no-store' }).then(async response => {
     ?? categories[0];
   if (initial) showCategory(initial);
   else status.textContent = 'No questions available for the configured languages.';
-}).catch(() => { status.textContent = 'Question library unavailable. Sign in with an authorized admin account.'; });
+}).catch(() => {
+  syncTime.textContent = 'Unavailable';
+  status.textContent = 'Question library unavailable. Sign in with an authorized admin account.';
+});

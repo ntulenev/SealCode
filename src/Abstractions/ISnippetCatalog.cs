@@ -46,4 +46,14 @@ public interface ISnippetCatalog
     /// <exception cref="UnauthorizedAccessException">Thrown when access is not allowed.</exception>
     /// <exception cref="InvalidOperationException">Thrown when startup initialization has not completed.</exception>
     SnippetLibrary GetSnapshot(AdminUser adminUser);
+
+    /// <summary>
+    /// Returns an authorized library together with its last successful synchronization time.
+    /// </summary>
+    /// <param name="adminUser">The current authenticated administrator.</param>
+    /// <returns>A consistent immutable library and portal synchronization timestamp.</returns>
+    /// <exception cref="ArgumentException">Thrown when the administrator is uninitialized.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when access is not allowed.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when startup initialization has not completed.</exception>
+    SnippetCatalogSnapshot GetCatalogSnapshot(AdminUser adminUser);
 }

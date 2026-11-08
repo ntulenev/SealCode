@@ -18,16 +18,20 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     /// </summary>
     /// <param name="repository">The persistence provider.</param>
     /// <param name="settings">The validated application settings.</param>
+    /// <param name="timeProvider">The portal synchronization clock.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
     public SnippetCatalog(
         ISnippetRepository repository,
-        IOptions<ApplicationConfiguration> settings)
+        IOptions<ApplicationConfiguration> settings,
+        TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         var configuration = settings.Value;
         _repository = repository;
+        _timeProvider = timeProvider;
         _enabled = configuration.Snippets.Enabled;
         _superAdminsOnly = configuration.Snippets.SuperAdminsOnly;
         _languages = [.. configuration.Languages.Select(language => new RoomLanguage(language))];
@@ -93,12 +97,16 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
 
     /// <inheritdoc />
     public SnippetLibrary GetSnapshot(AdminUser adminUser)
+        => GetCatalogSnapshot(adminUser).Library;
+
+    /// <inheritdoc />
+    public SnippetCatalogSnapshot GetCatalogSnapshot(AdminUser adminUser)
     {
         if (!CanAccess(adminUser))
         {
             throw new UnauthorizedAccessException("The administrator cannot access the snippet library.");
         }
-        return Volatile.Read(ref _library)
+        return Volatile.Read(ref _snapshot)
             ?? throw new InvalidOperationException("The snippet catalog must be initialized during startup.");
     }
 
@@ -128,10 +136,11 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
                 {
                     throw new InvalidOperationException("The snippet repository returned no startup snapshot.");
                 }
+                Publish(Volatile.Read(ref _snapshot)!.Library);
                 return;
             }
             var filtered = snapshot.Library.ForLanguages(_languages);
-            Volatile.Write(ref _library, filtered);
+            Publish(filtered);
             _updatedAt = snapshot.UpdatedAt;
             return;
         }
@@ -143,15 +152,19 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
             throw new InvalidOperationException("The snippet repository returned no library.");
         }
         cancellationToken.ThrowIfCancellationRequested();
-        Volatile.Write(ref _library, library.ForLanguages(_languages));
+        Publish(library.ForLanguages(_languages));
     }
 
+    private void Publish(SnippetLibrary library)
+        => Volatile.Write(ref _snapshot, new(_timeProvider.GetUtcNow(), library));
+
     private readonly ISnippetRepository _repository;
+    private readonly TimeProvider _timeProvider;
     private readonly RoomLanguage[] _languages;
     private readonly bool _enabled;
     private readonly bool _superAdminsOnly;
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private bool _initialized;
-    private SnippetLibrary? _library;
+    private SnippetCatalogSnapshot? _snapshot;
     private DateTimeOffset? _updatedAt;
 }
