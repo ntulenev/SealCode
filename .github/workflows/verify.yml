@@ -36,6 +36,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: dotnet restore src/SealCode.slnx --source https://api.nuget.org/v3/index.json
+      - name: Verify C# formatting and style
+        run: dotnet format src/SealCode.slnx --verify-no-changes --no-restore
       - run: dotnet test src/SealCode.slnx --no-restore --collect:"XPlat Code Coverage" --results-directory coverage/server
       - name: Merge server coverage by source lines
         run: |
