@@ -13,6 +13,8 @@ using ModelContextProtocol.AspNetCore;
 using Models;
 using Models.Configuration;
 
+using Persistence.Snippets;
+
 using SealCode.Mcp;
 using SealCode.Routing;
 using SealCode.Security;
@@ -115,6 +117,27 @@ internal static class ServiceCollectionExtensions
         _ = services.AddMcpServer()
             .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
             .WithTools<AdminMcpTools>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the file repository, application catalog and startup loader.
+    /// </summary>
+    /// <param name="services">The application service collection.</param>
+    /// <param name="environment">The host containing private library resources.</param>
+    /// <returns>The service collection for further registration.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
+    public static IServiceCollection AddSealCodeSnippets(
+        this IServiceCollection services,
+        IWebHostEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(environment);
+
+        _ = services.AddSingleton<ISnippetRepository>(_ => new FileSnippetRepository(
+            Path.Combine(environment.ContentRootPath, "Resources", "Snippets")));
+        _ = services.AddSingleton<ISnippetCatalog, SnippetCatalog>();
+        _ = services.AddHostedService<SnippetCatalogStartupService>();
         return services;
     }
 

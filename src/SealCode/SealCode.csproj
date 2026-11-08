@@ -7,6 +7,9 @@
 		<NoWarn>CA1873</NoWarn>
 	</PropertyGroup>
 	<ItemGroup>
+		<Content Update="Resources\Snippets\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="Resources\Snippets\*.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="Resources\Snippets\*.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Compile Remove="Abstractions\**\*.cs" />
 		<Compile Remove="Models\**\*.cs" />
 		<Compile Remove="Logic\**\*.cs" />
@@ -18,6 +21,7 @@
 		<PackageReference Include="MinVer" PrivateAssets="all" />
 		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
 		<ProjectReference Include="..\Logic\Logic.csproj" />
+		<ProjectReference Include="..\Persistence\Persistence.csproj" />
 		<ProjectReference Include="..\Models\Models.csproj" />
 		<ProjectReference Include="..\Transport\Transport.csproj" />
 	</ItemGroup>
@@ -27,4 +31,5 @@
       <Content Include="wwwroot/assets/**/*" Exclude="@(Content)" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
+  <ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="" /></VisualStudio></ProjectExtensions>
 </Project>

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -44,7 +44,10 @@ async function csrf(request) {
 try {
   mkdirSync(images, { recursive: true });
   await run(process.execPath, ['scripts/build-client.mjs']);
-  await run('dotnet', ['build', 'src/SealCode/SealCode.csproj', '-c', 'Debug', '-p:SkipClientBuild=true']);
+  const buildArgs = ['build', 'src/SealCode/SealCode.csproj', '-c', 'Debug', '-p:SkipClientBuild=true'];
+  if (process.env.SCREENSHOT_VERSION)
+    buildArgs.push(`-p:MinVerVersionOverride=${process.env.SCREENSHOT_VERSION}`, '-p:IncludeSourceRevisionInInformationalVersion=false');
+  await run('dotnet', buildArgs);
 
   const listener = createServer();
   listener.listen(0, '127.0.0.1');
@@ -56,8 +59,10 @@ try {
     AdminUsers: [{ Name: 'DemoAdmin', Password: 'local-screenshot-demo', IsSuperAdmin: true }],
     Languages: ['csharp', 'sql', 'javascript'],
     MaxUsersPerRoom: 5,
+    Snippets: { Enabled: true, SuperAdminsOnly: true },
     Logging: { LogLevel: { Default: 'Warning' } }
   }));
+  cpSync(join(root, 'src/SealCode/Resources/Snippets'), join(temporaryRoot, 'Resources/Snippets'), { recursive: true });
   server = spawn('dotnet', [
     join(root, 'src/SealCode/bin/Debug/net10.0/SealCode.dll'),
     '--contentRoot', temporaryRoot,
@@ -101,6 +106,7 @@ try {
   }
 
   const owner = await newPage();
+  await owner.context().addCookies(await admin.context().cookies());
   await owner.goto('/');
   await screenshot(owner, join(images, 'home-dark.png'));
   await setTheme(owner, 'light');
@@ -202,6 +208,22 @@ try {
   await setTheme(admin, 'light');
   await admin.setViewportSize(mobile);
   await screenshot(admin, join(images, 'admin-mobile.png'));
+  await admin.setViewportSize(desktop);
+  await setTheme(admin, 'dark');
+  await admin.getByRole('link', { name: 'Open question library' }).click();
+  const library = admin.frameLocator('iframe[title="Question library"]');
+  await library.getByRole('button', { name: 'C#', exact: true }).click();
+  await expect(library.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
+  await screenshot(admin, join(images, 'snippets-popup.png'));
+  const [libraryTab] = await Promise.all([
+    admin.context().waitForEvent('page'),
+    admin.getByRole('link', { name: 'Open in new tab' }).click()
+  ]);
+  await libraryTab.getByRole('button', { name: 'SQL', exact: true }).click();
+  await expect(libraryTab.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
+  await screenshot(libraryTab, join(images, 'snippets-tab.png'));
+  await libraryTab.close();
+  await admin.getByRole('button', { name: 'Close' }).click();
   // This command captures documentation, while the browser suite gates behavior.
   // Keep runtime diagnostics visible even when all requested screenshots were captured.
   for (const message of errors) console.warn(`Browser diagnostic during capture: ${message}`);

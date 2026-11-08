@@ -9,6 +9,20 @@ namespace SealCode.Tests;
 
 public sealed class ConfigurationValidationTests
 {
+    [Fact]
+    public void SnippetConfigurationValidationRejectsANullSection()
+    {
+        var configuration = new ApplicationConfiguration
+        {
+            AdminUsers = [new() { Name = "Admin", Password = "valid" }],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = 3,
+            Snippets = null!
+        };
+
+        Assert.True(Validator("Development").Validate(null, configuration).Failed);
+    }
+
     private static ApplicationConfiguration Settings(
         AdminUserConfiguration[] admins,
         string[]? languages = null,

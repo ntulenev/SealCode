@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "catalog.schema.json",
+  "title": "SealCode question library",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "groups"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "language",
+          "title",
+          "questions"
+        ],
+        "properties": {
+          "language": {
+            "type": "string",
+            "minLength": 1,
+            "description": "general or a configured Monaco language identifier"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "questions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "number",
+                "topic",
+                "description",
+                "file"
+              ],
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "topic": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A short summary of the skills and concepts covered by the question."
+                },
+                "file": {
+                  "type": "string",
+                  "pattern": "^[^/\\\\:]+\\.md$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

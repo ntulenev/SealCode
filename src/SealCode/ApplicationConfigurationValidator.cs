@@ -28,6 +28,10 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
     public ValidateOptionsResult Validate(string? name, ApplicationConfiguration options)
     {
         var errors = new List<string>();
+        if (options.Snippets is null)
+        {
+            errors.Add("Snippets configuration cannot be null.");
+        }
         foreach (var proxy in options.TrustedProxies)
         {
             if (!System.Net.IPAddress.TryParse(proxy, out _))

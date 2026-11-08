@@ -10,6 +10,8 @@
   <Project Path="Logic.Tests/Logic.Tests.csproj" Id="927976ca-367c-4ca7-a487-ed3cc0b76769" />
   <Project Path="Models/Models.csproj" Id="d187f863-d42c-4f97-9c05-f282538bd421" />
   <Project Path="Models.Tests/Models.Tests.csproj" Id="41d2bfcb-f480-4418-96df-563ae714a728" />
+  <Project Path="Persistence/Persistence.csproj" />
+  <Project Path="Persistence.Tests/Persistence.Tests.csproj" />
   <Project Path="SealCode/SealCode.csproj" />
   <Project Path="SealCode.Tests/SealCode.Tests.csproj" Id="15c06cbb-6e67-46a6-883b-c5d2d3669b5f" />
   <Project Path="Transport/Transport.csproj" Id="d2218ba7-eacf-4b05-8d43-441752c7b327" />

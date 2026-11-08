@@ -7,6 +7,11 @@ namespace Models.Configuration;
 /// </summary>
 public sealed class ApplicationConfiguration
 {
+    /// <summary>
+    /// Gets startup availability and access settings for the private snippet library.
+    /// </summary>
+    public SnippetConfiguration Snippets { get; init; } = new();
+
     /// <summary>Optional Google Workspace sign-in settings.</summary>
     public GoogleSignInConfiguration GoogleSignIn { get; init; } = new();
 

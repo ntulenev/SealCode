@@ -6,7 +6,7 @@ The backend uses ASP.NET Core Minimal API and SignalR on .NET 10; the browser us
 
 For a description of how the backend and real-time collaboration work, see [Backend architecture](docs/backend.md).
 
-[Quick start](#quick-start) · [Screenshots](#screenshots) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [Question library](#private-question-library) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
 
 ![SealCode in dark theme: a JavaScript room with four participants, shared code and live activity indicators](Room.png)
 
@@ -21,6 +21,7 @@ For a description of how the backend and real-time collaboration work, see [Back
 - Participant list with cursor line/column and typing, selection and copy indicators.
 - Automatic reconnection, room rejoin and synchronization recovery, retaining local undo history in the open tab.
 - Admin panel to create rooms, copy invitation links, inspect participant counts and delete rooms. Regular admins can delete their own rooms; super admins can delete any room.
+- Optional private question library for admins: General, C# and SQL questions, syntax-highlighted code and clipboard copying, in a popup or a separate tab.
 - Authenticated MCP tools to list rooms and languages, create rooms with complete invitation URLs, and delete rooms from an MCP client.
 - Configurable capacity of 1–5 participants per room, resource budgets and optional expiration of empty rooms.
 - Locally bundled editor dependencies and workers. Optional Google sign-in loads Google's identity script.
@@ -28,7 +29,7 @@ For a description of how the backend and real-time collaboration work, see [Back
 
 ## Screenshots
 
-These screenshots show the running application with disposable demo accounts and sample room data.
+These screenshots show the running application with disposable demo accounts, sample room data and the optional question library enabled.
 
 ### Home page and themes
 
@@ -70,6 +71,88 @@ The editor, participant bar and surrounding controls follow the same theme.
 ![Admin login screen with the pixel seal, username and password fields](docs/images/admin-login.png)
 
 </details>
+
+## Private question library
+
+The optional library ships with three English questions each for General (architecture
+and computer science), C# and SQL. An authorized admin sees a book icon in the
+admin header and in a room header. Click it for a popup, choose **Open in new tab**
+inside the popup, or Ctrl/Cmd-click the book to open a separate tab directly.
+Opening the library from a room selects its current language, falling back to
+General when that language has no snippets. This applies to both popups and new tabs.
+Language buttons run across the top; numbered topics and short coverage descriptions
+appear on the left and above the question content. Search the selected language by
+number, topic or description; matching is case-insensitive and accepts multiple words.
+**Copy snippet** copies the code blocks, or the full question for a General entry.
+The library is private to the administrator: opening or copying a question does not
+change the shared room document or reveal the library to participants.
+
+Enable it in `src/SealCode/appsettings.json`:
+
+```json
+"Snippets": {
+  "Enabled": true,
+  "SuperAdminsOnly": true
+}
+```
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `Snippets:Enabled` | `false` | Load the question catalog once into application memory at startup. Disabled libraries do not read the catalog or Markdown files. |
+| `Snippets:SuperAdminsOnly` | `true` | Only super admins can open the page or read its API. Set to `false` for all authenticated admins, including permitted Google admins. |
+
+The `Snippets` section is optional; omitting it keeps the library disabled.
+Environment overrides are `Snippets__Enabled` and `Snippets__SuperAdminsOnly`.
+Restart after changing settings or question files. Existing sessions are checked on
+every library request. Guests cannot read the library, even with a room link.
+
+The private `src/SealCode/Resources/Snippets/` folder is outside `wwwroot` and is copied
+alongside the application during build and publish. The implementation follows the solution layers:
+`Models/Snippets` owns immutable domain invariants, `Abstractions` defines
+`ISnippetRepository` and `ISnippetCatalog`, `Logic/SnippetCatalog` applies access
+and language policy, and `Transport/Models` maps browser responses.
+`Persistence/Snippets/FileSnippetRepository` alone reads the JSON and Markdown;
+`SealCode` supplies HTTP endpoints, dependency injection and a startup hosted service.
+A database provider can replace `ISnippetRepository` in composition without changing
+the catalog, domain models or HTTP contract. The resource JSON, Markdown and HTML
+files have no static HTTP routes. Only the authenticated `/admin/snippets` page
+and `/admin/snippets/catalog` API expose the library to authorized admins; responses
+use `Cache-Control: no-store`.
+
+To add questions, edit `Resources/Snippets/catalog.json`, using `catalog.schema.json` for
+editor validation, and add a UTF-8 `.md` file in the same folder. Each group has a
+unique language ID (`general` or a configured Monaco language ID), a title and a
+question list with unique positive `number`, `topic`, a required nonblank
+`description` explaining the concepts covered, and a local `file` name.
+For example:
+
+```json
+{
+  "number": 4,
+  "topic": "Your next topic",
+  "description": "The skills and concepts this question covers.",
+  "file": "csharp-04.md"
+}
+```
+
+Use plain question text and fenced code blocks such as ` ```csharp ` or ` ```sql `.
+The viewer renders prose as text and code with Monaco highlighting; raw HTML and
+Markdown links are not interpreted. General and configured system languages with authored questions appear. Invalid manifests, duplicate numbers, empty questions and missing files
+fail startup when the feature is enabled. Filenames cannot contain directory paths.
+
+| Popup from the admin panel | SQL library in a separate tab |
+| --- | --- |
+| ![Private C# question library popup above room management](docs/images/snippets-popup.png) | ![SQL question library with numbered topics, highlighted code and copy action](docs/images/snippets-tab.png) |
+
+To run the library browser tests and refresh these two screenshots with disposable
+accounts and an isolated host:
+
+```powershell
+npm run build:client
+$env:CAPTURE_SNIPPETS = '1'
+npx playwright test tests/e2e/snippets.spec.js
+Remove-Item Env:CAPTURE_SNIPPETS
+```
 
 ## Scope and room lifetime
 
@@ -124,8 +207,17 @@ port (5087) or the production HTTPS check port (5088).
 | `npm run test:e2e` | Browser collaboration, recovery, limits, security and UI tests, including smoke |
 | `npx playwright test tests/e2e/appearance.spec.js` | Theme persistence and tab synchronization, blocked storage, first-render theme, desktop/mobile layouts, keyboard joining, slow editor loading, and preserving text/selection/undo when changing theme |
 | `npm test` | Client unit tests and the browser suite |
+| `npx playwright test tests/e2e/snippets.spec.js` | Private library popup/tab/room, search and descriptions, clipboard, ordinary-admin permissions, guests and logout |
 | `npm run typecheck` | Static JavaScript type checking |
 | `dotnet test src/SealCode.slnx` | Server domain, service, hub, API and configuration tests |
+
+Snippet tests follow the project layers: domain invariants and immutable collections
+in `Models.Tests`, initialization/concurrency/cancellation and access policy in
+`Logic.Tests`, file-format validation in `Persistence.Tests`, browser DTO mapping
+in `Transport.Tests`, and startup/HTTP integration in `SealCode.Tests`.
+Run only snippet tests with `dotnet test src/SealCode.slnx --filter FullyQualifiedName~Snippet`.
+HTTP integration cases also carry `Category=Integration`. CI runs these projects
+through the solution and discovers `snippets.spec.js` in its full browser suite.
 
 ## Optional Google organization sign-in
 
@@ -543,9 +635,9 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.11.0`, so releases bypass previously cached resource URLs.
-When releasing changed assets, bump this version in all five `wwwroot/*.html`
-pages. Monaco workers inherit it from the room script URL. Admin modules are
+query string `?v=1.12.0`, so releases bypass previously cached resource URLs.
+When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
+`Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
 Stable URLs (HTML, JavaScript entry points and workers) use `Cache-Control: no-cache`
 so browsers revalidate them using ETag/Last-Modified. Files with esbuild hashes in
@@ -589,10 +681,12 @@ node scripts/capture-readme.mjs
 
 The script builds the client and server, starts an isolated loopback instance
 with disposable demo settings, creates three rooms, and connects four participants.
-Typing, selection and copy indicators come from actual editor actions. It replaces
+The demo enables the private question library and captures both its popup and a
+separate SQL tab. Typing, selection and copy indicators come from actual editor actions. It replaces
 `Room.png`, `UIColors.png` and the images in `docs/images/`, then closes its browser
 and server and removes the temporary settings. It does not use or change local
-admin credentials or a running deployment.
+admin credentials or a running deployment. Set `SCREENSHOT_VERSION` to a SemVer
+value when preparing release screenshots without a commit suffix.
 
 ### Production HTTPS check
 
