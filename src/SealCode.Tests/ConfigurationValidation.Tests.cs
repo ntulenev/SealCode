@@ -9,6 +9,24 @@ namespace SealCode.Tests;
 
 public sealed class ConfigurationValidationTests
 {
+    [Theory]
+    [InlineData("File", true)]
+    [InlineData("PostgreSql", true)]
+    [InlineData("postgresql", true)]
+    [InlineData("Unknown", false)]
+    [InlineData(null, false)]
+    public void SnippetProviderMustBeRecognized(string? provider, bool valid)
+    {
+        var settings = new ApplicationConfiguration
+        {
+            AdminUsers = [new() { Name = "Admin", Password = "valid" }],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = 3,
+            Snippets = new() { Provider = provider! }
+        };
+        Assert.Equal(valid, Validator("Development").Validate(null, settings).Succeeded);
+    }
+
     [Fact]
     public void SnippetConfigurationValidationRejectsANullSection()
     {
