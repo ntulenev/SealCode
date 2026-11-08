@@ -265,19 +265,45 @@ If unchanged, it reads no question content. If changed, it loads and validates
 the library in a repeatable-read transaction, then atomically replaces the immutable
 catalog snapshot. Requests continue using the previous snapshot during loading.
 Database errors, invalid content and canceled refreshes retain the previous snapshot;
-background failures are logged and retried at the next check. No database query runs
-on an HTTP request. The next catalog request sees refreshed content; an already
-open library page needs to be reopened or reloaded.
+background failures are logged and retried at the next check. Read-only library
+requests use the in-memory catalog. Editor requests read/write the database.
+The next catalog request sees refreshed content; an already open library page
+needs to be reopened or reloaded.
 
 A failed scheduled refresh does not stop the application. Users can continue
 opening the previous catalog; **Last synced** stays unchanged until a later check
 succeeds. Background failures add no error banner to the library.
 
-The runtime account needs only `CONNECT` to the database, `USAGE` on schema
-`snippets`, and `SELECT` on its four tables. When upgrading an existing read-only
-role, also grant it `SELECT` on the new `snippets.question_steps` table.
-Use a separate owner/editor account
-for migration and manual changes. Room state remains in memory.
+When enabled with PostgreSQL, super admins can open **Edit snippets** in the admin
+navigation (`/admin/snippets/manage`). Edit topics, descriptions and all examples,
+add/remove/reorder examples, and review the Markdown preview before publishing.
+The preview uses the library's same safe prose/fenced-code renderer. Drafts stay
+local until publication. A stale catalog revision returns HTTP 409 and preserves
+the form's draft; copy it before reloading and reconciling the current version.
+
+The token-protected `/mcp` endpoint also exposes `list_snippets` and
+`update_snippet`. Both require a super-admin token and enabled PostgreSQL snippets.
+Read `version` from `list_snippets`, then call `update_snippet` with `language`,
+`number`, and `request` containing `expectedVersion`, `topic`, `description`, and the
+complete ordered `steps` array of `{ title, markdown }` objects (MCP JSON uses camelCase). Only existing
+questions are updated. UI and MCP commit the question and its examples in one
+transaction, reject concurrent edits, and **await an immediate cache refresh**
+before reporting success. The 30-minute worker remains for out-of-band SQL edits.
+Open library pages need to be reloaded to display a newly published revision.
+
+The runtime account needs `CONNECT` to the database, `USAGE` on schema `snippets`,
+and `SELECT` on all four tables. To enable editing, also grant `UPDATE` on
+`snippets.questions` and `snippets.catalog_state`, and `INSERT, DELETE` on
+`snippets.question_steps` (the timestamp triggers update `catalog_state`).
+For example, replace `sealcode_runtime` with your deployment role:
+
+```sql
+GRANT UPDATE ON snippets.questions, snippets.catalog_state TO sealcode_runtime;
+GRANT INSERT, DELETE ON snippets.question_steps TO sealcode_runtime;
+```
+
+Migrations still run separately under a schema-owner account. No new migration
+is needed after `002_question_steps.sql`. Room state remains in memory.
 
 An optional **read-only** integration test uses a migrated, populated database.
 Set `SEALCODE_SNIPPETS_TEST_CONNECTION` securely in the test process environment, then run:
@@ -295,6 +321,16 @@ with `CREATE DATABASE` permission. These tests create uniquely named databases,
 apply the migration, exercise changes, and drop the databases in cleanup. Never
 point this separate variable at the production server. CI runs these tests against
 its own PostgreSQL service container; no deployment credentials are needed.
+
+The browser editor test also accepts `SEALCODE_SNIPPETS_EDITOR_TEST_CONNECTION`,
+pointing to a disposable migrated database containing category `general` and
+question `1`. It rewrites that question while verifying preview, conflict handling,
+permissions and immediate cache publication:
+
+```bash
+npx playwright test tests/e2e/snippet-editor.spec.js
+```
+
 
 | Popup from the admin panel | SQL library in a separate tab |
 | --- | --- |

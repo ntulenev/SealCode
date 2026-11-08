@@ -30,6 +30,7 @@ app.Use(AdminHttpSecurity.InvokeAsync);
 app.MapSealCodeEndpoints();
 app.MapAdminEndpoints();
 app.MapSnippetEndpoints();
+app.MapSnippetAdministrationEndpoints();
 app.MapAdminMcpEndpoints();
 app.MapHub<RoomHub>("/roomHub");
 app.Run();

@@ -157,6 +157,41 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
         });
     }
 
+    [IsolatedPostgreSqlFact]
+    public async Task QuestionPublicationIsAtomicAndRejectsStaleVersionsAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            await SeedAsync(source);
+            var repository = new PostgreSqlSnippetRepository(source);
+            var original = (await repository.LoadIfChangedAsync(null, CancellationToken.None))!;
+            var question = new Models.Snippets.SnippetQuestion(1, "Edited topic", "Edited description",
+                [new Models.Snippets.SnippetStep(1, "First", "  SELECT 'quoted';\n"),
+                 new Models.Snippets.SnippetStep(2, "Next", "SELECT 20;")]);
+            Assert.True(await repository.UpdateQuestionAsync(new("sql"), question, original.UpdatedAt, CancellationToken.None));
+            var updated = (await repository.LoadIfChangedAsync(original.UpdatedAt, CancellationToken.None))!;
+            var saved = updated.Library.Categories[1].Questions[0];
+            Assert.Equal("Edited topic", saved.Topic);
+            Assert.Equal("  SELECT 'quoted';\n", saved.Markdown);
+            Assert.Equal("SELECT 20;", saved.Steps[1].Markdown);
+            Assert.False(await repository.UpdateQuestionAsync(new("sql"), question, original.UpdatedAt, CancellationToken.None));
+            Assert.Null(await repository.LoadIfChangedAsync(updated.UpdatedAt, CancellationToken.None));
+            // A failing follow-up must roll back the first-example update and trigger revision too.
+            await ExecuteAsync(source, "ALTER TABLE snippets.question_steps ADD CONSTRAINT test_reject CHECK (markdown <> 'reject')");
+            var invalid = new Models.Snippets.SnippetQuestion(1, "Must roll back", "Coverage",
+                [new Models.Snippets.SnippetStep(1, "First", "changed"),
+                 new Models.Snippets.SnippetStep(2, "Next", "reject")]);
+            await Assert.ThrowsAsync<PostgresException>(() => repository.UpdateQuestionAsync(
+                new("sql"), invalid, updated.UpdatedAt, CancellationToken.None));
+            Assert.Null(await repository.LoadIfChangedAsync(updated.UpdatedAt, CancellationToken.None));
+            var single = new Models.Snippets.SnippetQuestion(1, "Single", "Coverage", "SELECT 99;");
+            Assert.True(await repository.UpdateQuestionAsync(new("sql"), single, updated.UpdatedAt, CancellationToken.None));
+            var final = await repository.LoadAsync(CancellationToken.None);
+            Assert.Single(final.Categories[1].Questions[0].Steps);
+            Assert.Equal("SELECT 2;", final.Categories[1].Questions[1].Markdown);
+        });
+    }
+
     private static Task SeedAsync(NpgsqlDataSource source) => ExecuteAsync(source, """
         INSERT INTO snippets.categories(language,title,sort_order) VALUES ('sql','SQL',10),('general','General',0);
         INSERT INTO snippets.questions(language,number,topic,description,markdown) VALUES

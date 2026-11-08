@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Abstractions;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -12,6 +14,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+
+using Models.Snippets;
+
+using Moq;
 
 namespace SealCode.Tests;
 
@@ -65,7 +71,7 @@ public sealed class AdminMcpTests
         await using var root = await ConnectAsync(rootHttp);
 
         var tools = await admin.ListToolsAsync();
-        Assert.Equal(["create_room", "delete_room", "list_languages", "list_rooms"],
+        Assert.Equal(["create_room", "delete_room", "list_languages", "list_rooms", "list_snippets", "update_snippet"],
             [.. tools.Select(tool => tool.Name).Order(StringComparer.Ordinal)]);
         foreach (var name in new[] { "create_room", "delete_room", "list_rooms" })
         {
@@ -244,7 +250,7 @@ public sealed class AdminMcpTests
         using var http = CreateHttpClient(factory, ADMIN_TOKEN);
         http.DefaultRequestHeaders.Add("Origin", http.BaseAddress!.GetLeftPart(UriPartial.Authority));
         await using var client = await ConnectAsync(http, "2025-11-25");
-        Assert.Equal(4, (await client.ListToolsAsync()).Count);
+        Assert.Equal(6, (await client.ListToolsAsync()).Count);
     }
 
     [Fact]
@@ -276,6 +282,61 @@ public sealed class AdminMcpTests
         using var enabledHttp = CreateHttpClient(factory, ADMIN_TOKEN);
         using var browser = await enabledHttp.GetAsync("/admin/rooms");
         Assert.Equal(HttpStatusCode.Unauthorized, browser.StatusCode);
+    }
+
+    [Fact]
+    public async Task SnippetToolsEnforceRolesAndPublishThroughTheRealTransportAsync()
+    {
+        var repository = new Mock<IEditableSnippetRepository>();
+        var revision = DateTimeOffset.UtcNow;
+        var question = new SnippetQuestion(1, "Original topic", "Coverage", "original");
+        repository.Setup(value => value.LoadIfChangedAsync(It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new VersionedSnippetLibrary(revision,
+                new SnippetLibrary([new SnippetCategory(new("general"), "General", [question])])));
+        repository.Setup(value => value.UpdateQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<SnippetQuestion>(),
+                It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Returns<SnippetLanguage, SnippetQuestion, DateTimeOffset, CancellationToken>((_, edited, expected, _) =>
+            {
+                if (expected != revision)
+                {
+                    return Task.FromResult(false);
+                }
+
+                question = edited;
+                revision = revision.AddSeconds(1);
+                return Task.FromResult(true);
+            });
+        using var baseFactory = CreateFactory();
+        using var factory = baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Snippets:Enabled"] = "true", ["Snippets:Provider"] = "PostgreSql" }));
+            builder.ConfigureServices(services => services.AddSingleton<ISnippetRepository>(repository.Object));
+        });
+        using var regularHttp = CreateHttpClient(factory, ADMIN_TOKEN);
+        using var rootHttp = CreateHttpClient(factory, ROOT_TOKEN);
+        await using var regular = await ConnectAsync(regularHttp);
+        await using var root = await ConnectAsync(rootHttp);
+        Assert.True((await regular.CallToolAsync("list_snippets")).IsError);
+        var listing = Payload(await root.CallToolAsync("list_snippets"));
+        var expected = listing.GetProperty("version").GetDateTimeOffset();
+        var args = new Dictionary<string, object?>
+        {
+            ["language"] = "general",
+            ["number"] = 1,
+            ["request"] = new
+            {
+                ExpectedVersion = expected,
+                Topic = "MCP edit",
+                Description = "Coverage",
+                Steps = new[] { new { Title = "Example", Markdown = "MCP published" } }
+            }
+        };
+        Assert.True((await regular.CallToolAsync("update_snippet", args)).IsError);
+        Assert.NotEqual(true, (await root.CallToolAsync("update_snippet", args)).IsError);
+        var catalog = factory.Services.GetRequiredService<ISnippetCatalog>();
+        Assert.Equal("MCP published", catalog.GetSnapshot(new("Root", true)).Categories[0].Questions[0].Markdown);
+        Assert.True((await root.CallToolAsync("update_snippet", args)).IsError);
     }
 
     private static Task<CallToolResult> DeleteAsync(McpClient client, string id)
