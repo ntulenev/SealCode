@@ -192,6 +192,48 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
         });
     }
 
+    [IsolatedPostgreSqlFact]
+    public async Task MissingQuestionsAndCanceledWritesDoNotAdvanceTheRevisionAndConcurrentWritersHaveOneWinnerAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            await SeedAsync(source);
+            var repository = new PostgreSqlSnippetRepository(source);
+            var original = (await repository.LoadIfChangedAsync(null, CancellationToken.None))!;
+            Assert.False(await repository.UpdateQuestionAsync(new("sql"), new(999, "Missing", "Coverage", "Source"),
+                original.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.UpdateQuestionAsync(new("missing"), new(1, "Missing", "Coverage", "Source"),
+                original.UpdatedAt, CancellationToken.None));
+            Assert.Null(await repository.LoadIfChangedAsync(original.UpdatedAt, CancellationToken.None));
+            using var canceled = new CancellationTokenSource();
+            await canceled.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.UpdateQuestionAsync(
+                new("sql"), new(1, "Canceled", "Coverage", "Source"), original.UpdatedAt, canceled.Token));
+            Assert.Null(await repository.LoadIfChangedAsync(original.UpdatedAt, CancellationToken.None));
+            var results = await Task.WhenAll(
+                repository.UpdateQuestionAsync(new("sql"), new(1, "Writer one", "Coverage", "First"), original.UpdatedAt, CancellationToken.None),
+                repository.UpdateQuestionAsync(new("sql"), new(1, "Writer two", "Coverage", "Second"), original.UpdatedAt, CancellationToken.None));
+            Assert.Single(results, saved => saved);
+            var changed = await repository.LoadAsync(CancellationToken.None);
+            Assert.Equal(results[0] ? "First" : "Second", changed.Categories[1].Questions[0].Markdown);
+            await ExecuteAsync(source, "DELETE FROM snippets.catalog_state");
+            Assert.False(await repository.UpdateQuestionAsync(new("sql"), new(1, "Must not write", "Coverage", "Source"),
+                original.UpdatedAt, CancellationToken.None));
+            await using var persisted = source.CreateCommand("SELECT markdown FROM snippets.questions WHERE language = 'sql' AND number = 1");
+            Assert.Equal(results[0] ? "First" : "Second", await persisted.ExecuteScalarAsync());
+        });
+    }
+
+    [Fact]
+    public async Task UpdateValidatesArgumentsBeforeConnectingAsync()
+    {
+        var repository = new PostgreSqlSnippetRepository(() => throw new InvalidOperationException("Must not connect"));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => repository.UpdateQuestionAsync(default,
+            new(1, "Topic", "Coverage", "Source"), DateTimeOffset.UtcNow, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => repository.UpdateQuestionAsync(new("sql"),
+            null!, DateTimeOffset.UtcNow, CancellationToken.None));
+    }
+
     private static Task SeedAsync(NpgsqlDataSource source) => ExecuteAsync(source, """
         INSERT INTO snippets.categories(language,title,sort_order) VALUES ('sql','SQL',10),('general','General',0);
         INSERT INTO snippets.questions(language,number,topic,description,markdown) VALUES

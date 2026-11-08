@@ -97,13 +97,87 @@ public sealed class SnippetAdministrationTests
         catalog.VerifyNoOtherCalls();
     }
 
-    private sealed class CurrentAdmin(AdminUser current) : IAdminUserManager
+    [Fact]
+    public void ConstructorRejectsMissingDependencies()
     {
-        public bool IsAdmin() => true;
-        public bool TryGetAdminUser(out AdminUser adminUser) { adminUser = current; return true; }
+        var repository = new Mock<ISnippetRepository>().Object;
+        var catalog = new Mock<ISnippetCatalog>().Object;
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = [] });
+        Assert.Throws<ArgumentNullException>(() => new SnippetAdministration(null!, catalog, settings));
+        Assert.Throws<ArgumentNullException>(() => new SnippetAdministration(repository, null!, settings));
+        Assert.Throws<ArgumentNullException>(() => new SnippetAdministration(repository, catalog, null!));
+    }
+
+    [Theory]
+    [InlineData("File", true, true)]
+    [InlineData("PostgreSql", false, true)]
+    [InlineData("PostgreSql", true, false)]
+    public async Task ReadOnlyProvidersAndAnonymousRequestsCannotEditAsync(string provider, bool writable, bool authenticated)
+    {
+        var repository = writable ? new Mock<IEditableSnippetRepository>().Object : new Mock<ISnippetRepository>().Object;
+        var settings = Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers = [],
+            Languages = [],
+            Snippets = new() { Enabled = true, Provider = provider }
+        });
+        var editor = new SnippetAdministration(repository, new Mock<ISnippetCatalog>().Object, settings);
+        var admins = new CurrentAdmin(new("Root", true), authenticated);
+        Assert.False(editor.CanEdit(admins));
+        var request = new UpdateSnippetRequest(DateTimeOffset.UtcNow, "Topic", "Coverage", [new("Title", "Source")]);
+        await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() => SnippetMcpTools.UpdateAsync(
+            editor, admins, "sql", 1, request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CancellationAfterCommitCannotCancelCachePublicationAsync()
+    {
+        using var canceled = new CancellationTokenSource();
+        var repository = new Mock<IEditableSnippetRepository>();
+        repository.Setup(value => value.UpdateQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<SnippetQuestion>(),
+                It.IsAny<DateTimeOffset>(), canceled.Token))
+            .Callback(canceled.Cancel).ReturnsAsync(true);
+        var catalog = new Mock<ISnippetCatalog>(MockBehavior.Strict);
+        catalog.Setup(value => value.RefreshAsync(CancellationToken.None)).Returns(Task.CompletedTask);
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = [] });
+        var editor = new SnippetAdministration(repository.Object, catalog.Object, settings);
+        var request = new UpdateSnippetRequest(DateTimeOffset.UtcNow, "Topic", "Coverage", [new("Title", "Source")]);
+        Assert.True(await editor.PublishAsync("sql", 1, request, canceled.Token));
+        Assert.True(canceled.IsCancellationRequested);
+        catalog.Verify(value => value.RefreshAsync(CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task CacheFailureDoesNotReportPublicationSuccessAsync()
+    {
+        var repository = new Mock<IEditableSnippetRepository>();
+        repository.Setup(value => value.UpdateQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<SnippetQuestion>(),
+            It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var catalog = new Mock<ISnippetCatalog>();
+        catalog.Setup(value => value.RefreshAsync(CancellationToken.None)).ThrowsAsync(new IOException("Database unavailable"));
+        var settings = Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = [] });
+        var editor = new SnippetAdministration(repository.Object, catalog.Object, settings);
+        await Assert.ThrowsAsync<IOException>(() => editor.PublishAsync("sql", 1,
+            new(DateTimeOffset.UtcNow, "Topic", "Coverage", [new("Title", "Source")]), CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => editor.PublishAsync("sql", 1, null!, CancellationToken.None));
+    }
+
+    private sealed class CurrentAdmin : IAdminUserManager
+    {
+        public CurrentAdmin(AdminUser current, bool authenticated = true)
+        {
+            _current = current;
+            _authenticated = authenticated;
+        }
+
+        public bool IsAdmin() => _authenticated;
+        public bool TryGetAdminUser(out AdminUser adminUser) { adminUser = _current; return _authenticated; }
         public Task<bool> TrySetCurrentUserAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<bool> TrySetGoogleCurrentUserAsync(GoogleIdentity identity) => throw new NotSupportedException();
         public Task ClearCurrentAdminUserAsync() => throw new NotSupportedException();
+
+        private readonly AdminUser _current;
+        private readonly bool _authenticated;
     }
 
     private static VersionedSnippetLibrary Snapshot(SnippetQuestion question, DateTimeOffset version)

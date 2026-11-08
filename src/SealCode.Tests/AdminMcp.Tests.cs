@@ -337,6 +337,11 @@ public sealed class AdminMcpTests
         var catalog = factory.Services.GetRequiredService<ISnippetCatalog>();
         Assert.Equal("MCP published", catalog.GetSnapshot(new("Root", true)).Categories[0].Questions[0].Markdown);
         Assert.True((await root.CallToolAsync("update_snippet", args)).IsError);
+        args["request"] = new { ExpectedVersion = revision, Topic = "Topic", Description = "Coverage", Steps = Array.Empty<object>() };
+        var invalid = await root.CallToolAsync("update_snippet", args);
+        Assert.True(invalid.IsError);
+        Assert.Contains("Invalid snippet revision", invalid.Content.OfType<TextContentBlock>().Single().Text, StringComparison.Ordinal);
+
     }
 
     private static Task<CallToolResult> DeleteAsync(McpClient client, string id)

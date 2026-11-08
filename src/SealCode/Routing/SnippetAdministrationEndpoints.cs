@@ -9,6 +9,7 @@ namespace SealCode.Routing;
 internal static class SnippetAdministrationEndpoints
 {
     /// <summary>Registers the editor and its shared publication API.</summary>
+    /// <param name="app">The application to configure.</param>
     public static void MapSnippetAdministrationEndpoints(this WebApplication app)
     {
         _ = app.MapGet("/admin/snippets/manage/access", (HttpContext context,

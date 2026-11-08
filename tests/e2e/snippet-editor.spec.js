@@ -32,6 +32,19 @@ test('super admin previews and publishes snippets with immediate cache refresh a
     await page.locator('#editCategory').selectOption('general');
     await page.locator('#editQuestion').selectOption('1');
     const before = await (await context.request.get('/admin/snippets/manage/catalog')).json();
+    if (process.env.CAPTURE_SNIPPET_EDITOR) {
+      await page.locator('#editTopic').fill('Cancellation in asynchronous requests');
+      await page.locator('#editDescription').fill('Compare request cancellation, token propagation and predictable cleanup.');
+      await page.locator('#editSteps input').first().fill('Pass cancellation to the HTTP request');
+      await page.locator('#editSteps textarea').first().fill('What happens when the caller cancels this request?\n\n```csharp\nusing var cancellation = new CancellationTokenSource();\ncancellation.CancelAfter(TimeSpan.FromSeconds(5));\n\nvar response = await client.GetAsync(url, cancellation.Token);\nresponse.EnsureSuccessStatusCode();\n```');
+      await page.screenshot({ path: 'docs/images/snippet-editor.png', fullPage: true });
+      await page.getByRole('button', { name: 'Preview before publishing' }).click();
+      await expect(page.getByRole('button', { name: 'Publish changes', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: 'Switch to light theme' }).click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+      await page.screenshot({ path: 'docs/images/snippet-editor-preview.png', fullPage: true });
+      await page.getByRole('button', { name: 'Switch to dark theme' }).click();
+    }
     await page.locator('#editTopic').fill('Published from browser');
     await page.locator('#editSteps textarea').first().fill('Preview <script>alert(1)</script>\n\n```sql\nSELECT 42;\n```');
     await page.getByRole('button', { name: 'Add example +' }).click();

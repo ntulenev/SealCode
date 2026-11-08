@@ -1,4 +1,4 @@
-import { renderMarkdown } from './snippet-markdown.js';
+import { createMarkdownRenderer } from './snippet-markdown.js';
 import * as monaco from 'monaco-editor';
 import { bindEditorTheme } from './editor-theme.js';
 
@@ -31,6 +31,8 @@ let activeCategory = null;
 /** @type {number | null} */
 let selectedNumber = null;
 bindEditorTheme(monaco, document);
+const renderMarkdown = createMarkdownRenderer({ document,
+  colorize: (source, language) => monaco.editor.colorize(source, language, {}) });
 
 
 async function copyText(/** @type {string} */ text) {

@@ -281,6 +281,10 @@ The preview uses the library's same safe prose/fenced-code renderer. Drafts stay
 local until publication. A stale catalog revision returns HTTP 409 and preserves
 the form's draft; copy it before reloading and reconciling the current version.
 
+| Markdown source editor | Preview before publication (light theme) |
+| --- | --- |
+| ![Super-admin snippet editor with question metadata and Markdown source](docs/images/snippet-editor.png) | ![Safe publication preview with syntax-highlighted C# and the Publish changes control](docs/images/snippet-editor-preview.png) |
+
 The token-protected `/mcp` endpoint also exposes `list_snippets` and
 `update_snippet`. Both require a super-admin token and enabled PostgreSQL snippets.
 Read `version` from `list_snippets`, then call `update_snippet` with `language`,
@@ -325,10 +329,18 @@ its own PostgreSQL service container; no deployment credentials are needed.
 The browser editor test also accepts `SEALCODE_SNIPPETS_EDITOR_TEST_CONNECTION`,
 pointing to a disposable migrated database containing category `general` and
 question `1`. It rewrites that question while verifying preview, conflict handling,
-permissions and immediate cache publication:
+permissions and immediate cache publication. CI provisions this database automatically:
 
 ```bash
 npx playwright test tests/e2e/snippet-editor.spec.js
+```
+
+To refresh the editor screenshots using that same disposable database:
+
+```powershell
+$env:CAPTURE_SNIPPET_EDITOR = '1'
+npx playwright test tests/e2e/snippet-editor.spec.js
+Remove-Item Env:CAPTURE_SNIPPET_EDITOR
 ```
 
 
