@@ -107,8 +107,25 @@ validates file-format details, and constructs domain models. Persistence records
 remain internal to that project. Domain invariant failures become an
 `InvalidDataException` with the original cause; I/O and cancellation failures
 propagate to startup. The repository does not filter by language or administrator.
-To use a database, register another `ISnippetRepository` implementation; the
-catalog and its HTTP contract stay unchanged. Room state remains in memory.
+`Snippets:Provider` selects `File` (default) or `PostgreSql`. The PostgreSQL
+implementation uses a singleton Npgsql data source and implements
+`IVersionedSnippetRepository`. Startup loads the timestamp and content in a
+repeatable-read transaction. `SnippetCatalogRefreshService` checks every 30 minutes
+after the startup service. An unchanged timestamp skips the content query.
+A changed timestamp loads a consistent library, validates and filters it, and
+atomically replaces the catalog reference. Initialization and refresh share a
+semaphore; HTTP readers never wait for database I/O. Failed or canceled refreshes
+leave both the library and its timestamp unchanged for retry at the next interval.
+Old immutable snapshots remain valid for in-flight readers.
+
+The SQL migration under `Persistence/Snippets/Migrations` is applied explicitly by
+an operator, never by the app. Categories and questions are manually maintained;
+statement triggers update a singleton timestamp for insert/update/delete/truncate.
+The runtime account requires only schema usage and table selects. Disabled
+libraries never create a database connection. Missing connections, schemas or
+invalid startup content fail startup; background failures retain the last good
+snapshot and log only the exception type. The HTTP contract stays unchanged.
+Room state remains in memory.
 
 ## 3. HTTP pipeline and endpoints
 

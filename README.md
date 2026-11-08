@@ -92,18 +92,22 @@ Enable it in `src/SealCode/appsettings.json`:
 ```json
 "Snippets": {
   "Enabled": true,
-  "SuperAdminsOnly": true
+  "SuperAdminsOnly": true,
+  "Provider": "File"
 }
 ```
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
-| `Snippets:Enabled` | `false` | Load the question catalog once into application memory at startup. Disabled libraries do not read the catalog or Markdown files. |
+| `Snippets:Enabled` | `false` | Load the catalog into memory at startup. Disabled libraries perform no file or database reads. |
 | `Snippets:SuperAdminsOnly` | `true` | Only super admins can open the page or read its API. Set to `false` for all authenticated admins, including permitted Google admins. |
+| `Snippets:Provider` | `File` | `File` loads JSON/Markdown once; `PostgreSql` loads the database at startup and checks its timestamp every 30 minutes. Values are case-insensitive. |
+| `ConnectionStrings:Snippets` | unset | Required for enabled PostgreSQL storage. Supply through deployment secrets or `ConnectionStrings__Snippets`. |
 
 The `Snippets` section is optional; omitting it keeps the library disabled.
-Environment overrides are `Snippets__Enabled` and `Snippets__SuperAdminsOnly`.
-Restart after changing settings or question files. Existing sessions are checked on
+Environment overrides include `Snippets__Enabled`, `Snippets__SuperAdminsOnly` and
+`Snippets__Provider`. Restart after changing settings or local question files.
+Database changes appear on the next 30-minute check. Existing sessions are checked on
 every library request. Guests cannot read the library, even with a room link.
 
 The private `src/SealCode/Resources/Snippets/` folder is outside `wwwroot` and is copied
@@ -111,15 +115,15 @@ alongside the application during build and publish. The implementation follows t
 `Models/Snippets` owns immutable domain invariants, `Abstractions` defines
 `ISnippetRepository` and `ISnippetCatalog`, `Logic/SnippetCatalog` applies access
 and language policy, and `Transport/Models` maps browser responses.
-`Persistence/Snippets/FileSnippetRepository` alone reads the JSON and Markdown;
-`SealCode` supplies HTTP endpoints, dependency injection and a startup hosted service.
-A database provider can replace `ISnippetRepository` in composition without changing
-the catalog, domain models or HTTP contract. The resource JSON, Markdown and HTML
+`Persistence/Snippets/FileSnippetRepository` reads JSON and Markdown, while
+`PostgreSqlSnippetRepository` reads database snapshots using Npgsql.
+`SealCode` supplies HTTP endpoints, dependency injection and startup/refresh hosted services.
+Both providers use the same domain models and HTTP contract. The resource JSON, Markdown and HTML
 files have no static HTTP routes. Only the authenticated `/admin/snippets` page
 and `/admin/snippets/catalog` API expose the library to authorized admins; responses
 use `Cache-Control: no-store`.
 
-To add questions, edit `Resources/Snippets/catalog.json`, using `catalog.schema.json` for
+For the `File` provider, edit `Resources/Snippets/catalog.json`, using `catalog.schema.json` for
 editor validation, and add a UTF-8 `.md` file in the same folder. Each group has a
 unique language ID (`general` or a configured Monaco language ID), a title and a
 question list with unique positive `number`, `topic`, a required nonblank
@@ -139,6 +143,74 @@ Use plain question text and fenced code blocks such as ` ```csharp ` or ` ```sql
 The viewer renders prose as text and code with Monaco highlighting; raw HTML and
 Markdown links are not interpreted. General and configured system languages with authored questions appear. Invalid manifests, duplicate numbers, empty questions and missing files
 fail startup when the feature is enabled. Filenames cannot contain directory paths.
+
+### PostgreSQL snippet storage
+
+1. Apply [001_create_snippets.sql](src/Persistence/Snippets/Migrations/001_create_snippets.sql)
+   **once** to an empty database using a schema-owner account in your database UI.
+   Alternatively, with connection details supplied through PostgreSQL's `PGHOST`,
+   `PGPORT`, `PGDATABASE`, `PGUSER` and secure password configuration, run:
+
+   ```bash
+   psql -v ON_ERROR_STOP=1 -f src/Persistence/Snippets/Migrations/001_create_snippets.sql
+   ```
+
+2. Set `Snippets__Enabled=true`, `Snippets__Provider=PostgreSql` and
+   `ConnectionStrings__Snippets` through deployment secrets/environment variables.
+   A connection has the shape `Host=<host>;Port=5432;Database=<database>;Username=<user>;Password=<secret>;SSL Mode=VerifyFull`.
+   Configure TLS to match your provider's certificate setup. Keep real credentials
+   out of tracked settings, command arguments and logs.
+3. Add or edit content directly through the database UI. The application does not
+   apply migrations, import file content, or write to the database. An empty schema
+   displays an empty library. PostgreSQL mode does not fall back to files.
+
+| Table | Content |
+| --- | --- |
+| `snippets.categories` | One row per normalized language (`general`, `csharp`, `sql`, etc.), nonblank `title`, and `sort_order` for display order. |
+| `snippets.questions` | `language` references a category; positive `number` is unique within it. `topic`, `description` and `markdown` are required, nonblank text. |
+| `snippets.catalog_state` | One automatic `updated_at` timestamp for the library. Do not edit or delete this row. |
+
+Create a category and its first question in the **same transaction**, since a
+published category must contain at least one question. For example:
+
+```sql
+BEGIN;
+INSERT INTO snippets.categories (language, title, sort_order)
+VALUES ('csharp', 'C#', 10);
+INSERT INTO snippets.questions (language, number, topic, description, markdown)
+VALUES ('csharp', 1, 'Collections', 'Choosing collection types.',
+        'Explain when you would use a Dictionary rather than a List.');
+COMMIT;
+```
+
+Questions appear by number; categories appear by `sort_order`, then language.
+Deleting a category cascades to its questions. Triggers advance `updated_at` on
+inserts, updates, deletes and truncates, including changes made through the UI;
+no manual timestamp update is needed. Keep triggers enabled when importing data.
+
+At startup the complete library must load successfully or startup fails. Every
+30 minutes the app compares the database timestamp with the published version.
+If unchanged, it reads no question content. If changed, it loads and validates
+the library in a repeatable-read transaction, then atomically replaces the immutable
+catalog snapshot. Requests continue using the previous snapshot during loading.
+Database errors, invalid content and canceled refreshes retain the previous snapshot;
+background failures are logged and retried at the next check. No database query runs
+on an HTTP request. The next catalog request sees refreshed content; an already
+open library page needs to be reopened or reloaded.
+
+The runtime account needs only `CONNECT` to the database, `USAGE` on schema
+`snippets`, and `SELECT` on its three tables. Use a separate owner/editor account
+for migration and manual changes. Room state remains in memory.
+
+An optional **read-only** integration test uses a migrated, populated database.
+Set `SEALCODE_SNIPPETS_TEST_CONNECTION` securely in the test process environment, then run:
+
+```bash
+dotnet test src/Persistence.Tests --filter FullyQualifiedName~PostgreSqlSnippetRepository
+```
+
+Without that variable, the database test is explicitly skipped. It never applies
+migrations or modifies content.
 
 | Popup from the admin panel | SQL library in a separate tab |
 | --- | --- |
@@ -512,7 +584,9 @@ Unlisted proxies cannot supply trusted forwarded headers. The browser WebSocket 
 
 ### Deployment and trust boundaries
 
-The application supports **one process only**. It has no database, multi-instance coordination or durable room storage; room data disappears when the process stops, even if Data Protection keys are persisted.
+The application supports **one process only**. Optional PostgreSQL storage persists
+the snippet library only; it adds no multi-instance coordination or durable room
+storage. Room data disappears when the process stops, even if Data Protection keys are persisted.
 
 Anyone knowing a room link is a trusted participant under [ADR 0003](docs/adr/0003-crdt-recovery-lifecycle.md). The server validates membership, revisions, encoding and resource limits, but does not interpret Yjs updates to verify their document semantics.
 
