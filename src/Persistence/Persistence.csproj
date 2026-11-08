@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Npgsql" />
     <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
     <ProjectReference Include="..\Models\Models.csproj" />
   </ItemGroup>

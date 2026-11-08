@@ -5,8 +5,11 @@ namespace Models.Configuration;
 /// </summary>
 public sealed class SnippetConfiguration
 {
+    /// <summary>Gets the persistence provider: File (default) or PostgreSql.</summary>
+    public string Provider { get; init; } = "File";
+
     /// <summary>
-    /// Gets whether the library is loaded once during application startup.
+    /// Gets whether the private library is enabled and loaded during startup.
     /// </summary>
     public bool Enabled { get; init; }
 

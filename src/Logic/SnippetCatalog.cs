@@ -9,7 +9,7 @@ using Models.Snippets;
 namespace Logic;
 
 /// <summary>
-/// Applies role and language policy to a single startup snapshot from a repository.
+/// Applies role and language policy to atomically published immutable snapshots.
 /// </summary>
 public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
 {
@@ -64,6 +64,25 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task RefreshAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        if (!_enabled || _repository is not IVersionedSnippetRepository)
+        {
+            return;
+        }
+        await _initializationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await LoadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = _initializationGate.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public bool CanAccess(AdminUser adminUser)
     {
         EnsureInitialized();
@@ -99,6 +118,23 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
+        if (_enabled && _repository is IVersionedSnippetRepository versioned)
+        {
+            var snapshot = await versioned.LoadIfChangedAsync(_updatedAt, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (snapshot is null)
+            {
+                if (_updatedAt is null)
+                {
+                    throw new InvalidOperationException("The snippet repository returned no startup snapshot.");
+                }
+                return;
+            }
+            var filtered = snapshot.Library.ForLanguages(_languages);
+            Volatile.Write(ref _library, filtered);
+            _updatedAt = snapshot.UpdatedAt;
+            return;
+        }
         var library = _enabled
             ? await _repository.LoadAsync(cancellationToken).ConfigureAwait(false)
             : SnippetLibrary.Empty;
@@ -117,4 +153,5 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private bool _initialized;
     private SnippetLibrary? _library;
+    private DateTimeOffset? _updatedAt;
 }

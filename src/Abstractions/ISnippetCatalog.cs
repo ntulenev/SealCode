@@ -4,7 +4,7 @@ using Models.Snippets;
 namespace Abstractions;
 
 /// <summary>
-/// Defines startup initialization and authorized access to an in-memory snippet library.
+/// Defines initialization, refresh and authorized access to an in-memory snippet library.
 /// </summary>
 public interface ISnippetCatalog
 {
@@ -22,6 +22,11 @@ public interface ISnippetCatalog
     /// <exception cref="InvalidOperationException">Thrown when the catalog has already been initialized successfully.</exception>
     /// <exception cref="OperationCanceledException">Thrown when the semaphore wait or repository load is canceled.</exception>
     Task InitializeAsync(CancellationToken cancellationToken);
+
+    /// <summary>Refreshes a versioned repository, retaining the current snapshot on failure.</summary>
+    /// <param name="cancellationToken">Cancels waiting or loading.</param>
+    /// <returns>Completion of the refresh; file and disabled catalogs perform no I/O.</returns>
+    Task RefreshAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Checks whether an authenticated administrator can use this library.

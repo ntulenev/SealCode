@@ -32,6 +32,11 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
         {
             errors.Add("Snippets configuration cannot be null.");
         }
+        else if (!string.Equals(options.Snippets.Provider, "File", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(options.Snippets.Provider, "PostgreSql", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Snippets:Provider must be File or PostgreSql.");
+        }
         foreach (var proxy in options.TrustedProxies)
         {
             if (!System.Net.IPAddress.TryParse(proxy, out _))
