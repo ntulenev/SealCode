@@ -180,6 +180,14 @@ for (const provider of ['File', 'PostgreSql']) {
       await page.locator('.site-header [data-theme-toggle]').click();
       await expect(unavailable).toHaveCSS('color', 'rgb(182, 46, 58)');
       await page.screenshot({ path: testInfo.outputPath('library-unavailable.png'), fullPage: true });
+      if (process.env.CAPTURE_SNIPPETS) {
+        if (provider === 'File') {
+          await page.locator('.site-header [data-theme-toggle]').click();
+          await expect(unavailable).toHaveCSS('color', 'rgb(255, 170, 168)');
+        }
+        const source = provider === 'File' ? 'file' : 'postgresql';
+        await page.screenshot({ path: `docs/images/snippets-unavailable-${source}.png`, fullPage: true });
+      }
     } finally { await context.close(); }
   });
 }

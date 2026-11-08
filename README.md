@@ -118,6 +118,10 @@ guests and admins without library permission still see no control. Direct librar
 requests return HTTP 503 while no complete catalog is available. There is no
 successful synchronization timestamp to display yet.
 
+| File catalog read failure (dark theme) | PostgreSQL unavailable (light theme) |
+| --- | --- |
+| ![Portal remains available with a red disabled question-library button after a file catalog read failure](docs/images/snippets-unavailable-file.png) | ![Portal remains available with a red disabled question-library button when PostgreSQL is unavailable](docs/images/snippets-unavailable-postgresql.png) |
+
 PostgreSQL startup retries apply only to likely temporary connection failures:
 network/connection timeouts, connection-related server errors, server restart or
 too many connections. Invalid credentials, missing schema, invalid content and
@@ -257,8 +261,8 @@ its own PostgreSQL service container; no deployment credentials are needed.
 | --- | --- |
 | ![Private C# question library popup showing the last synchronization date and time](docs/images/snippets-popup.png) | ![SQL question library with its last synchronization time, numbered topics and highlighted code](docs/images/snippets-tab.png) |
 
-To run the library browser tests and refresh these two screenshots with disposable
-accounts and an isolated host:
+To run the library browser tests and refresh all four library screenshots,
+including unavailable states, with disposable accounts and isolated hosts:
 
 ```powershell
 npm run build:client
