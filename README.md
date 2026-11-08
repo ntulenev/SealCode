@@ -210,6 +210,10 @@ background failures are logged and retried at the next check. No database query 
 on an HTTP request. The next catalog request sees refreshed content; an already
 open library page needs to be reopened or reloaded.
 
+A failed scheduled refresh does not stop the application. Users can continue
+opening the previous catalog; **Last synced** stays unchanged until a later check
+succeeds. Background failures add no error banner to the library.
+
 The runtime account needs only `CONNECT` to the database, `USAGE` on schema
 `snippets`, and `SELECT` on its three tables. Use a separate owner/editor account
 for migration and manual changes. Room state remains in memory.
