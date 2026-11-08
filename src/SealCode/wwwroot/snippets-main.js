@@ -10,7 +10,8 @@ if (window.self !== window.top) {
   document.querySelector('.site-header a')?.remove();
 }
 
-/** @typedef {{ Number: number, Topic: string, Description: string, Markdown: string }} Question */
+/** @typedef {{ Number: number, Title: string, Markdown: string }} Step */
+/** @typedef {{ Number: number, Topic: string, Description: string, Markdown: string, Steps?: Step[] }} Question */
 /** @typedef {{ Language: string, Title: string, Questions: Question[] }} Category */
 const tabs = document.getElementById('snippetTabs');
 const list = document.getElementById('snippetQuestions');
@@ -31,34 +32,93 @@ let selectedNumber = null;
 bindEditorTheme(monaco, document);
 
 /** Render only plain text and fenced code. Raw HTML and Markdown links cannot execute. */
-async function renderQuestion(/** @type {Question} */ question, /** @type {string} */ language) {
-  const current = ++revision;
-  heading.textContent = `${String(question.Number).padStart(2, '0')} / ${question.Topic}`;
-  description.textContent = question.Description;
-  content.replaceChildren();
-  status.textContent = '';
-  const blocks = question.Markdown.split(/^```([^\r\n]*)\r?\n([\s\S]*?)^```\s*$/gm);
+async function renderMarkdown(/** @type {string} */ markdown, /** @type {string} */ language,
+  /** @type {HTMLElement} */ target, /** @type {number} */ current) {
+  const blocks = markdown.split(/^```([^\r\n]*)\r?\n([\s\S]*?)^```\s*$/gm);
   const code = [];
   for (let i = 0; i < blocks.length; i += 3) {
     if (blocks[i].trim()) {
       const text = document.createElement('p');
       text.className = 'snippet-prose';
       text.textContent = blocks[i].trim();
-      content.append(text);
+      target.append(text);
     }
     if (blocks[i + 2] !== undefined) {
       const pre = document.createElement('pre');
       pre.className = 'snippet-code';
       const source = blocks[i + 2].replace(/\r?\n$/, '');
       pre.textContent = source;
-      content.append(pre);
+      target.append(pre);
       code.push(source);
       const html = await monaco.editor.colorize(source, blocks[i + 1].trim() || language, {});
-      if (current !== revision) return;
+      if (current !== revision) return null;
       pre.innerHTML = html;
     }
   }
-  selectedText = code.length ? code.join('\n\n') : question.Markdown.trim();
+  return code.length ? code.join('\n\n') : markdown.trim();
+}
+
+async function copyText(/** @type {string} */ text) {
+  status.textContent = '';
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = 'Copied to clipboard.';
+  } catch {
+    status.textContent = 'Clipboard unavailable. Select and copy the text manually.';
+  }
+}
+
+async function renderQuestion(/** @type {Question} */ question, /** @type {string} */ language) {
+  const current = ++revision;
+  heading.textContent = `${String(question.Number).padStart(2, '0')} / ${question.Topic}`;
+  description.textContent = question.Description;
+  content.replaceChildren();
+  status.textContent = '';
+  const steps = question.Steps ?? [{ Number: 1, Title: 'Original example', Markdown: question.Markdown }];
+  copy.textContent = steps.length > 1 ? 'Copy all snippets' : 'Copy snippet';
+  const grid = document.createElement('div');
+  if (steps.length > 1) {
+    grid.className = 'snippet-step-grid';
+    content.append(grid);
+  }
+  const texts = [];
+  for (const step of steps) {
+    const article = document.createElement('article');
+    article.className = 'snippet-step';
+    article.dataset.step = String(step.Number);
+    let stepCopy = /** @type {HTMLButtonElement | null} */ (null);
+    if (steps.length > 1) {
+      const header = document.createElement('header');
+      header.className = 'snippet-step-heading';
+      const labels = document.createElement('div');
+      const position = document.createElement('p');
+      position.className = 'eyebrow';
+      position.textContent = `Example ${step.Number} of ${steps.length}`;
+      const title = document.createElement('h3');
+      title.id = `snippet-example-${current}-${step.Number}`;
+      title.textContent = step.Title;
+      article.setAttribute('aria-labelledby', title.id);
+      labels.append(position, title);
+      stepCopy = document.createElement('button');
+      stepCopy.className = 'ghost';
+      stepCopy.textContent = 'Copy example';
+      stepCopy.setAttribute('aria-label', `Copy example ${step.Number}: ${step.Title}`);
+      stepCopy.disabled = true;
+      header.append(labels, stepCopy);
+      article.append(header);
+      grid.append(article);
+    } else {
+      content.append(article);
+    }
+    const text = await renderMarkdown(step.Markdown, language, article, current);
+    if (text === null || current !== revision) return;
+    texts.push(text);
+    if (stepCopy) {
+      stepCopy.onclick = () => copyText(text);
+      stepCopy.disabled = false;
+    }
+  }
+  selectedText = texts.join('\n\n');
   copy.disabled = false;
 }
 
@@ -125,14 +185,7 @@ function renderQuestionList() {
 
 search.addEventListener('input', renderQuestionList);
 
-copy.onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(selectedText);
-    status.textContent = 'Copied to clipboard.';
-  } catch {
-    status.textContent = 'Clipboard unavailable. Select and copy the text manually.';
-  }
-};
+copy.onclick = () => copyText(selectedText);
 
 fetch('/admin/snippets/catalog', { cache: 'no-store' }).then(async response => {
   if (!response.ok) throw new Error('Access unavailable');

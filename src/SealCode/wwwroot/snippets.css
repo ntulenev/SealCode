@@ -16,6 +16,15 @@
 .snippet-question-topic { font-weight: 600; }
 .snippet-question-description { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .snippet-description { margin: 16px 0 0; font-size: 14px; line-height: 1.7; }
+.snippet-step-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 20px; }
+.snippet-step { min-width: 0; }
+.snippet-step-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.snippet-step-heading .eyebrow { margin: 0 0 8px; }
+.snippet-step-heading h3 { margin: 0; font-size: 16px; line-height: 1.5; }
+.snippet-step-heading button { flex-shrink: 0; min-height: 32px; padding: 6px 10px; font-size: 12px; }
+.snippet-step-grid .snippet-prose { font-size: 13px; line-height: 1.6; }
+.snippet-step-grid .snippet-code { padding: 16px; font-size: 13px; line-height: 1.65; }
+@media (max-width: 1100px) { .snippet-step-grid { grid-template-columns: 1fr; } }
 .snippet-detail { padding: 28px 0 28px 32px; min-width: 0; }
 .snippet-detail-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
 .snippet-detail-heading h2 { margin: 0; }
