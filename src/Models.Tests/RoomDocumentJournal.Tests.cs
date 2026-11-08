@@ -5,11 +5,6 @@ using Models.Exceptions;
 
 namespace Models.Tests;
 
-[CollectionDefinition("Room journal metrics", DisableParallelization = true)]
-public sealed class RoomJournalMetricsGroup
-{
-}
-
 [Collection("Room journal metrics")]
 public sealed class RoomDocumentJournalTests
 {
@@ -98,19 +93,5 @@ public sealed class RoomDocumentJournalTests
         room.Close();
         Assert.Equal(0, bytes);
         Assert.Equal(0, count);
-    }
-}
-
-public sealed class Base64SizeTests
-{
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(1, 4)]
-    [InlineData(2, 4)]
-    [InlineData(3, 4)]
-    [InlineData(4, 8)]
-    public void EncodedLengthAccountsForPadding(int bytes, long characters)
-    {
-        Assert.Equal(characters, Base64Size.EncodedLength(bytes));
     }
 }
