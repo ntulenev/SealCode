@@ -71,7 +71,7 @@ public sealed class AdminMcpTests
         await using var root = await ConnectAsync(rootHttp);
 
         var tools = await admin.ListToolsAsync();
-        Assert.Equal(["create_room", "delete_room", "list_languages", "list_rooms", "list_snippets", "update_snippet"],
+        Assert.Equal(["create_room", "create_snippet_question", "delete_room", "delete_snippet_category", "delete_snippet_question", "list_languages", "list_rooms", "list_snippets", "save_snippet_category", "update_snippet"],
             [.. tools.Select(tool => tool.Name).Order(StringComparer.Ordinal)]);
         foreach (var name in new[] { "create_room", "delete_room", "list_rooms" })
         {
@@ -250,7 +250,7 @@ public sealed class AdminMcpTests
         using var http = CreateHttpClient(factory, ADMIN_TOKEN);
         http.DefaultRequestHeaders.Add("Origin", http.BaseAddress!.GetLeftPart(UriPartial.Authority));
         await using var client = await ConnectAsync(http, "2025-11-25");
-        Assert.Equal(6, (await client.ListToolsAsync()).Count);
+        Assert.Equal(10, (await client.ListToolsAsync()).Count);
     }
 
     [Fact]
@@ -341,6 +341,27 @@ public sealed class AdminMcpTests
         var invalid = await root.CallToolAsync("update_snippet", args);
         Assert.True(invalid.IsError);
         Assert.Contains("Invalid snippet revision", invalid.Content.OfType<TextContentBlock>().Single().Text, StringComparison.Ordinal);
+
+        repository.Setup(value => value.SaveCategoryAsync(It.IsAny<SnippetLanguage?>(), It.IsAny<SnippetCategory>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        repository.Setup(value => value.DeleteCategoryAsync(It.IsAny<SnippetLanguage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        repository.Setup(value => value.CreateQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<SnippetQuestion>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        repository.Setup(value => value.DeleteQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var changes = new (string Tool, Dictionary<string, object?> Args)[]
+        {
+            ("save_snippet_category", new() { ["request"] = new { ExpectedVersion = revision, Language = "general", Title = "Renamed", OriginalLanguage = "general", SortOrder = -10 } }),
+            ("delete_snippet_category", new() { ["language"] = "general", ["expectedVersion"] = revision }),
+            ("create_snippet_question", new() { ["language"] = "general", ["number"] = 2, ["request"] = new { ExpectedVersion = revision, Topic = "New", Description = "Coverage", Steps = new[] { new { Title = "Example", Markdown = "Source" } } } }),
+            ("delete_snippet_question", new() { ["language"] = "general", ["number"] = 2, ["expectedVersion"] = revision })
+        };
+        foreach (var change in changes)
+        {
+            Assert.True((await regular.CallToolAsync(change.Tool, change.Args)).IsError);
+            Assert.NotEqual(true, (await root.CallToolAsync(change.Tool, change.Args)).IsError);
+        }
+        changes[0].Args["request"] = new { ExpectedVersion = revision, Language = "invalid/key", Title = "Title" };
+        Assert.True((await root.CallToolAsync("save_snippet_category", changes[0].Args)).IsError);
+        repository.Setup(value => value.DeleteCategoryAsync(It.IsAny<SnippetLanguage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        Assert.True((await root.CallToolAsync("delete_snippet_category", changes[1].Args)).IsError);
 
     }
 

@@ -16,7 +16,8 @@ public sealed class PostgreSqlSnippetRepositoryTests
         var first = await repository.LoadIfChangedAsync(null, CancellationToken.None);
         Assert.NotNull(first);
         Assert.NotEmpty(first.Library.Categories);
-        Assert.All(first.Library.Categories, category => Assert.NotEmpty(category.Questions));
+        Assert.All(first.Library.Categories.SelectMany(category => category.Questions),
+            question => Assert.NotEmpty(question.Steps));
         Assert.Null(await repository.LoadIfChangedAsync(first.UpdatedAt, CancellationToken.None));
         var library = await repository.LoadAsync(CancellationToken.None);
         Assert.Equal(first.Library.Categories.Select(category => category.Language),

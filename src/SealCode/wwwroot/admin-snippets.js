@@ -9,6 +9,15 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
   const topic = /** @type {HTMLInputElement} */ (document.getElementById('editTopic'));
   const description = /** @type {HTMLTextAreaElement} */ (document.getElementById('editDescription'));
   const form = /** @type {HTMLFormElement} */ (document.getElementById('snippetEditForm'));
+  const categoryForm = /** @type {HTMLFormElement} */ (document.getElementById('categoryEditForm'));
+  const categoryKey = /** @type {HTMLInputElement} */ (document.getElementById('categoryKey'));
+  const categoryTitle = /** @type {HTMLInputElement} */ (document.getElementById('categoryTitle'));
+  const categoryOrder = /** @type {HTMLInputElement} */ (document.getElementById('categorySortOrder'));
+  const questionCategory = /** @type {HTMLSelectElement} */ (document.getElementById('editQuestionCategory'));
+  const questionNumber = /** @type {HTMLInputElement} */ (document.getElementById('editQuestionNumber'));
+  const newQuestion = /** @type {HTMLButtonElement} */ (document.getElementById('newQuestion'));
+  const deleteQuestion = /** @type {HTMLButtonElement} */ (document.getElementById('deleteQuestion'));
+  const deleteCategory = /** @type {HTMLButtonElement} */ (document.getElementById('deleteCategory'));
   const steps = document.getElementById('editSteps');
   const preview = document.getElementById('editPreview');
   const status = document.getElementById('editStatus');
@@ -20,6 +29,10 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
   let dirty = false;
   let busy = false;
   let revision = 0;
+  let isNew = false;
+  let categoryDirty = false;
+  /** @type {string | null} */
+  let originalCategory = null;
 
   function changed() {
     dirty = true;
@@ -28,7 +41,7 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
     preview.hidden = true;
     status.textContent = 'Unpublished changes. Preview your revision before publishing.';
   }
-  function canDiscard() { return !dirty || confirm('Discard unpublished changes?'); }
+  function canDiscard() { return !(dirty || categoryDirty) || confirm('Discard unpublished changes?'); }
   function selectedCategory() { return categories.find(item => item.Language === category.value); }
   function selectedQuestion() { return selectedCategory()?.Questions.find(item => item.Number === Number(question.value)); }
 
@@ -70,6 +83,8 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
   }
   function showQuestion() {
     const item = selectedQuestion();
+    isNew = false;
+    deleteQuestion.disabled = !item;
     form.hidden = !item;
     steps.replaceChildren();
     preview.hidden = true;
@@ -77,6 +92,8 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
     dirty = false;
     publish.disabled = true;
     if (!item) return;
+    questionCategory.value = category.value;
+    questionNumber.value = String(item.Number);
     topic.value = item.Topic;
     description.value = item.Description;
     for (const step of item.Steps) addStep(step.Title, step.Markdown);
@@ -90,12 +107,20 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
     return item;
   }
   function showCategory() {
+    const item = selectedCategory();
+    originalCategory = item?.Language ?? null;
+    categoryKey.value = item?.Language ?? '';
+    categoryTitle.value = item?.Title ?? '';
+    categoryOrder.value = String(item?.SortOrder ?? 0);
+    categoryDirty = false;
+    newQuestion.disabled = !item;
+    deleteCategory.disabled = !item;
     question.replaceChildren();
     for (const item of selectedCategory()?.Questions ?? []) question.add(option(`${item.Number}. ${item.Topic}`, String(item.Number)));
     question.disabled = !question.options.length;
     showQuestion();
   }
-  async function load() {
+  async function load(preferredLanguage = category.value, preferredNumber = question.value) {
     const current = revision;
     const response = await fetch('/admin/snippets/manage/catalog', { cache: 'no-store' });
     if (!response.ok || response.redirected) throw new Error('Library unavailable. A super-admin session and PostgreSQL snippets are required.');
@@ -103,10 +128,14 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
     if (current !== revision) return;
     categories = snapshot.Categories;
     version = snapshot.Version;
-    const previousCategory = category.value;
-    const previousQuestion = question.value;
+    const previousCategory = preferredLanguage;
+    const previousQuestion = preferredNumber;
     category.replaceChildren();
-    for (const item of categories) category.add(option(item.Title, item.Language));
+    questionCategory.replaceChildren();
+    for (const item of categories) {
+      category.add(option(item.Title, item.Language));
+      questionCategory.add(option(item.Title, item.Language));
+    }
     category.disabled = !categories.length;
     if (categories.some(item => item.Language === previousCategory)) category.value = previousCategory;
     showCategory();
@@ -134,12 +163,16 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
     addStep(); changed();
   };
   function draft() {
-    return {
+    /** @type {{ExpectedVersion: string, Topic: string, Description: string, Steps: {Title: string, Markdown: string}[], TargetLanguage?: string, TargetNumber?: number}} */
+    const payload = {
       ExpectedVersion: version, Topic: topic.value, Description: description.value,
       Steps: [...steps.querySelectorAll('section')].map(section => ({
         Title: section.querySelector('input').value, Markdown: section.querySelector('textarea').value
       }))
     };
+    if (!isNew && questionCategory.value !== category.value) payload['TargetLanguage'] = questionCategory.value;
+    if (!isNew && Number(questionNumber.value) !== Number(question.value)) payload['TargetNumber'] = Number(questionNumber.value);
+    return payload;
   }
   review.onclick = async () => {
     if (!form.reportValidity()) return;
@@ -164,29 +197,101 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
       status.textContent = 'Preview ready. Publish to update the library and application cache immediately.';
     } catch { status.textContent = 'Preview failed. Try again.'; }
   };
-  form.onsubmit = async (/** @type {SubmitEvent} */ event) => {
-    event.preventDefault();
-    if (busy || publish.disabled || !form.reportValidity()) return;
-    const payload = draft();
+  async function mutate(/** @type {string} */ url, /** @type {object} */ payload,
+    /** @type {string} */ message, preferredLanguage = category.value, preferredNumber = question.value) {
     busy = true;
-    const controls = [...form.querySelectorAll('input, textarea, button'), category, question];
-    for (const control of controls) /** @type {HTMLInputElement} */ (control).disabled = true;
+    const controls = /** @type {(HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[]} */ ([
+      ...form.querySelectorAll('input, textarea, button, select'),
+      ...categoryForm.querySelectorAll('input, button'), category, question, newQuestion, deleteQuestion
+    ]);
+    const previous = controls.map(control => control.disabled);
+    for (const control of controls) control.disabled = true;
     try {
-      const response = await fetch(`/admin/snippets/manage/${encodeURIComponent(category.value)}/${question.value}`, {
+      const response = await fetch(url, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': await token(fetch) },
         body: JSON.stringify(payload)
       });
-      if (response.status === 409) throw new Error('Another editor changed the library. Your draft remains here. Copy it before reloading.');
+      if (response.status === 409) throw new Error('Another editor changed the library, the source was deleted or the destination is occupied. Your draft remains here. Copy it before reloading.');
       if (!response.ok || response.redirected) throw new Error('Publication could not be confirmed. Your draft remains here; reload the library to check the saved version.');
       dirty = false;
-      await load();
-      status.textContent = 'Published. The application cache is updated.';
+      categoryDirty = false;
+      await load(preferredLanguage, preferredNumber);
+      status.textContent = message;
     } catch (error) { status.textContent = error.message; }
     finally {
       busy = false;
-      for (const control of controls) /** @type {HTMLInputElement} */ (control).disabled = false;
+      controls.forEach((control, index) => { control.disabled = previous[index]; });
+      category.disabled = !categories.length;
+      question.disabled = !question.options.length;
+      newQuestion.disabled = !selectedCategory();
+      deleteQuestion.disabled = isNew || !selectedQuestion();
+      deleteCategory.disabled = originalCategory === null;
       publish.disabled = true;
     }
+  }
+  form.onsubmit = async (/** @type {SubmitEvent} */ event) => {
+    event.preventDefault();
+    if (busy || publish.disabled || !form.reportValidity()) return;
+    if (categoryDirty && !confirm('Discard unpublished category metadata and publish this question?')) return;
+    const destination = questionCategory.value;
+    const number = questionNumber.value;
+    const path = isNew ? `/questions/${encodeURIComponent(destination)}/${number}`
+      : `/${encodeURIComponent(category.value)}/${question.value}`;
+    await mutate(`/admin/snippets/manage${path}`, draft(),
+      'Published. The application cache is updated.', destination, number);
+  };
+  categoryForm.addEventListener('input', () => {
+    categoryDirty = true;
+    status.textContent = 'Unpublished category metadata. Save category to apply these changes.';
+  });
+  categoryForm.onsubmit = async (/** @type {SubmitEvent} */ event) => {
+    event.preventDefault();
+    if (busy || !categoryForm.reportValidity()) return;
+    if (dirty && !confirm('Discard unpublished question changes and save this category?')) return;
+    const destination = categoryKey.value;
+    await mutate('/admin/snippets/manage/categories', {
+      ExpectedVersion: version, OriginalLanguage: originalCategory, Language: destination,
+      Title: categoryTitle.value, SortOrder: Number(categoryOrder.value)
+    }, 'Category saved. The application cache is updated.', destination);
+  };
+  document.getElementById('newCategory').onclick = () => {
+    if (busy || !canDiscard()) return;
+    showCategory();
+    originalCategory = null;
+    categoryKey.value = '';
+    categoryTitle.value = '';
+    categoryOrder.value = '0';
+    categoryDirty = true;
+    deleteCategory.disabled = true;
+    status.textContent = 'Enter a new category key, title and display order, then save category.';
+    categoryKey.focus();
+  };
+  deleteCategory.onclick = async () => {
+    if (busy || originalCategory === null) return;
+    if (!confirm(`Delete category "${selectedCategory().Title}" (${originalCategory}) and ALL ${selectedCategory().Questions.length} questions and their examples? Unpublished changes will be discarded.`)) return;
+    await mutate(`/admin/snippets/manage/categories/${encodeURIComponent(originalCategory)}/delete`,
+      { ExpectedVersion: version }, 'Category and its questions deleted. The application cache is updated.');
+  };
+  newQuestion.onclick = () => {
+    if (busy || !selectedCategory() || !canDiscard()) return;
+    showCategory();
+    isNew = true;
+    form.hidden = false;
+    questionCategory.value = category.value;
+    questionNumber.value = String(Math.max(0, ...selectedCategory().Questions.map(item => item.Number)) + 1);
+    topic.value = '';
+    description.value = '';
+    steps.replaceChildren();
+    addStep();
+    deleteQuestion.disabled = true;
+    changed();
+    topic.focus();
+  };
+  deleteQuestion.onclick = async () => {
+    if (busy || isNew || !selectedQuestion()) return;
+    if (!confirm(`Delete question ${question.value}: ${selectedQuestion().Topic}, and all its examples? Unpublished changes will be discarded.`)) return;
+    await mutate(`/admin/snippets/manage/questions/${encodeURIComponent(category.value)}/${question.value}/delete`,
+      { ExpectedVersion: version }, 'Question deleted. The application cache is updated.');
   };
   document.getElementById('reloadSnippets').onclick = () => {
     if (!busy && canDiscard()) return load().catch(error => { status.textContent = error.message; });
@@ -195,6 +300,6 @@ export function createSnippetEditor({ document, window, fetch, confirm, renderMa
     category.dataset.previous = category.value;
     question.dataset.previous = question.value;
   }
-  window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+  window.addEventListener('beforeunload', event => { if (dirty || categoryDirty) { event.preventDefault(); event.returnValue = ''; } });
   return { ready: load().catch(error => { status.textContent = error.message; }) };
 }

@@ -58,9 +58,71 @@ internal sealed class SnippetAdministration
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var question = request.ToQuestion(number);
-        var saved = await ((IEditableSnippetRepository)_repository).UpdateQuestionAsync(
-            new SnippetLanguage(language), question, request.ExpectedVersion, cancellationToken).ConfigureAwait(false);
+        var original = new SnippetLanguage(language);
+        var destination = request.TargetLanguage is null ? original : new SnippetLanguage(request.TargetLanguage);
+        var question = request.ToQuestion(request.TargetNumber ?? number);
+        var write = original == destination && number == question.Number
+            ? Writer.UpdateQuestionAsync(original, question, request.ExpectedVersion, cancellationToken)
+            : Writer.RelocateQuestionAsync(original, number, destination, question, request.ExpectedVersion, cancellationToken);
+        return await RefreshAfterWriteAsync(write).ConfigureAwait(false);
+    }
+
+    /// <summary>Creates or updates category metadata and immediately publishes its new snapshot.</summary>
+    /// <param name="request">The metadata, original key and expected revision.</param>
+    /// <param name="cancellationToken">Cancels writes before commit.</param>
+    /// <returns>False for a missing category, occupied key or stale revision.</returns>
+    public Task<bool> SaveCategoryAsync(SaveSnippetCategoryRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var category = request.ToCategory();
+        SnippetLanguage? original = request.OriginalLanguage is null ? null : new(request.OriginalLanguage);
+        return RefreshAfterWriteAsync(Writer.SaveCategoryAsync(original, category,
+            request.ExpectedVersion, cancellationToken));
+    }
+
+    /// <summary>Deletes a category and its complete question tree, then refreshes the cache.</summary>
+    /// <param name="language">The existing category key.</param>
+    /// <param name="expectedVersion">The observed catalog revision.</param>
+    /// <param name="cancellationToken">Cancels writes before commit.</param>
+    /// <returns>False for a missing category or stale revision.</returns>
+    public Task<bool> DeleteCategoryAsync(string language, DateTimeOffset expectedVersion,
+        CancellationToken cancellationToken)
+        => RefreshAfterWriteAsync(Writer.DeleteCategoryAsync(new(language), expectedVersion, cancellationToken));
+
+    /// <summary>Creates a complete question in an existing category and immediately refreshes the cache.</summary>
+    /// <param name="language">The destination category.</param>
+    /// <param name="number">The new question number.</param>
+    /// <param name="request">The complete authored question and expected revision.</param>
+    /// <param name="cancellationToken">Cancels writes before commit.</param>
+    /// <returns>False for a missing category, occupied number or stale revision.</returns>
+    public Task<bool> CreateQuestionAsync(string language, int number, UpdateSnippetRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.TargetLanguage is not null || request.TargetNumber is not null)
+        {
+            throw new ArgumentException("Use language and number to identify a new question.");
+        }
+        return RefreshAfterWriteAsync(Writer.CreateQuestionAsync(new(language), request.ToQuestion(number),
+            request.ExpectedVersion, cancellationToken));
+    }
+
+    /// <summary>Deletes a question and all its examples, then immediately refreshes the cache.</summary>
+    /// <param name="language">The existing category.</param>
+    /// <param name="number">The existing question number.</param>
+    /// <param name="expectedVersion">The observed catalog revision.</param>
+    /// <param name="cancellationToken">Cancels writes before commit.</param>
+    /// <returns>False for a missing question or stale revision.</returns>
+    public Task<bool> DeleteQuestionAsync(string language, int number, DateTimeOffset expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(number);
+        return RefreshAfterWriteAsync(Writer.DeleteQuestionAsync(new(language), number, expectedVersion, cancellationToken));
+    }
+
+    private async Task<bool> RefreshAfterWriteAsync(Task<bool> write)
+    {
+        var saved = await write.ConfigureAwait(false);
         if (saved)
         {
             // A disconnected editor must not cancel cache publication after the database commit.
@@ -68,6 +130,8 @@ internal sealed class SnippetAdministration
         }
         return saved;
     }
+
+    private IEditableSnippetRepository Writer => (IEditableSnippetRepository)_repository;
 
     private readonly ISnippetRepository _repository;
     private readonly ISnippetCatalog _catalog;

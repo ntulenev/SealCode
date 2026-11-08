@@ -7,8 +7,10 @@ namespace Transport.Models;
 /// <param name="Topic">The question topic.</param>
 /// <param name="Description">The question description.</param>
 /// <param name="Steps">All examples in their publication order.</param>
+/// <param name="TargetLanguage">An optional destination category for an existing question.</param>
+/// <param name="TargetNumber">An optional destination number for an existing question.</param>
 public sealed record UpdateSnippetRequest(DateTimeOffset ExpectedVersion, string Topic,
-    string Description, SnippetStepInput[] Steps)
+    string Description, SnippetStepInput[] Steps, string? TargetLanguage = null, int? TargetNumber = null)
 {
     /// <summary>Validates the complete revision before any database writes.</summary>
     /// <param name="number">The existing question identifier.</param>

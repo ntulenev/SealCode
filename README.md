@@ -234,8 +234,8 @@ leave the library unavailable when the feature is enabled. Filenames cannot cont
 | `snippets.question_steps` | Additional examples: `language` + `question_number` identify the parent question; `number` is 2, 3, …; `title` and `markdown` are required. |
 | `snippets.catalog_state` | One automatic `updated_at` timestamp for the library. Do not edit or delete this row. |
 
-Create a category and its first question in the **same transaction**, since a
-published category must contain at least one question. For example:
+Database categories may be empty, so they can be created before authoring questions.
+Related manual SQL edits should still be committed together. For example:
 
 ```sql
 BEGIN;
@@ -275,8 +275,16 @@ opening the previous catalog; **Last synced** stays unchanged until a later chec
 succeeds. Background failures add no error banner to the library.
 
 When enabled with PostgreSQL, super admins can open **Edit snippets** in the admin
-navigation (`/admin/snippets/manage`). Edit topics, descriptions and all examples,
-add/remove/reorder examples, and review the Markdown preview before publishing.
+navigation (`/admin/snippets/manage`). **Manage categories** creates, renames and
+orders language categories, or deletes a category with all its questions and examples.
+Category keys use 1–32 letters, digits, underscores or hyphens and start with a letter.
+The public library retains General and the configured room languages.
+
+**New question** creates a question in the selected category. Edit its category,
+positive number, topic, description and all examples; moving or renumbering never
+overwrites an occupied destination. Questions can also be deleted individually.
+Add/remove/reorder examples and review the Markdown preview before publishing.
+Category and question deletions require explicit confirmation in the UI.
 The preview uses the library's same safe prose/fenced-code renderer. Drafts stay
 local until publication. A stale catalog revision returns HTTP 409 and preserves
 the form's draft; copy it before reloading and reconciling the current version.
@@ -285,25 +293,36 @@ the form's draft; copy it before reloading and reconciling the current version.
 | --- | --- |
 | ![Super-admin snippet editor with question metadata and Markdown source](docs/images/snippet-editor.png) | ![Safe publication preview with syntax-highlighted C# and the Publish changes control](docs/images/snippet-editor-preview.png) |
 
-The token-protected `/mcp` endpoint also exposes `list_snippets` and
-`update_snippet`. Both require a super-admin token and enabled PostgreSQL snippets.
+The token-protected `/mcp` endpoint exposes the same operations. All snippet tools
+require a super-admin token and enabled PostgreSQL snippets:
+
+| Tool | Operation |
+| --- | --- |
+| `list_snippets` | Read all categories, questions, examples and the current catalog revision. |
+| `save_snippet_category` | Create metadata with `originalLanguage: null`, or edit/rename an existing category using its original key. |
+| `delete_snippet_category` | Delete a category and its entire question/example tree. |
+| `create_snippet_question` | Create a complete question at an unused number in an existing category. |
+| `update_snippet` | Edit a question; optional `request.targetLanguage` and `request.targetNumber` move or renumber it. |
+| `delete_snippet_question` | Delete a question and all its examples. |
+
 Read `version` from `list_snippets`, then call `update_snippet` with `language`,
 `number`, and `request` containing `expectedVersion`, `topic`, `description`, and the
-complete ordered `steps` array of `{ title, markdown }` objects (MCP JSON uses camelCase). Only existing
-questions are updated. UI and MCP commit the question and its examples in one
+complete ordered `steps` array of `{ title, markdown }` objects (MCP JSON uses camelCase).
+Each mutation requires the current revision. UI and MCP commit related changes in one
 transaction, reject concurrent edits, and **await an immediate cache refresh**
 before reporting success. The 30-minute worker remains for out-of-band SQL edits.
 Open library pages need to be reloaded to display a newly published revision.
 
 The runtime account needs `CONNECT` to the database, `USAGE` on schema `snippets`,
-and `SELECT` on all four tables. To enable editing, also grant `UPDATE` on
-`snippets.questions` and `snippets.catalog_state`, and `INSERT, DELETE` on
-`snippets.question_steps` (the timestamp triggers update `catalog_state`).
+and `SELECT` on all four tables. Editing additionally requires `INSERT, UPDATE, DELETE`
+on categories, questions and examples, plus `UPDATE` on `snippets.catalog_state`
+(the timestamp triggers update that singleton row).
 For example, replace `sealcode_runtime` with your deployment role:
 
 ```sql
-GRANT UPDATE ON snippets.questions, snippets.catalog_state TO sealcode_runtime;
-GRANT INSERT, DELETE ON snippets.question_steps TO sealcode_runtime;
+GRANT UPDATE ON snippets.catalog_state TO sealcode_runtime;
+GRANT INSERT, UPDATE, DELETE ON snippets.categories, snippets.questions,
+    snippets.question_steps TO sealcode_runtime;
 ```
 
 Migrations still run separately under a schema-owner account. No new migration

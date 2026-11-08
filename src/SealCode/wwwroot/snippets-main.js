@@ -13,7 +13,7 @@ if (window.self !== window.top) {
 
 /** @typedef {{ Number: number, Title: string, Markdown: string }} Step */
 /** @typedef {{ Number: number, Topic: string, Description: string, Markdown: string, Steps?: Step[] }} Question */
-/** @typedef {{ Language: string, Title: string, Questions: Question[] }} Category */
+/** @typedef {{ Language: string, Title: string, SortOrder?: number, Questions: Question[] }} Category */
 const tabs = document.getElementById('snippetTabs');
 const list = document.getElementById('snippetQuestions');
 const heading = document.getElementById('snippetTitle');
@@ -152,8 +152,10 @@ function renderQuestionList() {
     ++revision;
     selectedNumber = null;
     selectedText = '';
-    heading.textContent = 'No matching questions';
-    description.textContent = 'Try another number, topic or description, or clear the search.';
+    heading.textContent = category.Questions.length ? 'No matching questions' : 'No questions in this category';
+    description.textContent = category.Questions.length
+      ? 'Try another number, topic or description, or clear the search.'
+      : 'Questions will appear here after publication.';
     content.replaceChildren();
     status.textContent = '';
     copy.disabled = true;

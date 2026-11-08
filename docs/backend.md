@@ -80,8 +80,9 @@ wire errors and notifications. Protocol names live in
 
 ### Private snippet library
 
-`SnippetLibrary` owns unique language categories; `SnippetCategory` owns a nonempty
-set of questions with unique positive numbers and exposes a sorted read-only copy.
+`SnippetLibrary` owns unique language categories; `SnippetCategory` owns a possibly
+empty set of questions with unique positive numbers and exposes a sorted read-only
+copy, title and category display order.
 `SnippetQuestion` validates its topic, coverage description and a nonempty immutable
 progression of `SnippetStep` examples. Steps have unique consecutive numbers from
 one, a title and Markdown that preserves code indentation. Input collections are
@@ -134,6 +135,18 @@ atomically replaces the catalog reference. Initialization and refresh share a
 semaphore; HTTP readers never wait for database I/O. Failed or canceled refreshes
 leave both the library and its timestamp unchanged for retry at the next interval.
 Old immutable snapshots remain valid for in-flight readers.
+
+`IEditableSnippetRepository` adds category metadata CRUD and complete question
+creation, updates, moves and deletion. All writers lock `catalog_state` before
+changing content, compare the caller's observed revision, and commit atomically.
+Renaming category keys and moving/renumbering questions use the existing cascading
+foreign keys, preserving their examples. Occupied destinations, missing sources
+and stale revisions return a conflict without publishing any writes. Empty database
+categories are valid; the file manifest retains its nonempty-group validation.
+`SnippetAdministration` is shared by the super-admin HTTP editor and MCP tools.
+Each successful commit awaits `ISnippetCatalog.RefreshAsync` with cancellation
+independent of the client request, so success means the application cache is current.
+
 
 Each catalog publication also records the portal clock's completion time using
 the injected `TimeProvider`. Unchanged PostgreSQL checks publish a new timestamp

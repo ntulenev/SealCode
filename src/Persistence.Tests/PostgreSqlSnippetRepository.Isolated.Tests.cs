@@ -98,16 +98,15 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
     }
 
     [IsolatedPostgreSqlFact]
-    public async Task InvalidCategoryAndMissingTimestampFailWithoutReturningPartialLibraryAsync()
+    public async Task EmptyCategoryLoadsAndMissingTimestampFailsWithoutReturningPartialLibraryAsync()
     {
         await WithDatabaseAsync(async source =>
         {
             var repository = new PostgreSqlSnippetRepository(source);
             await SeedAsync(source);
             await ExecuteAsync(source, "INSERT INTO snippets.categories(language,title,sort_order) VALUES ('csharp','C#',20)");
-            var failure = await Assert.ThrowsAsync<InvalidDataException>(
-                () => repository.LoadAsync(CancellationToken.None));
-            Assert.IsType<ArgumentException>(failure.InnerException);
+            var loaded = await repository.LoadAsync(CancellationToken.None);
+            Assert.Empty(loaded.Categories.Single(category => category.Language.Value == "csharp").Questions);
 
             await ExecuteAsync(source, "DELETE FROM snippets.catalog_state");
             await Assert.ThrowsAsync<InvalidDataException>(() => repository.LoadAsync(CancellationToken.None));
@@ -232,6 +231,73 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
             new(1, "Topic", "Coverage", "Source"), DateTimeOffset.UtcNow, CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentNullException>(() => repository.UpdateQuestionAsync(new("sql"),
             null!, DateTimeOffset.UtcNow, CancellationToken.None));
+    }
+
+    [IsolatedPostgreSqlFact]
+    public async Task CategoryAndQuestionLifecyclePreservesChildrenAndRejectsConflictsAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            var repository = new PostgreSqlSnippetRepository(source);
+            async Task<Abstractions.VersionedSnippetLibrary> SnapshotAsync()
+            {
+                return (await repository.LoadIfChangedAsync(null, CancellationToken.None))!;
+            }
+            var snapshot = await SnapshotAsync();
+            var sql = new Models.Snippets.SnippetCategory(new("sql"), "SQL questions", [], 10);
+            Assert.True(await repository.SaveCategoryAsync(null, sql, snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.Empty(Assert.Single(snapshot.Library.Categories).Questions);
+            Assert.Equal(10, snapshot.Library.Categories[0].SortOrder);
+            Assert.False(await repository.SaveCategoryAsync(null, sql, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.Null(await repository.LoadIfChangedAsync(snapshot.UpdatedAt, CancellationToken.None));
+            var question = new Models.Snippets.SnippetQuestion(1, "Topic", "Coverage",
+                [new Models.Snippets.SnippetStep(1, "Original", "SELECT 1;"), new Models.Snippets.SnippetStep(2, "Next", "SELECT 2;")]);
+            Assert.True(await repository.CreateQuestionAsync(new("sql"), question, snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.False(await repository.CreateQuestionAsync(new("sql"), question, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.CreateQuestionAsync(new("missing"), question, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.Null(await repository.LoadIfChangedAsync(snapshot.UpdatedAt, CancellationToken.None));
+            Assert.True(await repository.SaveCategoryAsync(new("sql"), new(new("csharp"), "Renamed", [], -10),
+                snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            var renamed = Assert.Single(snapshot.Library.Categories);
+            Assert.Equal("csharp", renamed.Language.Value);
+            Assert.Equal("Renamed", renamed.Title);
+            Assert.Equal(2, Assert.Single(renamed.Questions).Steps.Count);
+            Assert.True(await repository.SaveCategoryAsync(null, new(new("general"), "General", [], -20),
+                snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.Equal(["general", "csharp"], snapshot.Library.Categories.Select(category => category.Language.Value));
+            var moved = new Models.Snippets.SnippetQuestion(7, "Moved topic", "Coverage", question.Steps);
+            Assert.True(await repository.RelocateQuestionAsync(new("csharp"), 1, new("general"), moved,
+                snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.Empty(snapshot.Library.Categories[1].Questions);
+            Assert.Equal(7, Assert.Single(snapshot.Library.Categories[0].Questions).Number);
+            Assert.Equal(2, snapshot.Library.Categories[0].Questions[0].Steps.Count);
+            Assert.False(await repository.SaveCategoryAsync(new("csharp"), new(new("general"), "Collision", []), snapshot.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.SaveCategoryAsync(new("missing"), sql, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.RelocateQuestionAsync(new("general"), 7, new("missing"), moved, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.True(await repository.CreateQuestionAsync(new("general"), new(8, "Other", "Coverage", "Other source"), snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.False(await repository.RelocateQuestionAsync(new("general"), 7, new("general"), new(8, "Collision", "Coverage", "Source"), snapshot.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.DeleteQuestionAsync(new("general"), 99, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.DeleteCategoryAsync(new("missing"), snapshot.UpdatedAt, CancellationToken.None));
+            Assert.Null(await repository.LoadIfChangedAsync(snapshot.UpdatedAt, CancellationToken.None));
+            var stale = snapshot.UpdatedAt;
+            Assert.True(await repository.DeleteQuestionAsync(new("general"), 7, snapshot.UpdatedAt, CancellationToken.None));
+            Assert.False(await repository.DeleteCategoryAsync(new("general"), stale, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.Equal(8, Assert.Single(snapshot.Library.Categories[0].Questions).Number);
+            Assert.True(await repository.DeleteCategoryAsync(new("general"), snapshot.UpdatedAt, CancellationToken.None));
+            snapshot = await SnapshotAsync();
+            Assert.Equal("csharp", Assert.Single(snapshot.Library.Categories).Language.Value);
+            await using var count = source.CreateCommand("SELECT count(*) FROM snippets.question_steps");
+            Assert.Equal(0L, await count.ExecuteScalarAsync());
+            Assert.True(await repository.DeleteCategoryAsync(new("csharp"), snapshot.UpdatedAt, CancellationToken.None));
+            Assert.Empty((await SnapshotAsync()).Library.Categories);
+        });
     }
 
     private static Task SeedAsync(NpgsqlDataSource source) => ExecuteAsync(source, """

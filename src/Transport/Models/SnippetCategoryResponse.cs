@@ -13,6 +13,7 @@ public sealed class SnippetCategoryResponse
     {
         Language = category.Language.Value;
         Title = category.Title;
+        SortOrder = category.SortOrder;
         Questions = Array.AsReadOnly(category.Questions.Select(SnippetQuestionResponse.From).ToArray());
     }
 
@@ -25,6 +26,9 @@ public sealed class SnippetCategoryResponse
     /// Gets the category display title.
     /// </summary>
     public string Title { get; }
+
+    /// <summary>Gets the category display order used by the database editor.</summary>
+    public int SortOrder { get; }
 
     /// <summary>
     /// Gets the questions ordered by number.

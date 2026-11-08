@@ -21,6 +21,7 @@ function element(tag = 'div') {
       return this.children.flatMap(item => [...(tags.includes(item.tag) ? [item] : []), ...item.querySelectorAll(selector)]);
     },
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    focus() {},
     reportValidity() { return this.valid !== false; }
   };
 }
@@ -32,10 +33,12 @@ const library = () => ({ Version: 'version-1', Categories: [
   { Language: 'sql', Title: 'SQL', Questions: [{ Number: 3, Topic: 'SQL topic', Description: 'SQL coverage', Steps: [{ Title: 'Query', Markdown: 'SELECT 1;' }] }] }
 ] });
 async function fixture({ snapshot = library(), get, post, csrf, render, confirm = () => true } = {}) {
-  const ids = ['editCategory', 'editQuestion', 'editTopic', 'editDescription', 'snippetEditForm', 'editSteps', 'editPreview', 'editStatus', 'publishSnippets', 'previewSnippets', 'addExample', 'reloadSnippets'];
-  const elements = Object.fromEntries(ids.map(id => [id, element(id === 'editCategory' || id === 'editQuestion' ? 'select' : id === 'editTopic' ? 'input' : id === 'editDescription' ? 'textarea' : id === 'snippetEditForm' ? 'form' : /Snippets|Example/.test(id) ? 'button' : 'div')]));
+  const ids = ['editCategory', 'editQuestion', 'editTopic', 'editDescription', 'snippetEditForm', 'editSteps', 'editPreview', 'editStatus', 'publishSnippets', 'previewSnippets', 'addExample', 'reloadSnippets', 'categoryEditForm', 'categoryKey', 'categoryTitle', 'categorySortOrder', 'editQuestionCategory', 'editQuestionNumber', 'newQuestion', 'deleteQuestion', 'deleteCategory', 'newCategory', 'saveCategory'];
+  const elements = Object.fromEntries(ids.map(id => [id, element(id === 'editCategory' || id === 'editQuestion' || id === 'editQuestionCategory' ? 'select' : id === 'editTopic' ? 'input' : id === 'editDescription' ? 'textarea' : id === 'snippetEditForm' ? 'form' : /Snippets|Example/.test(id) ? 'button' : 'div')]));
   elements.snippetEditForm.append(elements.editTopic, elements.editDescription, elements.editSteps,
-    elements.publishSnippets, elements.previewSnippets, elements.addExample);
+    elements.publishSnippets, elements.previewSnippets, elements.addExample, elements.editQuestionCategory, elements.editQuestionNumber);
+  elements.categoryEditForm.append(elements.categoryKey, elements.categoryTitle, elements.categorySortOrder,
+    elements.newCategory, elements.saveCategory, elements.deleteCategory);
   const calls = [];
   const handlers = {};
   const fetch = async (url, options) => {
@@ -212,4 +215,75 @@ test('reload failures report the error while retaining existing fields', async (
   await e.reloadSnippets.onclick();
   assert.equal(e.editTopic.value, 'First topic');
   assert.equal(e.editStatus.textContent, 'Reload unavailable');
+});
+
+const submitEvent = () => ({ preventDefault() {} });
+
+test('category metadata can be created, renamed and reordered without editing the question draft', async () => {
+  const snapshot = library();
+  const { elements: e, calls } = await fixture({ snapshot, post: async (url, options) => {
+    const data = JSON.parse(options.body);
+    const metadata = { Language: data.Language, Title: data.Title, SortOrder: data.SortOrder };
+    if (data.OriginalLanguage === null) snapshot.Categories.push({ ...metadata, Questions: [] });
+    else Object.assign(snapshot.Categories.find(item => item.Language === data.OriginalLanguage), metadata);
+    return { ok: true };
+  } });
+  e.newCategory.onclick();
+  e.categoryKey.value = 'javascript'; e.categoryTitle.value = 'JavaScript'; e.categorySortOrder.value = '-5';
+  e.categoryEditForm.handlers.input();
+  await e.categoryEditForm.onsubmit(submitEvent());
+  const data = JSON.parse(calls.find(call => call.url.endsWith('/categories')).options.body);
+  assert.deepEqual(data, { ExpectedVersion: 'version-1', OriginalLanguage: null, Language: 'javascript', Title: 'JavaScript', SortOrder: -5 });
+  assert.equal(e.editCategory.value, 'javascript');
+  assert.equal(e.snippetEditForm.hidden, true);
+  assert.equal(e.newQuestion.disabled, false);
+  assert.equal(e.categoryTitle.value, 'JavaScript');
+  e.categoryKey.value = 'cpp'; e.categoryTitle.value = 'C++'; e.categorySortOrder.value = '15';
+  e.categoryEditForm.handlers.input();
+  await e.categoryEditForm.onsubmit(submitEvent());
+  const renamed = JSON.parse(calls.filter(call => call.url.endsWith('/categories')).at(-1).options.body);
+  assert.equal(renamed.OriginalLanguage, 'javascript');
+  assert.equal(renamed.Language, 'cpp');
+  assert.equal(renamed.SortOrder, 15);
+  assert.equal(e.editCategory.value, 'cpp');
+});
+
+test('new questions and moves publish to the chosen category and number', async () => {
+  const { elements: e, calls, review, submit } = await fixture();
+  e.newQuestion.onclick();
+  assert.equal(e.editQuestionNumber.value, '3');
+  assert.equal(e.deleteQuestion.disabled, true);
+  e.editTopic.value = 'New question'; e.editDescription.value = 'Coverage';
+  e.editSteps.querySelector('input').value = 'Example'; e.editSteps.querySelector('textarea').value = 'Source';
+  await review(); await submit();
+  assert.equal(calls.find(call => call.options?.method === 'POST').url, '/admin/snippets/manage/questions/general/3');
+  e.editQuestionCategory.value = 'sql'; e.editQuestionNumber.value = '7';
+  await review(); await submit();
+  const move = calls.filter(call => call.options?.method === 'POST').at(-1);
+  assert.equal(move.url, '/admin/snippets/manage/general/1');
+  assert.equal(JSON.parse(move.options.body).TargetLanguage, 'sql');
+  assert.equal(JSON.parse(move.options.body).TargetNumber, 7);
+});
+
+test('deleting a category or question requires confirmation and includes the observed revision', async () => {
+  let confirm = false;
+  const { elements: e, calls } = await fixture({ confirm: () => confirm });
+  await e.deleteCategory.onclick(); await e.deleteQuestion.onclick();
+  assert.equal(calls.filter(call => call.options?.method === 'POST').length, 0);
+  confirm = true;
+  await e.deleteQuestion.onclick();
+  assert.equal(calls.find(call => call.options?.method === 'POST').url, '/admin/snippets/manage/questions/general/1/delete');
+  await e.deleteCategory.onclick();
+  const request = calls.filter(call => call.options?.method === 'POST').at(-1);
+  assert.equal(request.url, '/admin/snippets/manage/categories/general/delete');
+  assert.deepEqual(JSON.parse(request.options.body), { ExpectedVersion: 'version-1' });
+});
+
+test('unsaved category metadata prevents accidental question publication and navigation', async () => {
+  const { elements: e, calls, review, submit } = await fixture({ confirm: () => false });
+  e.categoryTitle.value = 'Unsaved title'; e.categoryEditForm.handlers.input();
+  await review(); await submit();
+  e.newCategory.onclick(); e.newQuestion.onclick();
+  assert.equal(e.categoryTitle.value, 'Unsaved title');
+  assert.equal(calls.filter(call => call.options?.method === 'POST').length, 0);
 });

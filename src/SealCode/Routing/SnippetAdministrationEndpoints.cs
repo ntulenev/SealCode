@@ -49,10 +49,29 @@ internal static class SnippetAdministrationEndpoints
             return Results.Json(new SnippetEditorCatalogResponse(snapshot.UpdatedAt,
                 [.. snapshot.Library.Categories.Select(SnippetCategoryResponse.From)]));
         });
+        _ = group.MapPost("/categories", async (SaveSnippetCategoryRequest request,
+            SnippetAdministration editor, CancellationToken cancellationToken) =>
+            MutationResult(await editor.SaveCategoryAsync(request, cancellationToken).ConfigureAwait(false)));
+        _ = group.MapPost("/categories/{language}/delete", async (string language, SnippetVersionRequest request,
+            SnippetAdministration editor, CancellationToken cancellationToken) =>
+            MutationResult(await editor.DeleteCategoryAsync(language, request.ExpectedVersion, cancellationToken).ConfigureAwait(false)));
+        _ = group.MapPost("/questions/{language}/{number:int}", async (string language, int number,
+            UpdateSnippetRequest request, SnippetAdministration editor, CancellationToken cancellationToken) =>
+            MutationResult(await editor.CreateQuestionAsync(language, number, request, cancellationToken).ConfigureAwait(false)));
+        _ = group.MapPost("/questions/{language}/{number:int}/delete", async (string language, int number,
+            SnippetVersionRequest request, SnippetAdministration editor, CancellationToken cancellationToken) =>
+            MutationResult(await editor.DeleteQuestionAsync(language, number, request.ExpectedVersion, cancellationToken).ConfigureAwait(false)));
         _ = group.MapPost("/{language}/{number:int}", async (string language, int number,
             UpdateSnippetRequest request, SnippetAdministration editor, CancellationToken cancellationToken) =>
             await editor.PublishAsync(language, number, request, cancellationToken).ConfigureAwait(false)
                 ? Results.Ok()
-                : Results.Conflict(new { error = "Catalog changed. Reload before publishing; your draft has not been saved." }));
+                : Conflict());
     }
+
+    private static IResult MutationResult(bool saved) => saved ? Results.Ok() : Conflict();
+
+    private static IResult Conflict() => Results.Conflict(new
+    {
+        error = "Catalog changed, source missing or destination occupied. Reload before publishing; your draft has not been saved."
+    });
 }

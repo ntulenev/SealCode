@@ -43,6 +43,18 @@ public sealed class SnippetAdministrationEndpointsTests
             Assert.Equal(expected, response.StatusCode);
             Assert.True(response.Headers.CacheControl!.NoStore);
         }
+        var mutations = new (string Path, object Payload)[]
+        {
+            ("categories", new SaveSnippetCategoryRequest(factory.Version, "sql", "SQL")),
+            ("categories/general/delete", new SnippetVersionRequest(factory.Version)),
+            ("questions/general/2", Revision(factory.Version)),
+            ("questions/general/1/delete", new SnippetVersionRequest(factory.Version))
+        };
+        foreach (var mutation in mutations)
+        {
+            using var response = await http.PostAsJsonAsync("/admin/snippets/manage/" + mutation.Path, mutation.Payload);
+            Assert.Equal(expected, response.StatusCode);
+        }
         using var publish = await http.PostAsJsonAsync("/admin/snippets/manage/general/1", Revision(factory.Version));
         Assert.Equal(expected, publish.StatusCode);
         factory.Repository.Verify(value => value.UpdateQuestionAsync(It.IsAny<SnippetLanguage>(),
@@ -76,6 +88,44 @@ public sealed class SnippetAdministrationEndpointsTests
         using var stale = await http.PostAsJsonAsync("/admin/snippets/manage/general/1", request);
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
         Assert.Contains("Catalog changed", await stale.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StructuralMutationsShareAuthorizationValidationConflictsAndCachePublicationAsync()
+    {
+        using var factory = new EditorFactory();
+        using var http = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        await LoginAsync(http, "Root");
+        factory.Repository.Setup(value => value.SaveCategoryAsync(It.IsAny<SnippetLanguage?>(), It.IsAny<SnippetCategory>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        factory.Repository.Setup(value => value.CreateQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<SnippetQuestion>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        factory.Repository.Setup(value => value.RelocateQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<int>(), It.IsAny<SnippetLanguage>(), It.IsAny<SnippetQuestion>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        factory.Repository.Setup(value => value.DeleteQuestionAsync(It.IsAny<SnippetLanguage>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        factory.Repository.Setup(value => value.DeleteCategoryAsync(It.IsAny<SnippetLanguage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var changes = new (string Path, object Payload)[]
+        {
+            ("categories", new SaveSnippetCategoryRequest(factory.Version, "sql", "SQL", -5, "general")),
+            ("questions/general/2", Revision(factory.Version)),
+            ("general/1", Revision(factory.Version) with { TargetLanguage = "sql", TargetNumber = 7 }),
+            ("questions/general/1/delete", new SnippetVersionRequest(factory.Version)),
+            ("categories/general/delete", new SnippetVersionRequest(factory.Version))
+        };
+        foreach (var change in changes)
+        {
+            using var response = await http.PostAsJsonAsync("/admin/snippets/manage/" + change.Path, change.Payload);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        factory.Repository.Verify(value => value.LoadIfChangedAsync(It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()), Times.Exactly(6));
+        factory.Repository.Verify(value => value.RelocateQuestionAsync(new("general"), 1, new("sql"),
+            It.Is<SnippetQuestion>(question => question.Number == 7), factory.Version, It.IsAny<CancellationToken>()), Times.Once);
+        factory.Repository.Setup(value => value.DeleteCategoryAsync(It.IsAny<SnippetLanguage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        using var conflict = await http.PostAsJsonAsync("/admin/snippets/manage/categories/general/delete", new SnippetVersionRequest(factory.Version));
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        using var invalidCategory = await http.PostAsJsonAsync("/admin/snippets/manage/categories", new SaveSnippetCategoryRequest(factory.Version, "bad/key", "Title"));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidCategory.StatusCode);
+        using var invalidCreate = await http.PostAsJsonAsync("/admin/snippets/manage/questions/general/2", Revision(factory.Version) with { TargetNumber = 3 });
+        Assert.Equal(HttpStatusCode.BadRequest, invalidCreate.StatusCode);
+        using var invalidDelete = await http.PostAsJsonAsync("/admin/snippets/manage/questions/general/0/delete", new SnippetVersionRequest(factory.Version));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidDelete.StatusCode);
     }
 
     private static UpdateSnippetRequest Revision(DateTimeOffset version)
