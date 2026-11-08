@@ -35,10 +35,10 @@ public sealed class FileSnippetRepository : ISnippetRepository
             var json = await File.ReadAllTextAsync(
                 Path.Combine(_directory, "catalog.json"), cancellationToken).ConfigureAwait(false);
             var manifest = JsonSerializer.Deserialize<SnippetManifest>(json, _serializerOptions);
-            if (manifest is null || manifest.Version != 1
+            if (manifest is null || manifest.Version is not (1 or 2)
                 || manifest.Groups is null || manifest.Groups.Length == 0)
             {
-                throw new InvalidDataException("Snippet catalog must have version 1 and at least one group.");
+                throw new InvalidDataException("Snippet catalog must have version 1 or 2 and at least one group.");
             }
 
             var categories = new List<SnippetCategory>();
@@ -56,9 +56,30 @@ public sealed class FileSnippetRepository : ISnippetRepository
                     {
                         throw new InvalidDataException("Snippet questions cannot be null.");
                     }
-                    var path = GetMarkdownPath(question.File);
-                    var markdown = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-                    questions.Add(new(question.Number, question.Topic, question.Description, markdown));
+                    if (question.Steps is not null)
+                    {
+                        if (manifest.Version != 2 || question.File is not null || question.Steps.Length == 0)
+                        {
+                            throw new InvalidDataException("A progression requires version 2, nonempty steps and no question file.");
+                        }
+                        var steps = new List<SnippetStep>();
+                        foreach (var step in question.Steps)
+                        {
+                            if (step is null)
+                            {
+                                throw new InvalidDataException("Question examples cannot be null.");
+                            }
+                            var markdown = await ReadMarkdownAsync(step.File, cancellationToken).ConfigureAwait(false);
+                            steps.Add(new(step.Number, step.Title, markdown));
+                        }
+                        questions.Add(new(question.Number, question.Topic, question.Description, steps));
+                    }
+                    else
+                    {
+                        var markdown = await ReadMarkdownAsync(question.File
+                            ?? throw new InvalidDataException("A question requires a file or examples."), cancellationToken).ConfigureAwait(false);
+                        questions.Add(new(question.Number, question.Topic, question.Description, markdown));
+                    }
                 }
                 categories.Add(new(new SnippetLanguage(group.Language), group.Title, questions));
             }
@@ -73,6 +94,9 @@ public sealed class FileSnippetRepository : ISnippetRepository
             throw new InvalidDataException("The snippet library violates domain invariants.", exception);
         }
     }
+
+    private Task<string> ReadMarkdownAsync(string file, CancellationToken cancellationToken)
+        => File.ReadAllTextAsync(GetMarkdownPath(file), cancellationToken);
 
     private string GetMarkdownPath(string file)
     {

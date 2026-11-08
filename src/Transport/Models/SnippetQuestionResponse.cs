@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 using Models.Snippets;
 
 namespace Transport.Models;
@@ -13,6 +15,7 @@ public sealed class SnippetQuestionResponse
         Topic = question.Topic;
         Description = question.Description;
         Markdown = question.Markdown;
+        Steps = Array.AsReadOnly(question.Steps.Select(SnippetStepResponse.From).ToArray());
     }
 
     /// <summary>
@@ -31,9 +34,12 @@ public sealed class SnippetQuestionResponse
     public string Description { get; }
 
     /// <summary>
-    /// Gets the question text and fenced code blocks.
+    /// Gets the first example's Markdown for single-example consumers.
     /// </summary>
     public string Markdown { get; }
+
+    /// <summary>Gets the examples in progression order.</summary>
+    public ReadOnlyCollection<SnippetStepResponse> Steps { get; }
 
     /// <summary>
     /// Maps a domain question to the HTTP contract.

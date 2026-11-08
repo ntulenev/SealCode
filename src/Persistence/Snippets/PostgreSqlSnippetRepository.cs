@@ -56,43 +56,44 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
         }
 
         await using var command = new NpgsqlCommand("""
-            SELECT c.language, c.title, q.number, q.topic, q.description, q.markdown
+            WITH examples AS (
+                SELECT language, number AS question_number, 1 AS number,
+                       snippet_title AS title, markdown FROM snippets.questions
+                UNION ALL
+                SELECT language, question_number, number, title, markdown FROM snippets.question_steps
+            )
+            SELECT c.language, c.title, q.number, q.topic, q.description,
+                   e.number, e.title, e.markdown
             FROM snippets.categories c
             LEFT JOIN snippets.questions q ON q.language = c.language
-            ORDER BY c.sort_order, c.language, q.number
+            LEFT JOIN examples e ON e.language = q.language AND e.question_number = q.number
+            ORDER BY c.sort_order, c.language, q.number, e.number
             """, connection, transaction);
-        var categories = new List<SnippetCategory>();
+        var rows = new List<PostgreSqlSnippetRow>();
         try
         {
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
-                string? language = null;
-                string? title = null;
-                var questions = new List<SnippetQuestion>();
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    var nextLanguage = reader.GetString(0);
-                    if (language != nextLanguage)
+                    if (await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false))
                     {
-                        if (language is not null)
-                        {
-                            categories.Add(new(new(language), title!, questions));
-                        }
-                        language = nextLanguage;
-                        title = reader.GetString(1);
-                        questions = [];
+                        rows.Add(new(reader.GetString(0), reader.GetString(1), null, "", "", 0, "", ""));
                     }
-                    if (!await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false))
+                    else
                     {
-                        questions.Add(new(reader.GetInt32(2), reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+                        rows.Add(new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
+                            reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
+                            reader.GetString(6), reader.GetString(7)));
                     }
-                }
-                if (language is not null)
-                {
-                    categories.Add(new(new(language), title!, questions));
                 }
             }
-            var library = new SnippetLibrary(categories);
+            var library = new SnippetLibrary(rows.GroupBy(row => row.Language).Select(category =>
+                new SnippetCategory(new(category.Key), category.First().CategoryTitle,
+                    category.Where(row => row.QuestionNumber.HasValue).GroupBy(row => row.QuestionNumber!.Value)
+                        .Select(question => new SnippetQuestion(question.Key, question.First().Topic,
+                            question.First().Description, question.Select(row =>
+                                new SnippetStep(row.StepNumber, row.StepTitle, row.Markdown)))))));
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return new(version, library);
         }

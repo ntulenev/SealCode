@@ -7,6 +7,65 @@ namespace Persistence.Tests;
 public sealed class FileSnippetRepositoryTests : IDisposable
 {
     [Fact]
+    public async Task VersionTwoLoadsAnOrderedProgressionAndLegacySingleFilesAsync()
+    {
+        WriteProgression();
+        var library = await new FileSnippetRepository(_directory).LoadAsync(CancellationToken.None);
+        var questions = library.Categories[0].Questions;
+        Assert.Equal(2, questions[0].Steps.Count);
+        Assert.Equal(["Original", "What if?"], questions[0].Steps.Select(step => step.Title));
+        Assert.Equal("  First code\n", questions[0].Markdown);
+        Assert.Equal("Second code", questions[0].Steps[1].Markdown);
+        Assert.Single(questions[1].Steps);
+    }
+
+    [Fact]
+    public async Task MissingFollowUpFileRejectsTheWholeProgressionAsync()
+    {
+        WriteProgression();
+        File.Delete(Path.Combine(_directory, "second.md"));
+        await Assert.ThrowsAsync<FileNotFoundException>(() => new FileSnippetRepository(_directory).LoadAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(1, 2, 1)]
+    [InlineData(2, 1, 1)]
+    [InlineData(2, 1, 3)]
+    [InlineData(2, 0, 1)]
+    [InlineData(2, 2, 3)]
+    public async Task InvalidVersionOrProgressionNumbersRejectTheWholeCatalogAsync(int version, int first, int second)
+    {
+        WriteProgression(version, first, second);
+        await Assert.ThrowsAsync<InvalidDataException>(() => new FileSnippetRepository(_directory).LoadAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[null]")]
+    [InlineData(/*lang=json*/ """[{"number":1,"title":"Original","file":"../first.md"}]""")]
+    [InlineData(/*lang=json*/ """[{"number":1,"file":"first.md"}]""")]
+    public async Task EmptyNullOrUnsafeProgressionsAreRejectedAsync(string steps)
+    {
+        WriteProgression();
+        var manifest = JsonSerializer.Deserialize<System.Text.Json.Nodes.JsonObject>(
+            await File.ReadAllTextAsync(Path.Combine(_directory, "catalog.json")))!;
+        manifest["groups"]![0]!["questions"]![0]!["steps"] = System.Text.Json.Nodes.JsonNode.Parse(steps);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "catalog.json"), manifest.ToJsonString());
+        await Assert.ThrowsAsync<InvalidDataException>(() => new FileSnippetRepository(_directory).LoadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AQuestionCannotCombineALegacyFileWithAProgressionAsync()
+    {
+        WriteProgression();
+        var path = Path.Combine(_directory, "catalog.json");
+        var manifest = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(path))!;
+        manifest["groups"]![0]!["questions"]![0]!["file"] = "first.md";
+        await File.WriteAllTextAsync(path, manifest.ToJsonString());
+        await Assert.ThrowsAsync<InvalidDataException>(() => new FileSnippetRepository(_directory).LoadAsync(CancellationToken.None));
+    }
+
+    [Fact]
     public async Task LoadsDomainModelsWithoutApplyingLanguageOrRolePolicyAsync()
     {
         WriteCatalog("question.md");
@@ -127,6 +186,29 @@ public sealed class FileSnippetRepositoryTests : IDisposable
             })
         };
         File.WriteAllText(Path.Combine(_directory, "catalog.json"), JsonSerializer.Serialize(manifest));
+    }
+
+    private void WriteProgression(int version = 2, int first = 1, int second = 2)
+    {
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(Path.Combine(_directory, "first.md"), "  First code\n");
+        File.WriteAllText(Path.Combine(_directory, "second.md"), "Second code");
+        File.WriteAllText(Path.Combine(_directory, "catalog.json"), JsonSerializer.Serialize(new
+        {
+            version,
+            groups = new[] { new
+            {
+                language = "general", title = "General", questions = new object[]
+                {
+                    new { number = 1, topic = "Progression", description = "Coverage", steps = new[]
+                    {
+                        new { number = second, title = "What if?", file = "second.md" },
+                        new { number = first, title = "Original", file = "first.md" }
+                    } },
+                    new { number = 2, topic = "Legacy", description = "Coverage", file = "first.md" }
+                }
+            } }
+        }));
     }
 
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"sealcode-snippets-{Guid.NewGuid():N}");

@@ -8,6 +8,56 @@ namespace Persistence.Tests;
 
 public sealed class PostgreSqlSnippetRepositoryIsolatedTests
 {
+    [IsolatedPostgreSqlFact]
+    public async Task UpgradePreservesExistingMarkdownAndLoadsNumberedFollowUpsAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            await SeedAsync(source);
+            await ExecuteAsync(source, await File.ReadAllTextAsync(
+                Path.Combine(AppContext.BaseDirectory, "Migrations", "002_question_steps.sql")));
+            var repository = new PostgreSqlSnippetRepository(source);
+            var original = (await repository.LoadIfChangedAsync(null, CancellationToken.None))!;
+            var first = original.Library.Categories[1].Questions[0];
+            Assert.Equal("  SELECT 1;\n", Assert.Single(first.Steps).Markdown);
+
+            await ExecuteAsync(source, """
+                INSERT INTO snippets.question_steps(language,question_number,number,title,markdown) VALUES
+                    ('sql',1,3,'What if we filter?','SELECT 3;'),
+                    ('sql',1,2,'What if we change it?','SELECT 2;');
+                """);
+            var changed = await repository.LoadIfChangedAsync(original.UpdatedAt, CancellationToken.None);
+            Assert.NotNull(changed);
+            var question = changed.Library.Categories[1].Questions[0];
+            Assert.Equal([1, 2, 3], question.Steps.Select(step => step.Number));
+            Assert.Equal("What if we change it?", question.Steps[1].Title);
+            Assert.Equal("SELECT 2;", question.Steps[1].Markdown);
+            Assert.Equal("  SELECT 1;\n", question.Markdown);
+            Assert.Single(first.Steps);
+            Assert.Single(changed.Library.Categories[1].Questions[1].Steps);
+            Assert.Null(await repository.LoadIfChangedAsync(changed.UpdatedAt, CancellationToken.None));
+
+            await ExecuteAsync(source, "UPDATE snippets.question_steps SET markdown = 'Changed follow-up' WHERE language = 'sql' AND question_number = 1 AND number = 2");
+            var updated = await repository.LoadIfChangedAsync(changed.UpdatedAt, CancellationToken.None);
+            Assert.NotNull(updated);
+            Assert.Equal("Changed follow-up", updated.Library.Categories[1].Questions[0].Steps[1].Markdown);
+            await ExecuteAsync(source, "DELETE FROM snippets.questions WHERE language = 'sql' AND number = 1");
+            await using var count = source.CreateCommand("SELECT count(*) FROM snippets.question_steps");
+            Assert.Equal(0L, await count.ExecuteScalarAsync());
+        }, applyStepMigration: false);
+    }
+
+    [IsolatedPostgreSqlFact]
+    public async Task IncompleteProgressionsRejectTheWholeDatabaseSnapshotAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            await SeedAsync(source);
+            await ExecuteAsync(source, "INSERT INTO snippets.question_steps(language,question_number,number,title,markdown) VALUES ('sql',1,3,'Missing step 2','SELECT 3;')");
+            await Assert.ThrowsAsync<InvalidDataException>(() => new PostgreSqlSnippetRepository(source).LoadAsync(CancellationToken.None));
+        });
+    }
+
     [Fact]
     public void ConstructorRejectsNullDataSource()
     {
@@ -85,8 +135,12 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
                 "UPDATE snippets.questions SET topic = topic",
                 "DELETE FROM snippets.questions",
                 "DELETE FROM snippets.categories",
-                "TRUNCATE snippets.questions",
-                "TRUNCATE snippets.categories CASCADE"
+                "TRUNCATE snippets.questions CASCADE",
+                "TRUNCATE snippets.categories CASCADE",
+                "INSERT INTO snippets.question_steps(language,question_number,number,title,markdown) VALUES ('sql',1,2,'Follow-up','SELECT 2;')",
+                "UPDATE snippets.question_steps SET title = title",
+                "DELETE FROM snippets.question_steps",
+                "TRUNCATE snippets.question_steps"
             })
             {
                 await using var connection = await source.OpenConnectionAsync();
@@ -117,7 +171,7 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
         _ = await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task WithDatabaseAsync(Func<NpgsqlDataSource, Task> test)
+    private static async Task WithDatabaseAsync(Func<NpgsqlDataSource, Task> test, bool applyStepMigration = true)
     {
         // This separate opt-in connection must point to a disposable PostgreSQL test server.
         var settings = new NpgsqlConnectionStringBuilder(
@@ -129,9 +183,13 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
         {
             settings.Database = database;
             await using var source = NpgsqlDataSource.Create(settings.ConnectionString);
-            var migration = await File.ReadAllTextAsync(
-                Path.Combine(AppContext.BaseDirectory, "Migrations", "001_create_snippets.sql"));
-            await ExecuteAsync(source, migration);
+            foreach (var path in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Migrations"), "*.sql").Order(StringComparer.Ordinal))
+            {
+                if (applyStepMigration || Path.GetFileName(path) == "001_create_snippets.sql")
+                {
+                    await ExecuteAsync(source, await File.ReadAllTextAsync(path));
+                }
+            }
             await test(source);
         }
         finally
