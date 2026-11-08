@@ -13,6 +13,64 @@ namespace Logic.Tests;
 public sealed class SnippetCatalogTests
 {
     [Fact]
+    public async Task MissingVersionedStartupSnapshotFailsAndCanBeRetried()
+    {
+        var repository = new Mock<IVersionedSnippetRepository>(MockBehavior.Strict);
+        repository.SetupSequence(value => value.LoadIfChangedAsync(null, CancellationToken.None))
+            .ReturnsAsync((VersionedSnippetLibrary?)null)
+            .ReturnsAsync(new VersionedSnippetLibrary(DateTimeOffset.UnixEpoch, SnippetLibrary.Empty));
+        using var catalog = new SnippetCatalog(repository.Object, Settings());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => catalog.InitializeAsync(CancellationToken.None));
+        AssertUninitialized(catalog);
+        await catalog.InitializeAsync(CancellationToken.None);
+        Assert.Empty(catalog.GetSnapshot(new("Root", true)).Categories);
+    }
+
+    [Fact]
+    public async Task ConcurrentRefreshesSerializeAndUseTheLastPublishedVersion()
+    {
+        var originalVersion = DateTimeOffset.UnixEpoch;
+        var nextVersion = originalVersion.AddMinutes(1);
+        var repository = new Mock<IVersionedSnippetRepository>(MockBehavior.Strict);
+        repository.Setup(value => value.LoadIfChangedAsync(null, CancellationToken.None))
+            .ReturnsAsync(new VersionedSnippetLibrary(originalVersion, new([Category("general")])));
+        var completion = new TaskCompletionSource<VersionedSnippetLibrary?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.Setup(value => value.LoadIfChangedAsync(originalVersion, CancellationToken.None)).Returns(completion.Task);
+        repository.Setup(value => value.LoadIfChangedAsync(nextVersion, CancellationToken.None))
+            .ReturnsAsync((VersionedSnippetLibrary?)null);
+        using var catalog = new SnippetCatalog(repository.Object, Settings());
+        await catalog.InitializeAsync(CancellationToken.None);
+
+        var first = catalog.RefreshAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        var canceledWaiter = catalog.RefreshAsync(cancellation.Token);
+        var second = catalog.RefreshAsync(CancellationToken.None);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledWaiter);
+        Assert.False(first.IsCompleted);
+        Assert.False(second.IsCompleted);
+        completion.SetResult(new(nextVersion, SnippetLibrary.Empty));
+        await Task.WhenAll(first, second);
+
+        Assert.Empty(catalog.GetSnapshot(new("Root", true)).Categories);
+        repository.Verify(value => value.LoadIfChangedAsync(originalVersion, CancellationToken.None), Times.Once);
+        repository.Verify(value => value.LoadIfChangedAsync(nextVersion, CancellationToken.None), Times.Once);
+        repository.Verify(value => value.LoadIfChangedAsync(It.IsAny<DateTimeOffset?>(), cancellation.Token), Times.Never);
+    }
+
+    [Fact]
+    public async Task DisabledVersionedCatalogNeverReadsTheDatabase()
+    {
+        var repository = new Mock<IVersionedSnippetRepository>(MockBehavior.Strict);
+        using var catalog = new SnippetCatalog(repository.Object, Settings(enabled: false));
+        await catalog.InitializeAsync(CancellationToken.None);
+        await catalog.RefreshAsync(CancellationToken.None);
+        Assert.False(catalog.Enabled);
+        repository.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task RefreshPublishesAtomicallyAndKeepsOldSnapshotsUsable()
     {
         var version = DateTimeOffset.UnixEpoch;

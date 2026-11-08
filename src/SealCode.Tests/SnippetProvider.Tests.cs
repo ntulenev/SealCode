@@ -40,7 +40,7 @@ public sealed class SnippetProviderTests
     public void EnabledPostgreSqlRequiresConnectionString()
     {
         using var provider = Services("PostgreSql", true, null);
-        var error = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<ISnippetRepository>());
+        var error = Assert.Throws<InvalidOperationException>(provider.GetRequiredService<ISnippetRepository>);
         Assert.Contains("ConnectionStrings:Snippets", error.Message, StringComparison.Ordinal);
     }
 
