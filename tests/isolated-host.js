@@ -23,8 +23,8 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 export async function isolatedHostFixture({}, use) {
   const hosts = [];
   try {
-    await use(async (settings) => {
-      const host = await startIsolatedHost(settings);
+    await use(async (settings, prepareContentRoot) => {
+      const host = await startIsolatedHost(settings, prepareContentRoot);
       hosts.push(host);
       return host;
     });
@@ -34,7 +34,7 @@ export async function isolatedHostFixture({}, use) {
 }
 
 /** Starts a disposable host for tests that need different server limits. */
-export async function startIsolatedHost(settings) {
+export async function startIsolatedHost(settings, prepareContentRoot) {
   const reservation = createServer();
   await new Promise((done) => reservation.listen(0, '127.0.0.1', done));
   const port = reservation.address().port;
@@ -62,6 +62,7 @@ export async function startIsolatedHost(settings) {
       }
     })
   );
+  if (prepareContentRoot) await prepareContentRoot(root);
   const baseURL = `http://127.0.0.1:${port}`;
   const child = spawn(
     'dotnet',

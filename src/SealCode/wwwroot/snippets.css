@@ -28,6 +28,7 @@
 .snippet-tools { display: flex; align-items: center; gap: 8px; }
 .snippet-tools > .theme-toggle { height: 42px; min-height: 42px; }
 .snippet-launcher { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 6px; }
+button.snippet-launcher:disabled { color: var(--error); border-color: var(--error); background: transparent; opacity: 1; padding: 0; }
 .snippet-dialog { width: min(1340px, 95vw); max-width: 95vw; height: 90vh; max-height: 94vh; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
 .snippet-dialog::backdrop { background: var(--overlay); }
 .snippet-dialog-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 24px; padding: 12px 20px; border-bottom: 1px solid var(--border); }

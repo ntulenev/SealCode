@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { test, expect } from './fixtures.js';
 import { csrf } from './admin-token.js';
 
@@ -146,6 +148,41 @@ test('disabled library and guest rooms hide the book control', async ({ page, br
     await owner.close();
   }
 });
+
+for (const provider of ['File', 'PostgreSql']) {
+  test(`${provider} startup failure leaves the portal running with a red disabled library button`, async ({ browser, isolatedHost }, testInfo) => {
+    const host = await isolatedHost({
+      Snippets: { Enabled: true, Provider: provider, StartupRetryCount: 0 },
+      ConnectionStrings: { Snippets: 'Host=127.0.0.1;Port=1;Database=unavailable;Username=test;Timeout=1' }
+    }, provider === 'File' ? root => writeFile(join(root, 'Resources/Snippets/catalog.json'), '{invalid') : undefined);
+    const context = await browser.newContext({ baseURL: host.baseURL });
+    try {
+      expect(await (await context.request.get('/admin/snippets/access')).json())
+        .toEqual({ CanAccess: false, Unavailable: false });
+      await context.request.post('/admin/login', {
+        headers: await csrf(context.request), form: { name: 'BrowserAdmin', password: 'browser-pass' }
+      });
+      const page = await context.newPage();
+      await page.goto('/admin');
+      const unavailable = page.getByRole('button', { name: 'Question library unavailable' });
+      await expect(unavailable).toBeVisible();
+      await expect(unavailable).toBeDisabled();
+      await expect(unavailable).toHaveCSS('color', 'rgb(255, 170, 168)');
+      await expect(page.getByRole('link', { name: 'Open question library' })).toHaveCount(0);
+      await unavailable.evaluate(button => button.click());
+      await expect(page.getByRole('dialog', { name: 'Question library' })).toHaveCount(0);
+      expect(context.pages()).toHaveLength(1);
+      expect((await context.request.get('/health')).ok()).toBe(true);
+      expect((await context.request.get('/admin/rooms')).ok()).toBe(true);
+      const catalog = await context.request.get('/admin/snippets/catalog');
+      expect(catalog.status()).toBe(503);
+      expect(catalog.headers()['x-snippets-synced-at']).toBeUndefined();
+      await page.locator('.site-header [data-theme-toggle]').click();
+      await expect(unavailable).toHaveCSS('color', 'rgb(182, 46, 58)');
+      await page.screenshot({ path: testInfo.outputPath('library-unavailable.png'), fullPage: true });
+    } finally { await context.close(); }
+  });
+}
 
 for (const superAdminsOnly of [true, false]) {
   test(`ordinary admin library access follows SuperAdminsOnly=${superAdminsOnly}`, async ({ browser, isolatedHost }) => {
