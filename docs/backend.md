@@ -82,10 +82,25 @@ wire errors and notifications. Protocol names live in
 
 `SnippetLibrary` owns unique language categories; `SnippetCategory` owns a nonempty
 set of questions with unique positive numbers and exposes a sorted read-only copy.
-`SnippetQuestion` validates its topic, coverage description and content while
-preserving code indentation.
+`SnippetQuestion` validates its topic, coverage description and a nonempty immutable
+progression of `SnippetStep` examples. Steps have unique consecutive numbers from
+one, a title and Markdown that preserves code indentation. Input collections are
+copied and sorted. The legacy question constructor creates one step, and its
+`Markdown` property retains the first example for compatibility.
 `SnippetLanguage` normalizes language identifiers and identifies General questions.
 The domain has no filenames, JSON attributes, HTTP types or persistence dependencies.
+
+File manifest version 1 retains single-file questions; version 2 also accepts
+`steps` referencing individual private Markdown files. Database migration 002
+retains the existing `questions.markdown` as example 1 and adds its title plus a
+`question_steps` table for follow-ups. Its foreign key cascades question updates
+and deletes, and its statement trigger advances the same catalog timestamp.
+The PostgreSQL adapter reads a joined progression in the existing repeatable-read
+transaction, maps persistence-only rows to domain objects, and validates the
+complete library before publication. Missing files or invalid progressions reject
+the load without publishing a partial question. `SnippetQuestionResponse.Steps`
+contains explicit transport DTOs; the renderer uses text-only titles/prose and
+highlighted code, with per-example and whole-progression copy actions.
 
 `Logic.SnippetCatalog` snapshots feature settings and configured languages. The
 `SnippetCatalogStartupService` awaits its initialization before requests are served.

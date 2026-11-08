@@ -84,6 +84,11 @@ Language buttons run across the top; numbered topics and short coverage descript
 appear on the left and above the question content. Search the selected language by
 number, topic or description; matching is case-insensitive and accepts multiple words.
 **Copy snippet** copies the code blocks, or the full question for a General entry.
+A question can contain an ordered progression: an original example followed by
+one or more **What if?** variations. Wide layouts show two examples side by side;
+narrow layouts stack them in reading order. Each example has its own **Copy example**
+button; **Copy all snippets** copies the whole progression in order. The C# cancellation
+and SQL ranking questions each demonstrate two related examples under one topic.
 The library is private to the administrator: opening or copying a question does not
 change the shared room document or reveal the library to participants.
 
@@ -155,6 +160,9 @@ use `Cache-Control: no-store`.
 The catalog API returns its successful synchronization time as an ISO 8601
 `X-Snippets-Synced-At` response header alongside the existing category array.
 The library and time are captured together as one immutable snapshot.
+Question responses include ordered `Steps` with `Number`, `Title` and `Markdown`.
+The existing question-level `Markdown` field contains the first example for
+compatibility with single-example consumers.
 
 For the `File` provider, edit `Resources/Snippets/catalog.json`, using `catalog.schema.json` for
 editor validation, and add a UTF-8 `.md` file in the same folder. Each group has a
@@ -172,6 +180,24 @@ For example:
 }
 ```
 
+Existing version-1 catalogs and single `file` questions remain supported. To author
+a progression, set the catalog's root `version` to **2** and replace the question's
+`file` with `steps`. Each step has a title, its own Markdown file and a consecutive
+number starting at 1. The loader sorts by number; do not combine `file` and `steps`
+on the same question. Version 2 may still contain ordinary single-file questions.
+
+```json
+{
+  "number": 1,
+  "topic": "Async and cancellation",
+  "description": "Cancellation propagation and resource disposal.",
+  "steps": [
+    { "number": 1, "title": "Without cancellation", "file": "csharp-01.md" },
+    { "number": 2, "title": "What if we pass a token?", "file": "csharp-01-cancellation.md" }
+  ]
+}
+```
+
 Use plain question text and fenced code blocks such as ` ```csharp ` or ` ```sql `.
 The viewer renders prose as text and code with Monaco highlighting; raw HTML and
 Markdown links are not interpreted. General and configured system languages with authored questions appear. Invalid manifests, duplicate numbers, empty questions and missing files
@@ -179,13 +205,17 @@ leave the library unavailable when the feature is enabled. Filenames cannot cont
 
 ### PostgreSQL snippet storage
 
-1. Apply [001_create_snippets.sql](src/Persistence/Snippets/Migrations/001_create_snippets.sql)
-   **once** to an empty database using a schema-owner account in your database UI.
+1. For a new database, apply [001_create_snippets.sql](src/Persistence/Snippets/Migrations/001_create_snippets.sql)
+   then [002_question_steps.sql](src/Persistence/Snippets/Migrations/002_question_steps.sql),
+   each **once**, using a schema-owner account in your database UI.
+   Existing databases created with migration 001 need **only migration 002**;
+   it preserves every existing question and its Markdown as example 1.
    Alternatively, with connection details supplied through PostgreSQL's `PGHOST`,
    `PGPORT`, `PGDATABASE`, `PGUSER` and secure password configuration, run:
 
    ```bash
    psql -v ON_ERROR_STOP=1 -f src/Persistence/Snippets/Migrations/001_create_snippets.sql
+   psql -v ON_ERROR_STOP=1 -f src/Persistence/Snippets/Migrations/002_question_steps.sql
    ```
 
 2. Set `Snippets__Enabled=true`, `Snippets__Provider=PostgreSql` and
@@ -200,7 +230,8 @@ leave the library unavailable when the feature is enabled. Filenames cannot cont
 | Table | Content |
 | --- | --- |
 | `snippets.categories` | One row per normalized language (`general`, `csharp`, `sql`, etc.), nonblank `title`, and `sort_order` for display order. |
-| `snippets.questions` | `language` references a category; positive `number` is unique within it. `topic`, `description` and `markdown` are required, nonblank text. |
+| `snippets.questions` | `language` references a category; positive `number` is unique within it. `topic` and `description` describe the whole question; `markdown` and `snippet_title` hold example 1. The title defaults to `Original example`. |
+| `snippets.question_steps` | Additional examples: `language` + `question_number` identify the parent question; `number` is 2, 3, …; `title` and `markdown` are required. |
 | `snippets.catalog_state` | One automatic `updated_at` timestamp for the library. Do not edit or delete this row. |
 
 Create a category and its first question in the **same transaction**, since a
@@ -213,11 +244,17 @@ VALUES ('csharp', 'C#', 10);
 INSERT INTO snippets.questions (language, number, topic, description, markdown)
 VALUES ('csharp', 1, 'Collections', 'Choosing collection types.',
         'Explain when you would use a Dictionary rather than a List.');
+INSERT INTO snippets.question_steps (language, question_number, number, title, markdown)
+VALUES ('csharp', 1, 2, 'What if several threads update it?',
+        'How would the design change if the same dictionary is updated concurrently?');
 COMMIT;
 ```
 
 Questions appear by number; categories appear by `sort_order`, then language.
-Deleting a category cascades to its questions. Triggers advance `updated_at` on
+Example numbers must be consecutive from 1, without gaps or duplicates. Edit a
+progression in one transaction so readers never see a half-finished sequence.
+Deleting a question cascades to its follow-up examples; deleting a category
+cascades to its questions. Triggers on all three content tables advance `updated_at` on
 inserts, updates, deletes and truncates, including changes made through the UI;
 no manual timestamp update is needed. Keep triggers enabled when importing data.
 
@@ -237,7 +274,9 @@ opening the previous catalog; **Last synced** stays unchanged until a later chec
 succeeds. Background failures add no error banner to the library.
 
 The runtime account needs only `CONNECT` to the database, `USAGE` on schema
-`snippets`, and `SELECT` on its three tables. Use a separate owner/editor account
+`snippets`, and `SELECT` on its four tables. When upgrading an existing read-only
+role, also grant it `SELECT` on the new `snippets.question_steps` table.
+Use a separate owner/editor account
 for migration and manual changes. Room state remains in memory.
 
 An optional **read-only** integration test uses a migrated, populated database.
@@ -259,7 +298,7 @@ its own PostgreSQL service container; no deployment credentials are needed.
 
 | Popup from the admin panel | SQL library in a separate tab |
 | --- | --- |
-| ![Private C# question library popup showing the last synchronization date and time](docs/images/snippets-popup.png) | ![SQL question library with its last synchronization time, numbered topics and highlighted code](docs/images/snippets-tab.png) |
+| ![One C# topic with two examples comparing cancellation behavior and separate copy controls](docs/images/snippets-popup.png) | ![One SQL topic with two related ranking examples showing what changes when timestamps tie](docs/images/snippets-tab.png) |
 
 To run the library browser tests and refresh all four library screenshots,
 including unavailable states, with disposable accounts and isolated hosts:
@@ -755,7 +794,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.12.2`, so releases bypass previously cached resource URLs.
+query string `?v=1.12.3`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
