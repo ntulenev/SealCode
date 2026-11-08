@@ -102,13 +102,30 @@ Enable it in `src/SealCode/appsettings.json`:
 | `Snippets:Enabled` | `false` | Load the catalog into memory at startup. Disabled libraries perform no file or database reads. |
 | `Snippets:SuperAdminsOnly` | `true` | Only super admins can open the page or read its API. Set to `false` for all authenticated admins, including permitted Google admins. |
 | `Snippets:Provider` | `File` | `File` loads JSON/Markdown once; `PostgreSql` loads the database at startup and checks its timestamp every 30 minutes. Values are case-insensitive. |
-| `ConnectionStrings:Snippets` | unset | Required for enabled PostgreSQL storage. Supply through deployment secrets or `ConnectionStrings__Snippets`. |
+| `ConnectionStrings:Snippets` | unset | Required to load PostgreSQL content. Supply through deployment secrets or `ConnectionStrings__Snippets`. |
+| `Snippets:StartupRetryCount` | `3` | Additional startup attempts after likely PostgreSQL connection failures; range 0–10. `0` makes one attempt. File reads are never retried. |
+| `Snippets:StartupRetryDelaySeconds` | `2` | Delay between PostgreSQL startup retries; range 0–60 seconds. Each read also uses the connection string's timeout settings. |
 
 The `Snippets` section is optional; omitting it keeps the library disabled.
 Environment overrides include `Snippets__Enabled`, `Snippets__SuperAdminsOnly` and
 `Snippets__Provider`. Restart after changing settings or local question files.
 Database changes appear on the next 30-minute check. Existing sessions are checked on
 every library request. Guests cannot read the library, even with a room link.
+
+If the initial file or database read fails, the portal still starts. Authorized
+admins see a **red, disabled question-library button** instead of an active link;
+guests and admins without library permission still see no control. Direct library
+requests return HTTP 503 while no complete catalog is available. There is no
+successful synchronization timestamp to display yet.
+
+PostgreSQL startup retries apply only to likely temporary connection failures:
+network/connection timeouts, connection-related server errors, server restart or
+too many connections. Invalid credentials, missing schema, invalid content and
+invalid connection settings are not retried. For example, set
+`Snippets__StartupRetryCount=3` and `Snippets__StartupRetryDelaySeconds=2` for up to
+four attempts. After failed startup reads, the regular 30-minute database checks
+can recover the library without restarting; reload the portal page to update the
+button after recovery. Failed file loads require fixing the files and restarting.
 
 The library heading shows **Last synced**, with the date, time (including seconds)
 and time zone in the viewer's local settings. For files, this is when the portal
@@ -154,7 +171,7 @@ For example:
 Use plain question text and fenced code blocks such as ` ```csharp ` or ` ```sql `.
 The viewer renders prose as text and code with Monaco highlighting; raw HTML and
 Markdown links are not interpreted. General and configured system languages with authored questions appear. Invalid manifests, duplicate numbers, empty questions and missing files
-fail startup when the feature is enabled. Filenames cannot contain directory paths.
+leave the library unavailable when the feature is enabled. Filenames cannot contain directory paths.
 
 ### PostgreSQL snippet storage
 
@@ -200,7 +217,8 @@ Deleting a category cascades to its questions. Triggers advance `updated_at` on
 inserts, updates, deletes and truncates, including changes made through the UI;
 no manual timestamp update is needed. Keep triggers enabled when importing data.
 
-At startup the complete library must load successfully or startup fails. Every
+At startup the complete library is loaded, with bounded connection retries as
+configured above; a failed load leaves only the library unavailable. Every
 30 minutes the app compares the database timestamp with the published version.
 If unchanged, it reads no question content. If changed, it loads and validates
 the library in a repeatable-read transaction, then atomically replaces the immutable
@@ -733,7 +751,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.12.1`, so releases bypass previously cached resource URLs.
+query string `?v=1.12.2`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.

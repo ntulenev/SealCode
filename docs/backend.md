@@ -93,12 +93,14 @@ An asynchronous single-permit semaphore serializes initialization callers. The
 catalog checks an initialized flag under the semaphore and sets it only after a
 successful load. Subsequent calls throw `InvalidOperationException` rather than
 silently succeeding, including callers queued behind a successful load. Failed or canceled
-loads leave the flag unset and release the semaphore. During application startup,
-such failures propagate and prevent the application from starting. Canceling a
-waiting caller does not cancel another caller's load. A disabled feature never
-calls persistence. All public reads (`Enabled`, `CanAccess`, `GetSnapshot`) reject
-an uninitialized catalog with `InvalidOperationException` before applying role or
-feature checks. Published snapshots are immutable; access checks and snapshot
+loads leave the flag unset and release the semaphore. The startup service catches
+read failures, logs only their type and lets the portal start with an unavailable
+library. Only transient PostgreSQL connection failures receive the configured
+startup retries. Host cancellation still propagates and cancels retry delays.
+Canceling a waiting caller does not cancel another caller's load. A disabled
+feature never calls persistence. `Enabled`, `CanAccess` and `Available` can be read
+before a successful load; snapshot getters still require initialization.
+Published snapshots are immutable; access checks and snapshot
 retrieval enforce the same administrator policy. Raw domain objects are mapped to response DTOs in `Transport`.
 
 `Persistence.Snippets.FileSnippetRepository` loads the private
@@ -130,9 +132,15 @@ The SQL migration under `Persistence/Snippets/Migrations` is applied explicitly 
 an operator, never by the app. Categories and questions are manually maintained;
 statement triggers update a singleton timestamp for insert/update/delete/truncate.
 The runtime account requires only schema usage and table selects. Disabled
-libraries never create a database connection. Missing connections, schemas or
-invalid startup content fail startup; background failures retain the last good
-snapshot and log only the exception type. The HTTP contract stays unchanged.
+libraries never create a database connection. Connection-pool resolution is lazy,
+so even missing or malformed connection strings are handled by the startup loader.
+Missing connections, schemas or invalid startup content leave the catalog
+unavailable. The access API returns `Unavailable=true` only to authorized users,
+and the launcher renders a native disabled button in the theme's error color.
+Library page/data requests return HTTP 503 until a complete snapshot is available.
+Database refreshes can initialize a catalog that failed at startup; file refreshes
+remain disabled. Background failures retain the last good snapshot and log only
+the exception type.
 Room state remains in memory.
 
 ## 3. HTTP pipeline and endpoints
