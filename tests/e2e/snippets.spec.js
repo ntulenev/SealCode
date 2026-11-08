@@ -9,12 +9,19 @@ test('private library works in popup, new tab and room with highlighted copyable
   page.on('pageerror', error => errors.push(error.message));
   try {
     await context.request.post('/admin/login', { headers: await csrf(context.request), form: { name: 'BrowserAdmin', password: 'browser-pass' } });
+    const catalogResponse = await context.request.get('/admin/snippets/catalog');
+    const syncedAt = catalogResponse.headers()['x-snippets-synced-at'];
+    expect(Number.isFinite(Date.parse(syncedAt))).toBe(true);
+    const syncIso = new Date(syncedAt).toISOString();
     await page.goto('/admin');
     await page.getByRole('link', { name: 'Open question library' }).click();
     const dialog = page.getByRole('dialog', { name: 'Question library' });
     await expect(dialog).toBeVisible();
     const library = page.frameLocator('iframe[title="Question library"]');
     await expect(library.locator('#snippetQuestions button')).toHaveCount(3);
+    await expect(library.locator('#snippetSyncTime')).toHaveAttribute('datetime', syncIso);
+    await expect(library.locator('#snippetSyncTime')).toBeVisible();
+    await expect(library.locator('#snippetSyncTime')).not.toHaveText(/Loading|Unavailable/);
     await expect(library.locator('.site-header a')).toHaveCount(0);
     await library.getByRole('button', { name: 'Copy snippet' }).click();
     await expect(library.getByRole('status')).toHaveText('Copied to clipboard.');
@@ -47,6 +54,7 @@ test('private library works in popup, new tab and room with highlighted copyable
     if (process.env.CAPTURE_SNIPPETS) await page.screenshot({ path: 'docs/images/snippets-popup.png', fullPage: true });
     const [tab] = await Promise.all([context.waitForEvent('page'), dialog.getByRole('link', { name: 'Open in new tab' }).click()]);
     await expect(tab).toHaveURL(`${host.baseURL}/admin/snippets`);
+    await expect(tab.locator('#snippetSyncTime')).toHaveAttribute('datetime', syncIso);
     await expect(tab.getByRole('link', { name: 'Back to rooms' })).toBeVisible();
     await tab.getByRole('button', { name: 'SQL', exact: true }).click();
     await expect(tab.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);

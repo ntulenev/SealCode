@@ -8,14 +8,15 @@ using Abstractions;
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 using Models;
 
@@ -730,6 +731,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
     [Trait("Category", "Integration")]
     public async Task SnippetCatalogIsLoadedAtStartupAndNeverReloadedByHttpRequests()
     {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
         var repository = new Mock<ISnippetRepository>();
         var library = new Models.Snippets.SnippetLibrary(
         [
@@ -742,7 +744,11 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         {
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["Snippets:Enabled"] = "true", ["Snippets:SuperAdminsOnly"] = "false" }));
-            builder.ConfigureServices(services => services.AddSingleton(repository.Object));
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton(repository.Object);
+                services.AddSingleton<TimeProvider>(clock);
+            });
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         repository.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -751,8 +757,11 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            clock.Advance(TimeSpan.FromHours(1));
             using var response = await client.GetAsync("/admin/snippets/catalog");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
+            DateTimeOffset.Parse(response.Headers.GetValues("X-Snippets-Synced-At").Single(),
+                System.Globalization.CultureInfo.InvariantCulture).Should().Be(DateTimeOffset.UnixEpoch);
             var categories = await response.Content.ReadFromJsonAsync<JsonElement>();
             categories.GetArrayLength().Should().Be(1);
             categories[0].GetProperty("Language").GetString().Should().Be("general");
@@ -786,6 +795,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         using var anonymous = await client.GetAsync("/admin/snippets/catalog");
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Contains("X-Snippets-Synced-At").Should().BeFalse();
         using var anonymousAccess = await client.GetAsync("/admin/snippets/access");
         anonymousAccess.Headers.CacheControl!.NoStore.Should().BeTrue();
         (await anonymousAccess.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("CanAccess").GetBoolean().Should().BeFalse();
@@ -802,6 +812,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
             using var response = await client.GetAsync(path);
             response.StatusCode.Should().Be(expected);
             response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            response.Headers.Contains("X-Snippets-Synced-At").Should()
+                .Be(expected == HttpStatusCode.OK && path == "/admin/snippets/catalog");
         }
         foreach (var path in new[] { "/Resources/Snippets/catalog.json", "/Resources/Snippets/catalog.schema.json", "/Resources/Snippets/csharp-01.md", "/Resources/Snippets/library.html" })
         {
@@ -1101,7 +1113,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         }
         var refusal = (await FluentActions.Awaiting(() => connection.InvokeAsync("UpdateYjs", roomId, "Ag=="))
             .Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>()).Which;
-        HubErrorAssertions.AssertHubError(refusal, SealCode.Hub.HubErrorCode.LimitExceeded);
+        HubErrorAssertions.AssertHubError(refusal, Hub.HubErrorCode.LimitExceeded);
         (await connection.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(4);
         (await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 4L)).Should().BeTrue();
         await connection.InvokeAsync("UpdateYjs", roomId, "Ag==");
