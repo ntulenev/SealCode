@@ -34,7 +34,7 @@ Deployment and default values remain in the
 | Models | Domain values, configuration, aggregate invariants: RoomState, RoomMembership, RoomDocumentJournal, RoomLimits, SnippetLibrary, SnippetCategory, SnippetQuestion | None |
 | Abstractions | Application boundaries: IRoomRegistry, IRoomManager, IRoomSessionService, IRoomNotifier, ISnippetCatalog, ISnippetRepository | Models |
 | Logic | Application operations: RoomSessionService, RoomManager, RoomRegistry, SnippetCatalog | Abstractions, Models |
-| Persistence | FileSnippetRepository: private JSON/Markdown loading behind ISnippetRepository | Abstractions, Models |
+| Persistence | FileSnippetRepository and PostgreSqlSnippetRepository: private catalog loading behind ISnippetRepository | Abstractions, Models |
 | Transport | HubContract, JoinRoomResult, YjsDocumentUpdate, snippet response DTOs, JSON conversion | Models |
 | SealCode | Composition, HTTP, SignalR, security, browser assets: RoomHub, RoomResourceFilter, SignalRRoomNotifier | Logic, Persistence, Abstractions, Models, Transport |
 | TestKit | Shared RoomStateBuilder and Concurrency helpers, compiled into selected test projects | Shared source directory; no separate project |

@@ -301,6 +301,7 @@ port (5087) or the production HTTPS check port (5088).
 | `npx playwright test tests/e2e/snippets.spec.js` | Private library popup/tab/room, search and descriptions, clipboard, ordinary-admin permissions, guests and logout |
 | `npm run typecheck` | Static JavaScript type checking |
 | `dotnet test src/SealCode.slnx` | Server domain, service, hub, API and configuration tests |
+| `dotnet format src/SealCode.slnx --verify-no-changes --no-restore` | C# formatting and style rules from `src/.editorconfig`; run restore first |
 
 Snippet tests follow the project layers: domain invariants and immutable collections
 in `Models.Tests`, initialization/concurrency/cancellation and access policy in
@@ -749,6 +750,16 @@ Monaco, Yjs, SignalR and workers load locally, with a single Yjs instance; no CD
 ### CI and test isolation
 
 CI is defined in [verify.yml](.github/workflows/verify.yml).
+
+C# formatting and naming follow [`src/.editorconfig`](src/.editorconfig).
+CI verifies the whole solution with `dotnet format --verify-no-changes`, including
+the tests and shared TestKit sources. Use `dotnet format src/SealCode.slnx` to apply
+automatic fixes, then review the diff. [`.gitattributes`](.gitattributes) pins C#
+checkout line endings to CRLF so this check behaves consistently on Windows and Linux.
+Top-level types live in files matching their names; project dependencies follow
+the [backend architecture](docs/backend.md#2-solution-structure).
+JavaScript uses the existing two-space indentation and single-quote convention;
+`npm run typecheck` verifies the browser modules without adding a second formatter.
 
 Browser tests use an isolated temporary content root with disposable settings, never local admin credentials.
 
