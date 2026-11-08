@@ -4,15 +4,17 @@ using Models.Snippets;
 namespace Abstractions;
 
 /// <summary>
-/// Defines startup initialization and authorized access to an in-memory snippet library.
+/// Defines initialization, refresh and authorized access to an in-memory snippet library.
 /// </summary>
 public interface ISnippetCatalog
 {
     /// <summary>
     /// Gets whether the library feature is enabled for this application lifetime.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when initialization has not completed.</exception>
     bool Enabled { get; }
+
+    /// <summary>Gets whether a complete library has been loaded successfully.</summary>
+    bool Available { get; }
 
     /// <summary>
     /// Loads the library before requests are served and rejects calls after successful initialization.
@@ -23,13 +25,17 @@ public interface ISnippetCatalog
     /// <exception cref="OperationCanceledException">Thrown when the semaphore wait or repository load is canceled.</exception>
     Task InitializeAsync(CancellationToken cancellationToken);
 
+    /// <summary>Refreshes a versioned repository, retaining the current snapshot on failure.</summary>
+    /// <param name="cancellationToken">Cancels waiting or loading.</param>
+    /// <returns>Completion of the refresh; file and disabled catalogs perform no I/O.</returns>
+    Task RefreshAsync(CancellationToken cancellationToken);
+
     /// <summary>
     /// Checks whether an authenticated administrator can use this library.
     /// </summary>
     /// <param name="adminUser">The current authenticated administrator.</param>
     /// <returns>True when the feature and role allow access.</returns>
     /// <exception cref="ArgumentException">Thrown when the administrator is uninitialized.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when initialization has not completed.</exception>
     bool CanAccess(AdminUser adminUser);
 
     /// <summary>
@@ -41,4 +47,14 @@ public interface ISnippetCatalog
     /// <exception cref="UnauthorizedAccessException">Thrown when access is not allowed.</exception>
     /// <exception cref="InvalidOperationException">Thrown when startup initialization has not completed.</exception>
     SnippetLibrary GetSnapshot(AdminUser adminUser);
+
+    /// <summary>
+    /// Returns an authorized library together with its last successful synchronization time.
+    /// </summary>
+    /// <param name="adminUser">The current authenticated administrator.</param>
+    /// <returns>A consistent immutable library and portal synchronization timestamp.</returns>
+    /// <exception cref="ArgumentException">Thrown when the administrator is uninitialized.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when access is not allowed.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when startup initialization has not completed.</exception>
+    SnippetCatalogSnapshot GetCatalogSnapshot(AdminUser adminUser);
 }

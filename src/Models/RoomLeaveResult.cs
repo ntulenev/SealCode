@@ -45,7 +45,7 @@ public sealed class RoomLeaveResult
 
         Removed = removed;
         User = user;
-        _users = snapshot;
+        Users = snapshot;
         PresenceRevision = presenceRevision;
     }
 
@@ -62,12 +62,10 @@ public sealed class RoomLeaveResult
     /// <summary>
     /// Gets a copy of the remaining users snapshot.
     /// </summary>
-    public RoomUser[] Users => [.. _users];
+    public RoomUser[] Users => [.. field];
 
     /// <summary>
     /// Gets the membership revision after the removal.
     /// </summary>
     public long PresenceRevision { get; }
-
-    private readonly RoomUser[] _users;
 }

@@ -283,7 +283,7 @@ public sealed class RoomHubTests
         var subscriptionCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var groups = new Mock<IGroupManager>(MockBehavior.Strict);
         groups.Setup(g => g.AddToGroupAsync("conn-1", DefaultRoomId, cts.Token))
-            .Callback(() => subscriptionStarted.SetResult())
+            .Callback(subscriptionStarted.SetResult)
             .Returns(subscriptionCompleted.Task);
 
         var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
@@ -762,7 +762,7 @@ public sealed class RoomHubTests
             .Callback<RoomId, ConnectionId, RoomUser>((_, connection, user) => room.AddUser(connection, user, 5)).Returns(room);
         var groups = new Mock<IGroupManager>();
         groups.Setup(x => x.AddToGroupAsync("conn-1", DefaultRoomId, It.IsAny<CancellationToken>()))
-            .Callback(() => room.Close()).Returns(Task.CompletedTask);
+            .Callback(room.Close).Returns(Task.CompletedTask);
         var removal = groups.Setup(x => x.RemoveFromGroupAsync("conn-1", DefaultRoomId, CancellationToken.None));
         if (cleanupFails)
         {

@@ -13,6 +13,8 @@ using ModelContextProtocol.AspNetCore;
 using Models;
 using Models.Configuration;
 
+using Npgsql;
+
 using Persistence.Snippets;
 
 using SealCode.Mcp;
@@ -121,7 +123,7 @@ internal static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers the file repository, application catalog and startup loader.
+    /// Registers the selected repository, application catalog and startup/refresh workers.
     /// </summary>
     /// <param name="services">The application service collection.</param>
     /// <param name="environment">The host containing private library resources.</param>
@@ -134,10 +136,27 @@ internal static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(environment);
 
-        _ = services.AddSingleton<ISnippetRepository>(_ => new FileSnippetRepository(
-            Path.Combine(environment.ContentRootPath, "Resources", "Snippets")));
+        _ = services.AddSingleton<ISnippetRepository>(provider =>
+        {
+            var settings = provider.GetRequiredService<IOptions<ApplicationConfiguration>>().Value.Snippets;
+            if (settings.Enabled && settings.Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase))
+            {
+                return new PostgreSqlSnippetRepository(() => provider.GetRequiredService<NpgsqlDataSource>());
+            }
+            return new FileSnippetRepository(Path.Combine(environment.ContentRootPath, "Resources", "Snippets"));
+        });
+        _ = services.AddSingleton(provider =>
+        {
+            var connection = provider.GetRequiredService<IConfiguration>().GetConnectionString("Snippets");
+            if (string.IsNullOrWhiteSpace(connection))
+            {
+                throw new InvalidOperationException("Set ConnectionStrings:Snippets when the PostgreSql snippet provider is enabled.");
+            }
+            return NpgsqlDataSource.Create(connection);
+        });
         _ = services.AddSingleton<ISnippetCatalog, SnippetCatalog>();
         _ = services.AddHostedService<SnippetCatalogStartupService>();
+        _ = services.AddHostedService<SnippetCatalogRefreshService>();
         return services;
     }
 

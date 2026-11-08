@@ -5,11 +5,11 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-using Moq;
-
 using Models;
 using Models.Configuration;
 using Models.Exceptions;
+
+using Moq;
 
 namespace Logic.Tests;
 

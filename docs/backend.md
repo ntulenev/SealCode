@@ -34,7 +34,7 @@ Deployment and default values remain in the
 | Models | Domain values, configuration, aggregate invariants: RoomState, RoomMembership, RoomDocumentJournal, RoomLimits, SnippetLibrary, SnippetCategory, SnippetQuestion | None |
 | Abstractions | Application boundaries: IRoomRegistry, IRoomManager, IRoomSessionService, IRoomNotifier, ISnippetCatalog, ISnippetRepository | Models |
 | Logic | Application operations: RoomSessionService, RoomManager, RoomRegistry, SnippetCatalog | Abstractions, Models |
-| Persistence | FileSnippetRepository: private JSON/Markdown loading behind ISnippetRepository | Abstractions, Models |
+| Persistence | FileSnippetRepository and PostgreSqlSnippetRepository: private catalog loading behind ISnippetRepository | Abstractions, Models |
 | Transport | HubContract, JoinRoomResult, YjsDocumentUpdate, snippet response DTOs, JSON conversion | Models |
 | SealCode | Composition, HTTP, SignalR, security, browser assets: RoomHub, RoomResourceFilter, SignalRRoomNotifier | Logic, Persistence, Abstractions, Models, Transport |
 | TestKit | Shared RoomStateBuilder and Concurrency helpers, compiled into selected test projects | Shared source directory; no separate project |
@@ -82,10 +82,25 @@ wire errors and notifications. Protocol names live in
 
 `SnippetLibrary` owns unique language categories; `SnippetCategory` owns a nonempty
 set of questions with unique positive numbers and exposes a sorted read-only copy.
-`SnippetQuestion` validates its topic, coverage description and content while
-preserving code indentation.
+`SnippetQuestion` validates its topic, coverage description and a nonempty immutable
+progression of `SnippetStep` examples. Steps have unique consecutive numbers from
+one, a title and Markdown that preserves code indentation. Input collections are
+copied and sorted. The legacy question constructor creates one step, and its
+`Markdown` property retains the first example for compatibility.
 `SnippetLanguage` normalizes language identifiers and identifies General questions.
 The domain has no filenames, JSON attributes, HTTP types or persistence dependencies.
+
+File manifest version 1 retains single-file questions; version 2 also accepts
+`steps` referencing individual private Markdown files. Database migration 002
+retains the existing `questions.markdown` as example 1 and adds its title plus a
+`question_steps` table for follow-ups. Its foreign key cascades question updates
+and deletes, and its statement trigger advances the same catalog timestamp.
+The PostgreSQL adapter reads a joined progression in the existing repeatable-read
+transaction, maps persistence-only rows to domain objects, and validates the
+complete library before publication. Missing files or invalid progressions reject
+the load without publishing a partial question. `SnippetQuestionResponse.Steps`
+contains explicit transport DTOs; the renderer uses text-only titles/prose and
+highlighted code, with per-example and whole-progression copy actions.
 
 `Logic.SnippetCatalog` snapshots feature settings and configured languages. The
 `SnippetCatalogStartupService` awaits its initialization before requests are served.
@@ -93,12 +108,14 @@ An asynchronous single-permit semaphore serializes initialization callers. The
 catalog checks an initialized flag under the semaphore and sets it only after a
 successful load. Subsequent calls throw `InvalidOperationException` rather than
 silently succeeding, including callers queued behind a successful load. Failed or canceled
-loads leave the flag unset and release the semaphore. During application startup,
-such failures propagate and prevent the application from starting. Canceling a
-waiting caller does not cancel another caller's load. A disabled feature never
-calls persistence. All public reads (`Enabled`, `CanAccess`, `GetSnapshot`) reject
-an uninitialized catalog with `InvalidOperationException` before applying role or
-feature checks. Published snapshots are immutable; access checks and snapshot
+loads leave the flag unset and release the semaphore. The startup service catches
+read failures, logs only their type and lets the portal start with an unavailable
+library. Only transient PostgreSQL connection failures receive the configured
+startup retries. Host cancellation still propagates and cancels retry delays.
+Canceling a waiting caller does not cancel another caller's load. A disabled
+feature never calls persistence. `Enabled`, `CanAccess` and `Available` can be read
+before a successful load; snapshot getters still require initialization.
+Published snapshots are immutable; access checks and snapshot
 retrieval enforce the same administrator policy. Raw domain objects are mapped to response DTOs in `Transport`.
 
 `Persistence.Snippets.FileSnippetRepository` loads the private
@@ -107,8 +124,39 @@ validates file-format details, and constructs domain models. Persistence records
 remain internal to that project. Domain invariant failures become an
 `InvalidDataException` with the original cause; I/O and cancellation failures
 propagate to startup. The repository does not filter by language or administrator.
-To use a database, register another `ISnippetRepository` implementation; the
-catalog and its HTTP contract stay unchanged. Room state remains in memory.
+`Snippets:Provider` selects `File` (default) or `PostgreSql`. The PostgreSQL
+implementation uses a singleton Npgsql data source and implements
+`IVersionedSnippetRepository`. Startup loads the timestamp and content in a
+repeatable-read transaction. `SnippetCatalogRefreshService` checks every 30 minutes
+after the startup service. An unchanged timestamp skips the content query.
+A changed timestamp loads a consistent library, validates and filters it, and
+atomically replaces the catalog reference. Initialization and refresh share a
+semaphore; HTTP readers never wait for database I/O. Failed or canceled refreshes
+leave both the library and its timestamp unchanged for retry at the next interval.
+Old immutable snapshots remain valid for in-flight readers.
+
+Each catalog publication also records the portal clock's completion time using
+the injected `TimeProvider`. Unchanged PostgreSQL checks publish a new timestamp
+while retaining the same immutable library; file refreshes perform no work and
+keep their initial timestamp. Failed or canceled checks publish neither data nor
+time. The catalog endpoint captures both from one `SnippetCatalogSnapshot` and
+returns the time in `X-Snippets-Synced-At`, preserving the category-array body.
+The library page formats it in the viewer's local time zone when opened.
+
+The SQL migration under `Persistence/Snippets/Migrations` is applied explicitly by
+an operator, never by the app. Categories and questions are manually maintained;
+statement triggers update a singleton timestamp for insert/update/delete/truncate.
+The runtime account requires only schema usage and table selects. Disabled
+libraries never create a database connection. Connection-pool resolution is lazy,
+so even missing or malformed connection strings are handled by the startup loader.
+Missing connections, schemas or invalid startup content leave the catalog
+unavailable. The access API returns `Unavailable=true` only to authorized users,
+and the launcher renders a native disabled button in the theme's error color.
+Library page/data requests return HTTP 503 until a complete snapshot is available.
+Database refreshes can initialize a catalog that failed at startup; file refreshes
+remain disabled. Background failures retain the last good snapshot and log only
+the exception type.
+Room state remains in memory.
 
 ## 3. HTTP pipeline and endpoints
 

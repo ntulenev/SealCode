@@ -5,8 +5,8 @@ using Microsoft.Extensions.Options;
 using Models;
 using Models.Configuration;
 
-using SealCode.Security;
 using SealCode.Hosting;
+using SealCode.Security;
 
 using Transport.Models;
 
@@ -222,5 +222,3 @@ internal static class AdminEndpoints
 
     }
 }
-
-internal sealed record GoogleLoginRequest(string Credential);

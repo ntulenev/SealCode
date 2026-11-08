@@ -1,10 +1,10 @@
 using FluentAssertions;
 
-using Moq;
-
 using Microsoft.AspNetCore.SignalR;
 
 using Models;
+
+using Moq;
 
 namespace SealCode.Tests;
 

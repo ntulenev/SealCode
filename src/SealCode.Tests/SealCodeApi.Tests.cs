@@ -8,14 +8,15 @@ using Abstractions;
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 using Models;
 
@@ -703,33 +704,58 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
 
     private static SealCodeAppFactory CreateFactory() => new();
 
-    [Fact]
+    [Theory]
+    [InlineData("File", null)]
+    [InlineData("PostgreSql", null)]
+    [InlineData("PostgreSql", "invalid connection string")]
     [Trait("Category", "Integration")]
-    public void SnippetPersistenceFailureAbortsApplicationStartup()
+    public async Task SnippetPersistenceFailureKeepsApplicationRunningWithUnavailableLibraryAsync(
+        string provider, string? connection)
     {
         using var original = CreateFactory();
         using var factory = original.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["Snippets:Enabled"] = "true" }));
-            builder.ConfigureServices(services =>
+                new Dictionary<string, string?>
+                {
+                    ["Snippets:Enabled"] = "true",
+                    ["Snippets:Provider"] = provider,
+                    ["Snippets:StartupRetryCount"] = "0",
+                    ["ConnectionStrings:Snippets"] = connection
+                }));
+            if (provider == "File")
             {
-                var repository = new Mock<ISnippetRepository>();
-                repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
-                    .ThrowsAsync(new InvalidDataException("Invalid persisted library"));
-                services.AddSingleton(repository.Object);
-            });
+                builder.ConfigureServices(services =>
+                {
+                    var repository = new Mock<ISnippetRepository>();
+                    repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+                        .ThrowsAsync(new InvalidDataException("Invalid persisted library"));
+                    services.AddSingleton(repository.Object);
+                });
+            }
         });
 
-        var start = () => factory.CreateClient();
-
-        start.Should().Throw<InvalidDataException>().WithMessage("Invalid persisted library");
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var health = await client.GetAsync("/health");
+        health.StatusCode.Should().Be(HttpStatusCode.OK);
+        _ = await LoginAsync(client, "Root", "pass2");
+        using var access = await client.GetAsync("/admin/snippets/access");
+        var state = await access.Content.ReadFromJsonAsync<JsonElement>();
+        state.GetProperty("CanAccess").GetBoolean().Should().BeFalse();
+        state.GetProperty("Unavailable").GetBoolean().Should().BeTrue();
+        foreach (var path in new[] { "/admin/snippets", "/admin/snippets/catalog" })
+        {
+            using var unavailable = await client.GetAsync(path);
+            unavailable.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            unavailable.Headers.Contains("X-Snippets-Synced-At").Should().BeFalse();
+        }
     }
 
     [Fact]
     [Trait("Category", "Integration")]
     public async Task SnippetCatalogIsLoadedAtStartupAndNeverReloadedByHttpRequests()
     {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
         var repository = new Mock<ISnippetRepository>();
         var library = new Models.Snippets.SnippetLibrary(
         [
@@ -742,7 +768,11 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         {
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["Snippets:Enabled"] = "true", ["Snippets:SuperAdminsOnly"] = "false" }));
-            builder.ConfigureServices(services => services.AddSingleton(repository.Object));
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton(repository.Object);
+                services.AddSingleton<TimeProvider>(clock);
+            });
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         repository.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -751,8 +781,11 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            clock.Advance(TimeSpan.FromHours(1));
             using var response = await client.GetAsync("/admin/snippets/catalog");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
+            DateTimeOffset.Parse(response.Headers.GetValues("X-Snippets-Synced-At").Single(),
+                System.Globalization.CultureInfo.InvariantCulture).Should().Be(DateTimeOffset.UnixEpoch);
             var categories = await response.Content.ReadFromJsonAsync<JsonElement>();
             categories.GetArrayLength().Should().Be(1);
             categories[0].GetProperty("Language").GetString().Should().Be("general");
@@ -786,6 +819,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         using var anonymous = await client.GetAsync("/admin/snippets/catalog");
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Contains("X-Snippets-Synced-At").Should().BeFalse();
         using var anonymousAccess = await client.GetAsync("/admin/snippets/access");
         anonymousAccess.Headers.CacheControl!.NoStore.Should().BeTrue();
         (await anonymousAccess.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("CanAccess").GetBoolean().Should().BeFalse();
@@ -802,6 +836,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
             using var response = await client.GetAsync(path);
             response.StatusCode.Should().Be(expected);
             response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            response.Headers.Contains("X-Snippets-Synced-At").Should()
+                .Be(expected == HttpStatusCode.OK && path == "/admin/snippets/catalog");
         }
         foreach (var path in new[] { "/Resources/Snippets/catalog.json", "/Resources/Snippets/catalog.schema.json", "/Resources/Snippets/csharp-01.md", "/Resources/Snippets/library.html" })
         {
@@ -1101,7 +1137,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         }
         var refusal = (await FluentActions.Awaiting(() => connection.InvokeAsync("UpdateYjs", roomId, "Ag=="))
             .Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>()).Which;
-        HubErrorAssertions.AssertHubError(refusal, SealCode.Hub.HubErrorCode.LimitExceeded);
+        HubErrorAssertions.AssertHubError(refusal, Hub.HubErrorCode.LimitExceeded);
         (await connection.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(4);
         (await connection.InvokeAsync<bool>("CheckpointYjs", roomId, "AQ==", "", 4L)).Should().BeTrue();
         await connection.InvokeAsync("UpdateYjs", roomId, "Ag==");

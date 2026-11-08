@@ -1,22 +1,31 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { test, expect } from './fixtures.js';
 import { csrf } from './admin-token.js';
 
 test('private library works in popup, new tab and room with highlighted copyable questions', async ({ browser, isolatedHost }, testInfo) => {
   const host = await isolatedHost({ Snippets: { Enabled: true, SuperAdminsOnly: true } });
-  const context = await browser.newContext({ baseURL: host.baseURL, viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  const context = await browser.newContext({ baseURL: host.baseURL, viewport: { width: 1440, height: 1200 }, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
     await context.request.post('/admin/login', { headers: await csrf(context.request), form: { name: 'BrowserAdmin', password: 'browser-pass' } });
+    const catalogResponse = await context.request.get('/admin/snippets/catalog');
+    const syncedAt = catalogResponse.headers()['x-snippets-synced-at'];
+    expect(Number.isFinite(Date.parse(syncedAt))).toBe(true);
+    const syncIso = new Date(syncedAt).toISOString();
     await page.goto('/admin');
     await page.getByRole('link', { name: 'Open question library' }).click();
     const dialog = page.getByRole('dialog', { name: 'Question library' });
     await expect(dialog).toBeVisible();
     const library = page.frameLocator('iframe[title="Question library"]');
     await expect(library.locator('#snippetQuestions button')).toHaveCount(3);
+    await expect(library.locator('#snippetSyncTime')).toHaveAttribute('datetime', syncIso);
+    await expect(library.locator('#snippetSyncTime')).toBeVisible();
+    await expect(library.locator('#snippetSyncTime')).not.toHaveText(/Loading|Unavailable/);
     await expect(library.locator('.site-header a')).toHaveCount(0);
-    await library.getByRole('button', { name: 'Copy snippet' }).click();
+    await library.locator('#copySnippet').click();
     await expect(library.getByRole('status')).toHaveText('Copied to clipboard.');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('network partition');
     await library.getByRole('button', { name: 'C#', exact: true }).click();
@@ -30,7 +39,7 @@ test('private library works in popup, new tab and room with highlighted copyable
     await expect(library.locator('#snippetTitle')).toHaveText('03 / Equality and dictionary keys');
     await search.fill('no such question');
     await expect(library.locator('#snippetQuestions button')).toHaveCount(0);
-    await expect(library.getByRole('button', { name: 'Copy snippet' })).toBeDisabled();
+    await expect(library.locator('#copySnippet')).toBeDisabled();
     await expect(library.locator('#snippetTitle')).toHaveText('No matching questions');
     await search.fill('NULL');
     await library.getByRole('button', { name: 'SQL', exact: true }).click();
@@ -40,16 +49,32 @@ test('private library works in popup, new tab and room with highlighted copyable
     await library.getByRole('button', { name: 'C#', exact: true }).click();
     await expect(library.locator('#snippetQuestions button')).toHaveCount(3);
     await expect(library.locator('.snippet-code .mtk1, .snippet-code [class^="mtk"]')).not.toHaveCount(0);
-    await library.getByRole('button', { name: 'Copy snippet' }).click();
+    await expect(library.locator('.snippet-step')).toHaveCount(2);
+    await expect(library.locator('.snippet-step').nth(0).getByRole('heading', { name: 'Without cancellation' })).toBeVisible();
+    await expect(library.locator('.snippet-step').nth(1).getByRole('heading', { name: 'What if we pass a token?' })).toBeVisible();
+    await expect(library.locator('.snippet-step .snippet-code')).toHaveCount(2);
+    await library.locator('.snippet-step').nth(1).getByRole('button', { name: 'Copy example' }).click();
     await expect(library.getByRole('status')).toHaveText('Copied to clipboard.');
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('CountSuccessfulAsync');
+    const followUp = await page.evaluate(() => navigator.clipboard.readText());
+    expect(followUp).toContain('.GetAsync(url, token)');
+    expect(followUp).not.toContain('.GetAsync(url);');
+    await expect(library.locator('#copySnippet')).toHaveText('Copy all snippets');
+    await library.locator('#copySnippet').click();
+    await expect(library.getByRole('status')).toHaveText('Copied to clipboard.');
+    const allExamples = await page.evaluate(() => navigator.clipboard.readText());
+    expect(allExamples).toContain('.GetAsync(url);');
+    expect(allExamples).toContain('.GetAsync(url, token)');
     await page.screenshot({ path: testInfo.outputPath('snippets-popup.png'), fullPage: true });
     if (process.env.CAPTURE_SNIPPETS) await page.screenshot({ path: 'docs/images/snippets-popup.png', fullPage: true });
     const [tab] = await Promise.all([context.waitForEvent('page'), dialog.getByRole('link', { name: 'Open in new tab' }).click()]);
     await expect(tab).toHaveURL(`${host.baseURL}/admin/snippets`);
+    await expect(tab.locator('#snippetSyncTime')).toHaveAttribute('datetime', syncIso);
     await expect(tab.getByRole('link', { name: 'Back to rooms' })).toBeVisible();
+    await tab.setViewportSize({ width: 1440, height: 1000 });
     await tab.getByRole('button', { name: 'SQL', exact: true }).click();
     await expect(tab.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
+    await expect(tab.locator('.snippet-step')).toHaveCount(2);
+    await expect(tab.getByRole('heading', { name: 'What if timestamps tie?' })).toBeVisible();
     await tab.screenshot({ path: testInfo.outputPath('snippets-tab.png'), fullPage: true });
     if (process.env.CAPTURE_SNIPPETS) await tab.screenshot({ path: 'docs/images/snippets-tab.png', fullPage: true });
     for (const width of [375, 1440]) {
@@ -69,7 +94,7 @@ test('private library works in popup, new tab and room with highlighted copyable
     await page.getByRole('link', { name: 'Open question library' }).click();
     await expect(page.getByRole('dialog', { name: 'Question library' })).toBeVisible();
     await expect(library.locator('#snippetTabs [data-language="csharp"]')).toHaveAttribute('aria-pressed', 'true');
-    await library.getByRole('button', { name: 'Copy snippet' }).click();
+    await library.locator('#copySnippet').click();
     await expect(library.getByRole('status')).toHaveText('Copied to clipboard.');
     expect(await page.evaluate(() => window.monaco.editor.getModels()[0].getValue())).toBe('Keep the shared document unchanged.');
     expect(errors).toEqual([]);
@@ -138,6 +163,49 @@ test('disabled library and guest rooms hide the book control', async ({ page, br
     await owner.close();
   }
 });
+
+for (const provider of ['File', 'PostgreSql']) {
+  test(`${provider} startup failure leaves the portal running with a red disabled library button`, async ({ browser, isolatedHost }, testInfo) => {
+    const host = await isolatedHost({
+      Snippets: { Enabled: true, Provider: provider, StartupRetryCount: 0 },
+      ConnectionStrings: { Snippets: 'Host=127.0.0.1;Port=1;Database=unavailable;Username=test;Timeout=1' }
+    }, provider === 'File' ? root => writeFile(join(root, 'Resources/Snippets/catalog.json'), '{invalid') : undefined);
+    const context = await browser.newContext({ baseURL: host.baseURL });
+    try {
+      expect(await (await context.request.get('/admin/snippets/access')).json())
+        .toEqual({ CanAccess: false, Unavailable: false });
+      await context.request.post('/admin/login', {
+        headers: await csrf(context.request), form: { name: 'BrowserAdmin', password: 'browser-pass' }
+      });
+      const page = await context.newPage();
+      await page.goto('/admin');
+      const unavailable = page.getByRole('button', { name: 'Question library unavailable' });
+      await expect(unavailable).toBeVisible();
+      await expect(unavailable).toBeDisabled();
+      await expect(unavailable).toHaveCSS('color', 'rgb(255, 170, 168)');
+      await expect(page.getByRole('link', { name: 'Open question library' })).toHaveCount(0);
+      await unavailable.evaluate(button => button.click());
+      await expect(page.getByRole('dialog', { name: 'Question library' })).toHaveCount(0);
+      expect(context.pages()).toHaveLength(1);
+      expect((await context.request.get('/health')).ok()).toBe(true);
+      expect((await context.request.get('/admin/rooms')).ok()).toBe(true);
+      const catalog = await context.request.get('/admin/snippets/catalog');
+      expect(catalog.status()).toBe(503);
+      expect(catalog.headers()['x-snippets-synced-at']).toBeUndefined();
+      await page.locator('.site-header [data-theme-toggle]').click();
+      await expect(unavailable).toHaveCSS('color', 'rgb(182, 46, 58)');
+      await page.screenshot({ path: testInfo.outputPath('library-unavailable.png'), fullPage: true });
+      if (process.env.CAPTURE_SNIPPETS) {
+        if (provider === 'File') {
+          await page.locator('.site-header [data-theme-toggle]').click();
+          await expect(unavailable).toHaveCSS('color', 'rgb(255, 170, 168)');
+        }
+        const source = provider === 'File' ? 'file' : 'postgresql';
+        await page.screenshot({ path: `docs/images/snippets-unavailable-${source}.png`, fullPage: true });
+      }
+    } finally { await context.close(); }
+  });
+}
 
 for (const superAdminsOnly of [true, false]) {
   test(`ordinary admin library access follows SuperAdminsOnly=${superAdminsOnly}`, async ({ browser, isolatedHost }) => {

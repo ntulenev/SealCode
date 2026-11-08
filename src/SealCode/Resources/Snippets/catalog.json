@@ -1,6 +1,6 @@
 {
   "$schema": "catalog.schema.json",
-  "version": 1,
+  "version": 2,
   "groups": [
     {
       "language": "general",
@@ -34,7 +34,18 @@
           "number": 1,
           "topic": "Async and cancellation",
           "description": "Async/await, cancellation propagation, resource disposal and bounded concurrency.",
-          "file": "csharp-01.md"
+          "steps": [
+            {
+              "number": 1,
+              "title": "Without cancellation",
+              "file": "csharp-01.md"
+            },
+            {
+              "number": 2,
+              "title": "What if we pass a token?",
+              "file": "csharp-01-cancellation.md"
+            }
+          ]
         },
         {
           "number": 2,
@@ -58,7 +69,18 @@
           "number": 1,
           "topic": "Ranking within a group",
           "description": "Window functions, per-group ranking and deterministic tie-breaking.",
-          "file": "sql-01.md"
+          "steps": [
+            {
+              "number": 1,
+              "title": "Number every order",
+              "file": "sql-01.md"
+            },
+            {
+              "number": 2,
+              "title": "What if timestamps tie?",
+              "file": "sql-01-ties.md"
+            }
+          ]
         },
         {
           "number": 2,

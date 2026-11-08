@@ -57,7 +57,7 @@ internal sealed class IdleRoomCleanupService : BackgroundService
     }
 
     /// <inheritdoc />
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_timeout == TimeSpan.Zero)
         {

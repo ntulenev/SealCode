@@ -1,0 +1,2 @@
+# Match src/.editorconfig on every checkout, including Linux CI.
+*.cs text eol=crlf

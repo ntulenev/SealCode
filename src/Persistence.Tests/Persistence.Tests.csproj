@@ -18,5 +18,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\Persistence\Persistence.csproj" />
+    <None Include="..\Persistence\Snippets\Migrations\*.sql"
+          Link="Migrations\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

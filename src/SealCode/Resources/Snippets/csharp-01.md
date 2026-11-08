@@ -1,20 +1,11 @@
-What does this method return, and how does cancellation propagate?
+The caller cancels its own wait while this request is pending. Does that cancel the HTTP request too?
 
 ```csharp
-public static async Task<int> CountSuccessfulAsync(
-    HttpClient client,
-    IEnumerable<string> urls,
-    CancellationToken cancellationToken)
+async Task<bool> IsSuccessfulAsync(
+    HttpClient client, string url)
 {
-    var count = 0;
-    foreach (var url in urls)
-    {
-        using var response = await client.GetAsync(url, cancellationToken);
-        if (response.IsSuccessStatusCode)
-            count++;
-    }
-    return count;
+    using var response = await client
+        .GetAsync(url);
+    return response.IsSuccessStatusCode;
 }
 ```
-
-Follow-up: How would you add bounded concurrency while preserving cancellation and disposing every response?

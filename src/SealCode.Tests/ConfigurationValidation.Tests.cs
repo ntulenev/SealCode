@@ -9,6 +9,43 @@ namespace SealCode.Tests;
 
 public sealed class ConfigurationValidationTests
 {
+    [Theory]
+    [InlineData(0, 0, true)]
+    [InlineData(10, 60, true)]
+    [InlineData(-1, 2, false)]
+    [InlineData(11, 2, false)]
+    [InlineData(3, -1, false)]
+    [InlineData(3, 61, false)]
+    public void SnippetRetrySettingsHaveBoundedCountsAndDelays(int retries, int delay, bool valid)
+    {
+        var settings = new ApplicationConfiguration
+        {
+            AdminUsers = [new() { Name = "Admin", Password = "valid" }],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = 3,
+            Snippets = new() { StartupRetryCount = retries, StartupRetryDelaySeconds = delay }
+        };
+        Assert.Equal(valid, Validator("Development").Validate(null, settings).Succeeded);
+    }
+
+    [Theory]
+    [InlineData("File", true)]
+    [InlineData("PostgreSql", true)]
+    [InlineData("postgresql", true)]
+    [InlineData("Unknown", false)]
+    [InlineData(null, false)]
+    public void SnippetProviderMustBeRecognized(string? provider, bool valid)
+    {
+        var settings = new ApplicationConfiguration
+        {
+            AdminUsers = [new() { Name = "Admin", Password = "valid" }],
+            Languages = ["csharp"],
+            MaxUsersPerRoom = 3,
+            Snippets = new() { Provider = provider! }
+        };
+        Assert.Equal(valid, Validator("Development").Validate(null, settings).Succeeded);
+    }
+
     [Fact]
     public void SnippetConfigurationValidationRejectsANullSection()
     {
