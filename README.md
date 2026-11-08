@@ -110,6 +110,14 @@ Environment overrides include `Snippets__Enabled`, `Snippets__SuperAdminsOnly` a
 Database changes appear on the next 30-minute check. Existing sessions are checked on
 every library request. Guests cannot read the library, even with a room link.
 
+The library heading shows **Last synced**, with the date, time (including seconds)
+and time zone in the viewer's local settings. For files, this is when the portal
+finished its initial catalog load. For PostgreSQL, it is when the portal finished
+its last successful database check, even when the database timestamp was unchanged.
+It is the portal's synchronization time, not the content-edit timestamp in the database.
+Failed or canceled checks retain the previous time. Reopen or reload the library
+to see the latest synchronization time; opening it does not trigger a database query.
+
 The private `src/SealCode/Resources/Snippets/` folder is outside `wwwroot` and is copied
 alongside the application during build and publish. The implementation follows the solution layers:
 `Models/Snippets` owns immutable domain invariants, `Abstractions` defines
@@ -122,6 +130,10 @@ Both providers use the same domain models and HTTP contract. The resource JSON, 
 files have no static HTTP routes. Only the authenticated `/admin/snippets` page
 and `/admin/snippets/catalog` API expose the library to authorized admins; responses
 use `Cache-Control: no-store`.
+
+The catalog API returns its successful synchronization time as an ISO 8601
+`X-Snippets-Synced-At` response header alongside the existing category array.
+The library and time are captured together as one immutable snapshot.
 
 For the `File` provider, edit `Resources/Snippets/catalog.json`, using `catalog.schema.json` for
 editor validation, and add a UTF-8 `.md` file in the same folder. Each group has a
@@ -221,7 +233,7 @@ its own PostgreSQL service container; no deployment credentials are needed.
 
 | Popup from the admin panel | SQL library in a separate tab |
 | --- | --- |
-| ![Private C# question library popup above room management](docs/images/snippets-popup.png) | ![SQL question library with numbered topics, highlighted code and copy action](docs/images/snippets-tab.png) |
+| ![Private C# question library popup showing the last synchronization date and time](docs/images/snippets-popup.png) | ![SQL question library with its last synchronization time, numbered topics and highlighted code](docs/images/snippets-tab.png) |
 
 To run the library browser tests and refresh these two screenshots with disposable
 accounts and an isolated host:
@@ -716,7 +728,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.12.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.12.1`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.

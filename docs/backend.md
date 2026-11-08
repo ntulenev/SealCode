@@ -118,6 +118,14 @@ semaphore; HTTP readers never wait for database I/O. Failed or canceled refreshe
 leave both the library and its timestamp unchanged for retry at the next interval.
 Old immutable snapshots remain valid for in-flight readers.
 
+Each catalog publication also records the portal clock's completion time using
+the injected `TimeProvider`. Unchanged PostgreSQL checks publish a new timestamp
+while retaining the same immutable library; file refreshes perform no work and
+keep their initial timestamp. Failed or canceled checks publish neither data nor
+time. The catalog endpoint captures both from one `SnippetCatalogSnapshot` and
+returns the time in `X-Snippets-Synced-At`, preserving the category-array body.
+The library page formats it in the viewer's local time zone when opened.
+
 The SQL migration under `Persistence/Snippets/Migrations` is applied explicitly by
 an operator, never by the app. Categories and questions are manually maintained;
 statement triggers update a singleton timestamp for insert/update/delete/truncate.

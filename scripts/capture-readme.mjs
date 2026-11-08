@@ -214,6 +214,7 @@ try {
   const library = admin.frameLocator('iframe[title="Question library"]');
   await library.getByRole('button', { name: 'C#', exact: true }).click();
   await expect(library.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
+  await expect(library.locator('#snippetSyncTime')).toHaveAttribute('datetime', /\d{4}-\d{2}-\d{2}T/);
   await screenshot(admin, join(images, 'snippets-popup.png'));
   const [libraryTab] = await Promise.all([
     admin.context().waitForEvent('page'),
@@ -221,6 +222,7 @@ try {
   ]);
   await libraryTab.getByRole('button', { name: 'SQL', exact: true }).click();
   await expect(libraryTab.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
+  await expect(libraryTab.locator('#snippetSyncTime')).toHaveAttribute('datetime', /\d{4}-\d{2}-\d{2}T/);
   await screenshot(libraryTab, join(images, 'snippets-tab.png'));
   await libraryTab.close();
   await admin.getByRole('button', { name: 'Close' }).click();
