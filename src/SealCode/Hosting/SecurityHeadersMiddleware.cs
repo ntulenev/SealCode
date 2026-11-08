@@ -34,6 +34,12 @@ internal sealed class SecurityHeadersMiddleware
             ? "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; worker-src 'self'; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
             : "default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
         context.Response.Headers.XContentTypeOptions = "nosniff";
+        if (string.Equals(context.Request.Path.Value?.TrimEnd('/'), "/admin/snippets", StringComparison.OrdinalIgnoreCase))
+        {
+            // The library popup embeds only this authenticated page on the same origin.
+            context.Response.Headers.ContentSecurityPolicy = context.Response.Headers.ContentSecurityPolicy.ToString()
+                .Replace("frame-ancestors 'none'", "frame-ancestors 'self'", StringComparison.Ordinal);
+        }
         await _next(context).ConfigureAwait(false);
     }
 

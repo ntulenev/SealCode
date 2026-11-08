@@ -18,7 +18,7 @@ updates until the next accepted checkpoint.
 Participants who know the room link are trusted to provide valid CRDT contents.
 See [ADR 0003](adr/0003-crdt-recovery-lifecycle.md) for this trust boundary and
 [ADR 0001](adr/0001-selective-collaborative-undo.md) for selective undo decisions.
-Persistence, multiple application instances, durable revision history, and
+Room persistence, multiple application instances, durable revision history, and
 server-side semantic validation of CRDT contents are outside the implementation.
 
 Source entry points are [Program.cs](../src/SealCode/Program.cs),
@@ -31,11 +31,12 @@ Deployment and default values remain in the
 
 | Component | Responsibility and key types | Project dependencies |
 | --- | --- | --- |
-| Models | Domain values, configuration, aggregate invariants: RoomState, RoomMembership, RoomDocumentJournal, RoomLimits | None |
-| Abstractions | Application boundaries: IRoomRegistry, IRoomManager, IRoomSessionService, IRoomNotifier | Models |
-| Logic | Application operations: RoomSessionService, RoomManager, RoomRegistry | Abstractions, Models |
-| Transport | HubContract, JoinRoomResult, YjsDocumentUpdate, JSON conversion | Models |
-| SealCode | Composition, HTTP, SignalR, security, browser assets: RoomHub, RoomResourceFilter, SignalRRoomNotifier | Logic, Abstractions, Models, Transport |
+| Models | Domain values, configuration, aggregate invariants: RoomState, RoomMembership, RoomDocumentJournal, RoomLimits, SnippetLibrary, SnippetCategory, SnippetQuestion | None |
+| Abstractions | Application boundaries: IRoomRegistry, IRoomManager, IRoomSessionService, IRoomNotifier, ISnippetCatalog, ISnippetRepository | Models |
+| Logic | Application operations: RoomSessionService, RoomManager, RoomRegistry, SnippetCatalog | Abstractions, Models |
+| Persistence | FileSnippetRepository: private JSON/Markdown loading behind ISnippetRepository | Abstractions, Models |
+| Transport | HubContract, JoinRoomResult, YjsDocumentUpdate, snippet response DTOs, JSON conversion | Models |
+| SealCode | Composition, HTTP, SignalR, security, browser assets: RoomHub, RoomResourceFilter, SignalRRoomNotifier | Logic, Persistence, Abstractions, Models, Transport |
 | TestKit | Shared RoomStateBuilder and Concurrency helpers, compiled into selected test projects | Shared source directory; no separate project |
 
 Diagram 1 shows production project references; each arrow points from a project
@@ -44,6 +45,9 @@ to a project it references.
 ```mermaid
 flowchart TD
     SealCode --> Logic
+    SealCode --> Persistence
+    Persistence --> Abstractions
+    Persistence --> Models
     SealCode --> Transport
     SealCode --> Abstractions
     SealCode --> Models
@@ -73,6 +77,38 @@ wire errors and notifications. Protocol names live in
 [HubContract](../src/Transport/HubContract.cs), error translation in
 [HubErrors](../src/SealCode/Hub/HubErrors.cs), and connection budgets in
 [RoomResourceFilter](../src/SealCode/RoomResourceFilter.cs).
+
+### Private snippet library
+
+`SnippetLibrary` owns unique language categories; `SnippetCategory` owns a nonempty
+set of questions with unique positive numbers and exposes a sorted read-only copy.
+`SnippetQuestion` validates its topic, coverage description and content while
+preserving code indentation.
+`SnippetLanguage` normalizes language identifiers and identifies General questions.
+The domain has no filenames, JSON attributes, HTTP types or persistence dependencies.
+
+`Logic.SnippetCatalog` snapshots feature settings and configured languages. The
+`SnippetCatalogStartupService` awaits its initialization before requests are served.
+An asynchronous single-permit semaphore serializes initialization callers. The
+catalog checks an initialized flag under the semaphore and sets it only after a
+successful load. Subsequent calls throw `InvalidOperationException` rather than
+silently succeeding, including callers queued behind a successful load. Failed or canceled
+loads leave the flag unset and release the semaphore. During application startup,
+such failures propagate and prevent the application from starting. Canceling a
+waiting caller does not cancel another caller's load. A disabled feature never
+calls persistence. All public reads (`Enabled`, `CanAccess`, `GetSnapshot`) reject
+an uninitialized catalog with `InvalidOperationException` before applying role or
+feature checks. Published snapshots are immutable; access checks and snapshot
+retrieval enforce the same administrator policy. Raw domain objects are mapped to response DTOs in `Transport`.
+
+`Persistence.Snippets.FileSnippetRepository` loads the private
+`SealCode/Resources/Snippets/catalog.json` manifest and local Markdown files,
+validates file-format details, and constructs domain models. Persistence records
+remain internal to that project. Domain invariant failures become an
+`InvalidDataException` with the original cause; I/O and cancellation failures
+propagate to startup. The repository does not filter by language or administrator.
+To use a database, register another `ISnippetRepository` implementation; the
+catalog and its HTTP contract stay unchanged. Room state remains in memory.
 
 ## 3. HTTP pipeline and endpoints
 

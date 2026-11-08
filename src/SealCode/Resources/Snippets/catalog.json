@@ -1,0 +1,78 @@
+{
+  "$schema": "catalog.schema.json",
+  "version": 1,
+  "groups": [
+    {
+      "language": "general",
+      "title": "General",
+      "questions": [
+        {
+          "number": 1,
+          "topic": "Consistency and availability",
+          "description": "CAP trade-offs, linearizability and availability during network partitions.",
+          "file": "general-01.md"
+        },
+        {
+          "number": 2,
+          "topic": "Dependency inversion",
+          "description": "SOLID dependency inversion, architectural boundaries and testable adapters.",
+          "file": "general-02.md"
+        },
+        {
+          "number": 3,
+          "topic": "Complexity and caching",
+          "description": "Algorithmic complexity, indexing and cache invalidation trade-offs.",
+          "file": "general-03.md"
+        }
+      ]
+    },
+    {
+      "language": "csharp",
+      "title": "C#",
+      "questions": [
+        {
+          "number": 1,
+          "topic": "Async and cancellation",
+          "description": "Async/await, cancellation propagation, resource disposal and bounded concurrency.",
+          "file": "csharp-01.md"
+        },
+        {
+          "number": 2,
+          "topic": "Deferred execution",
+          "description": "LINQ deferred execution, materialization and IQueryable query behavior.",
+          "file": "csharp-02.md"
+        },
+        {
+          "number": 3,
+          "topic": "Equality and dictionary keys",
+          "description": "Value equality, immutability and hashing contracts for dictionary keys.",
+          "file": "csharp-03.md"
+        }
+      ]
+    },
+    {
+      "language": "sql",
+      "title": "SQL",
+      "questions": [
+        {
+          "number": 1,
+          "topic": "Ranking within a group",
+          "description": "Window functions, per-group ranking and deterministic tie-breaking.",
+          "file": "sql-01.md"
+        },
+        {
+          "number": 2,
+          "topic": "Outer joins and NULL",
+          "description": "LEFT JOIN semantics, NULL handling and aggregate counting.",
+          "file": "sql-02.md"
+        },
+        {
+          "number": 3,
+          "topic": "Transactions and concurrent updates",
+          "description": "Atomic conditional updates, transaction boundaries and concurrency control.",
+          "file": "sql-03.md"
+        }
+      ]
+    }
+  ]
+}

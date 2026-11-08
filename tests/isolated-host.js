@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, cp } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -40,6 +40,8 @@ export async function startIsolatedHost(settings) {
   const port = reservation.address().port;
   await new Promise((done) => reservation.close(done));
   const root = await mkdtemp(join(tmpdir(), 'sealcode-isolated-'));
+  if (settings.Snippets?.Enabled)
+    await cp(resolve('src/SealCode/Resources/Snippets'), join(root, 'Resources', 'Snippets'), { recursive: true });
   await writeFile(
     join(root, 'appsettings.json'),
     JSON.stringify({

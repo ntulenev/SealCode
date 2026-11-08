@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
 
+using Abstractions;
+
 using FluentAssertions;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -16,6 +18,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 using Models;
+
+using Moq;
 
 using Transport.Models;
 
@@ -698,6 +702,113 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
     }
 
     private static SealCodeAppFactory CreateFactory() => new();
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void SnippetPersistenceFailureAbortsApplicationStartup()
+    {
+        using var original = CreateFactory();
+        using var factory = original.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Snippets:Enabled"] = "true" }));
+            builder.ConfigureServices(services =>
+            {
+                var repository = new Mock<ISnippetRepository>();
+                repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+                    .ThrowsAsync(new InvalidDataException("Invalid persisted library"));
+                services.AddSingleton(repository.Object);
+            });
+        });
+
+        var start = () => factory.CreateClient();
+
+        start.Should().Throw<InvalidDataException>().WithMessage("Invalid persisted library");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task SnippetCatalogIsLoadedAtStartupAndNeverReloadedByHttpRequests()
+    {
+        var repository = new Mock<ISnippetRepository>();
+        var library = new Models.Snippets.SnippetLibrary(
+        [
+            new(new("general"), "General", [new(1, "Architecture", "Design principles", "Original question")]),
+            new(new("not-configured"), "Unsupported", [new(1, "Hidden", "Hidden coverage", "Hidden content")])
+        ]);
+        repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(library);
+        using var original = CreateFactory();
+        using var factory = original.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Snippets:Enabled"] = "true", ["Snippets:SuperAdminsOnly"] = "false" }));
+            builder.ConfigureServices(services => services.AddSingleton(repository.Object));
+        });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        repository.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _ = await LoginAsAdminAsync(client);
+        repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Models.Snippets.SnippetLibrary.Empty);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var response = await client.GetAsync("/admin/snippets/catalog");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var categories = await response.Content.ReadFromJsonAsync<JsonElement>();
+            categories.GetArrayLength().Should().Be(1);
+            categories[0].GetProperty("Language").GetString().Should().Be("general");
+            var question = categories[0].GetProperty("Questions")[0];
+            question.GetProperty("Number").GetInt32().Should().Be(1);
+            question.GetProperty("Topic").GetString().Should().Be("Architecture");
+            question.GetProperty("Description").GetString().Should().Be("Design principles");
+            question.GetProperty("Markdown").GetString().Should().Be("Original question");
+            question.TryGetProperty("File", out _).Should().BeFalse();
+        }
+        repository.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(false, false, false, HttpStatusCode.NotFound)]
+    [InlineData(true, true, false, HttpStatusCode.Forbidden)]
+    [InlineData(true, true, true, HttpStatusCode.OK)]
+    [InlineData(true, false, false, HttpStatusCode.OK)]
+    [InlineData(false, true, true, HttpStatusCode.NotFound)]
+    [InlineData(true, false, true, HttpStatusCode.OK)]
+    [Trait("Category", "Integration")]
+    public async Task SnippetsEnforceFeatureAndRoleOnPageAndData(bool enabled, bool superOnly, bool root, HttpStatusCode expected)
+    {
+        using var original = CreateFactory();
+        using var factory = original.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Snippets:Enabled"] = enabled.ToString(),
+                ["Snippets:SuperAdminsOnly"] = superOnly.ToString()
+            })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var anonymous = await client.GetAsync("/admin/snippets/catalog");
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var anonymousAccess = await client.GetAsync("/admin/snippets/access");
+        anonymousAccess.Headers.CacheControl!.NoStore.Should().BeTrue();
+        (await anonymousAccess.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("CanAccess").GetBoolean().Should().BeFalse();
+        using var anonymousPage = await client.GetAsync("/admin/snippets");
+        anonymousPage.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        anonymousPage.Headers.Location!.OriginalString.Should().Be("/admin/login");
+        _ = await LoginAsync(client, root ? "Root" : "Admin", root ? "pass2" : "pass1");
+        using var access = await client.GetAsync("/admin/snippets/access");
+        access.Headers.CacheControl!.NoStore.Should().BeTrue();
+        (await access.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("CanAccess").GetBoolean()
+            .Should().Be(expected == HttpStatusCode.OK);
+        foreach (var path in new[] { "/admin/snippets", "/admin/snippets/catalog" })
+        {
+            using var response = await client.GetAsync(path);
+            response.StatusCode.Should().Be(expected);
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        }
+        foreach (var path in new[] { "/Resources/Snippets/catalog.json", "/Resources/Snippets/catalog.schema.json", "/Resources/Snippets/csharp-01.md", "/Resources/Snippets/library.html" })
+        {
+            using var response = await client.GetAsync(path);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
 
     [Fact]
     public async Task ConnectionShouldBelongToOnlyOneRoomAndCleanUpOnDisconnect()

@@ -9,6 +9,7 @@ builder.Services.AddSealCodeSecurity(builder.Environment);
 builder.Services.AddSealCodeRooms();
 builder.Services.AddSealCodeSignalR();
 builder.Services.AddSealCodeMcp();
+builder.Services.AddSealCodeSnippets(builder.Environment);
 
 var app = builder.Build();
 app.UseForwardedHeaders();
@@ -28,6 +29,7 @@ app.UseAuthorization();
 app.Use((context, next) => AdminHttpSecurity.InvokeAsync(context, next));
 app.MapSealCodeEndpoints();
 app.MapAdminEndpoints();
+app.MapSnippetEndpoints();
 app.MapAdminMcpEndpoints();
 app.MapHub<RoomHub>("/roomHub");
 app.Run();
