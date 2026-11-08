@@ -37,10 +37,11 @@ public sealed class SnippetProviderTests
     }
 
     [Fact]
-    public void EnabledPostgreSqlRequiresConnectionString()
+    public async Task EnabledPostgreSqlDefersMissingConnectionFailureUntilTheReadAsync()
     {
         using var provider = Services("PostgreSql", true, null);
-        var error = Assert.Throws<InvalidOperationException>(provider.GetRequiredService<ISnippetRepository>);
+        var repository = provider.GetRequiredService<ISnippetRepository>();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.LoadAsync(CancellationToken.None));
         Assert.Contains("ConnectionStrings:Snippets", error.Message, StringComparison.Ordinal);
     }
 

@@ -704,27 +704,51 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
 
     private static SealCodeAppFactory CreateFactory() => new();
 
-    [Fact]
+    [Theory]
+    [InlineData("File", null)]
+    [InlineData("PostgreSql", null)]
+    [InlineData("PostgreSql", "invalid connection string")]
     [Trait("Category", "Integration")]
-    public void SnippetPersistenceFailureAbortsApplicationStartup()
+    public async Task SnippetPersistenceFailureKeepsApplicationRunningWithUnavailableLibraryAsync(
+        string provider, string? connection)
     {
         using var original = CreateFactory();
         using var factory = original.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["Snippets:Enabled"] = "true" }));
-            builder.ConfigureServices(services =>
+                new Dictionary<string, string?>
+                {
+                    ["Snippets:Enabled"] = "true",
+                    ["Snippets:Provider"] = provider,
+                    ["Snippets:StartupRetryCount"] = "0",
+                    ["ConnectionStrings:Snippets"] = connection
+                }));
+            if (provider == "File")
             {
-                var repository = new Mock<ISnippetRepository>();
-                repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
-                    .ThrowsAsync(new InvalidDataException("Invalid persisted library"));
-                services.AddSingleton(repository.Object);
-            });
+                builder.ConfigureServices(services =>
+                {
+                    var repository = new Mock<ISnippetRepository>();
+                    repository.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+                        .ThrowsAsync(new InvalidDataException("Invalid persisted library"));
+                    services.AddSingleton(repository.Object);
+                });
+            }
         });
 
-        var start = () => factory.CreateClient();
-
-        start.Should().Throw<InvalidDataException>().WithMessage("Invalid persisted library");
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var health = await client.GetAsync("/health");
+        health.StatusCode.Should().Be(HttpStatusCode.OK);
+        _ = await LoginAsync(client, "Root", "pass2");
+        using var access = await client.GetAsync("/admin/snippets/access");
+        var state = await access.Content.ReadFromJsonAsync<JsonElement>();
+        state.GetProperty("CanAccess").GetBoolean().Should().BeFalse();
+        state.GetProperty("Unavailable").GetBoolean().Should().BeTrue();
+        foreach (var path in new[] { "/admin/snippets", "/admin/snippets/catalog" })
+        {
+            using var unavailable = await client.GetAsync(path);
+            unavailable.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            unavailable.Headers.Contains("X-Snippets-Synced-At").Should().BeFalse();
+        }
     }
 
     [Fact]

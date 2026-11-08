@@ -22,7 +22,7 @@ public sealed class SnippetResponseTests
         Assert.Equal("Topic", question.GetProperty("Topic").GetString());
         Assert.Equal("Coverage", question.GetProperty("Description").GetString());
         Assert.Equal("Question", question.GetProperty("Markdown").GetString());
-        Assert.Equal(/*lang=json,strict*/ "{\"CanAccess\":true}", JsonSerializer.Serialize(new SnippetAccessResponse(true)));
+        Assert.Equal(/*lang=json,strict*/ "{\"CanAccess\":true,\"Unavailable\":false}", JsonSerializer.Serialize(new SnippetAccessResponse(true)));
     }
 
     [Fact]

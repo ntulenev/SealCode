@@ -17,7 +17,16 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
     public PostgreSqlSnippetRepository(NpgsqlDataSource dataSource)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
-        _dataSource = dataSource;
+        _getDataSource = () => dataSource;
+    }
+
+    /// <summary>Defers connection-pool configuration until a catalog read can handle failures.</summary>
+    /// <param name="getDataSource">Resolves the host-owned PostgreSQL connection pool.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the resolver is null.</exception>
+    public PostgreSqlSnippetRepository(Func<NpgsqlDataSource> getDataSource)
+    {
+        ArgumentNullException.ThrowIfNull(getDataSource);
+        _getDataSource = getDataSource;
     }
 
     /// <inheritdoc />
@@ -29,7 +38,7 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
     public async Task<VersionedSnippetLibrary?> LoadIfChangedAsync(
         DateTimeOffset? updatedAt, CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _getDataSource().OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
         await using var versionCommand = new NpgsqlCommand(
@@ -93,5 +102,5 @@ public sealed class PostgreSqlSnippetRepository : IVersionedSnippetRepository
         }
     }
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly Func<NpgsqlDataSource> _getDataSource;
 }

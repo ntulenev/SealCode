@@ -11,8 +11,10 @@ public interface ISnippetCatalog
     /// <summary>
     /// Gets whether the library feature is enabled for this application lifetime.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when initialization has not completed.</exception>
     bool Enabled { get; }
+
+    /// <summary>Gets whether a complete library has been loaded successfully.</summary>
+    bool Available { get; }
 
     /// <summary>
     /// Loads the library before requests are served and rejects calls after successful initialization.
@@ -34,7 +36,6 @@ public interface ISnippetCatalog
     /// <param name="adminUser">The current authenticated administrator.</param>
     /// <returns>True when the feature and role allow access.</returns>
     /// <exception cref="ArgumentException">Thrown when the administrator is uninitialized.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when initialization has not completed.</exception>
     bool CanAccess(AdminUser adminUser);
 
     /// <summary>

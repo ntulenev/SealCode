@@ -14,6 +14,27 @@ namespace Logic.Tests;
 public sealed class SnippetCatalogTests
 {
     [Fact]
+    public async Task DatabaseRefreshRecoversAnUnavailableStartupCatalogWithoutRestartAsync()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var repository = new Mock<IVersionedSnippetRepository>(MockBehavior.Strict);
+        repository.SetupSequence(value => value.LoadIfChangedAsync(null, CancellationToken.None))
+            .ThrowsAsync(new IOException("Unavailable at startup"))
+            .ReturnsAsync(new VersionedSnippetLibrary(DateTimeOffset.UnixEpoch, new([Category("general")])));
+        using var catalog = new SnippetCatalog(repository.Object, Settings(), clock);
+        await Assert.ThrowsAsync<IOException>(() => catalog.InitializeAsync(CancellationToken.None));
+        Assert.False(catalog.Available);
+        Assert.True(catalog.CanAccess(new("Root", true)));
+        clock.Advance(TimeSpan.FromMinutes(30));
+
+        await catalog.RefreshAsync(CancellationToken.None);
+
+        Assert.True(catalog.Available);
+        Assert.Equal(clock.GetUtcNow(), catalog.GetCatalogSnapshot(new("Root", true)).LastSyncedAt);
+        Assert.Single(catalog.GetSnapshot(new("Root", true)).Categories);
+    }
+
+    [Fact]
     public async Task FileSynchronizationTimeIsTheCompletedInitialLoadAndDoesNotAdvanceOnRefresh()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
@@ -234,7 +255,7 @@ public sealed class SnippetCatalogTests
             repository.Setup(value => value.LoadAsync(CancellationToken.None)).ReturnsAsync(SnippetLibrary.Empty);
         }
         using var catalog = new SnippetCatalog(repository.Object, Settings(enabled: enabled), TimeProvider.System);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => catalog.RefreshAsync(CancellationToken.None));
+        await catalog.RefreshAsync(CancellationToken.None);
         await catalog.InitializeAsync(CancellationToken.None);
         await catalog.RefreshAsync(CancellationToken.None);
         repository.Verify(value => value.LoadAsync(CancellationToken.None), enabled ? Times.Once() : Times.Never());
@@ -244,13 +265,15 @@ public sealed class SnippetCatalogTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void AllReadOperationsRejectAnUninitializedCatalog(bool enabled)
+    public void AvailabilityAndPolicyCanBeReadBeforeInitializationButSnapshotsCannot(bool enabled)
     {
         var repository = new Mock<ISnippetRepository>(MockBehavior.Strict);
         using var catalog = new SnippetCatalog(repository.Object, Settings(enabled: enabled), TimeProvider.System);
 
         AssertUninitialized(catalog);
-        Assert.Throws<InvalidOperationException>(() => catalog.CanAccess(default));
+        Assert.Equal(enabled, catalog.Enabled);
+        Assert.Equal(enabled, catalog.CanAccess(new("Root", true)));
+        Assert.ThrowsAny<ArgumentException>(() => catalog.CanAccess(default));
         Assert.Throws<InvalidOperationException>(() => catalog.GetSnapshot(default));
         repository.VerifyNoOtherCalls();
     }
@@ -460,8 +483,7 @@ public sealed class SnippetCatalogTests
 
     private static void AssertUninitialized(SnippetCatalog catalog)
     {
-        Assert.Throws<InvalidOperationException>(() => catalog.Enabled);
-        Assert.Throws<InvalidOperationException>(() => catalog.CanAccess(new("Root", true)));
+        Assert.False(catalog.Available);
         Assert.Throws<InvalidOperationException>(() => catalog.GetSnapshot(new("Root", true)));
     }
 

@@ -32,20 +32,16 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
         var configuration = settings.Value;
         _repository = repository;
         _timeProvider = timeProvider;
-        _enabled = configuration.Snippets.Enabled;
+        Enabled = configuration.Snippets.Enabled;
         _superAdminsOnly = configuration.Snippets.SuperAdminsOnly;
         _languages = [.. configuration.Languages.Select(language => new RoomLanguage(language))];
     }
 
     /// <inheritdoc />
-    public bool Enabled
-    {
-        get
-        {
-            EnsureInitialized();
-            return _enabled;
-        }
-    }
+    public bool Enabled { get; }
+
+    /// <inheritdoc />
+    public bool Available => Enabled && Volatile.Read(ref _initialized);
 
     /// <inheritdoc />
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -70,8 +66,7 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     /// <inheritdoc />
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-        if (!_enabled || _repository is not IVersionedSnippetRepository)
+        if (!Enabled || _repository is not IVersionedSnippetRepository)
         {
             return;
         }
@@ -79,6 +74,7 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
         try
         {
             await LoadAsync(cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _initialized, true);
         }
         finally
         {
@@ -89,10 +85,9 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     /// <inheritdoc />
     public bool CanAccess(AdminUser adminUser)
     {
-        EnsureInitialized();
         ArgumentException.ThrowIfNullOrWhiteSpace(adminUser.Name, nameof(adminUser));
 
-        return _enabled && (!_superAdminsOnly || adminUser.IsSuperAdmin);
+        return Enabled && (!_superAdminsOnly || adminUser.IsSuperAdmin);
     }
 
     /// <inheritdoc />
@@ -102,6 +97,7 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     /// <inheritdoc />
     public SnippetCatalogSnapshot GetCatalogSnapshot(AdminUser adminUser)
     {
+        EnsureInitialized();
         if (!CanAccess(adminUser))
         {
             throw new UnauthorizedAccessException("The administrator cannot access the snippet library.");
@@ -126,7 +122,7 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        if (_enabled && _repository is IVersionedSnippetRepository versioned)
+        if (Enabled && _repository is IVersionedSnippetRepository versioned)
         {
             var snapshot = await versioned.LoadIfChangedAsync(_updatedAt, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
@@ -144,7 +140,7 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
             _updatedAt = snapshot.UpdatedAt;
             return;
         }
-        var library = _enabled
+        var library = Enabled
             ? await _repository.LoadAsync(cancellationToken).ConfigureAwait(false)
             : SnippetLibrary.Empty;
         if (library is null)
@@ -161,7 +157,6 @@ public sealed class SnippetCatalog : ISnippetCatalog, IDisposable
     private readonly ISnippetRepository _repository;
     private readonly TimeProvider _timeProvider;
     private readonly RoomLanguage[] _languages;
-    private readonly bool _enabled;
     private readonly bool _superAdminsOnly;
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private bool _initialized;

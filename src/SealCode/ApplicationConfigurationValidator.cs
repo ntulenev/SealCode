@@ -37,6 +37,11 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
         {
             errors.Add("Snippets:Provider must be File or PostgreSql.");
         }
+        if (options.Snippets is not null
+            && !Validator.TryValidateObject(options.Snippets, new(options.Snippets), [], true))
+        {
+            errors.Add("Invalid snippet startup retry settings.");
+        }
         foreach (var proxy in options.TrustedProxies)
         {
             if (!System.Net.IPAddress.TryParse(proxy, out _))

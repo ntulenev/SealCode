@@ -10,7 +10,10 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
 {
     [Fact]
     public void ConstructorRejectsNullDataSource()
-        => Assert.Throws<ArgumentNullException>(() => new PostgreSqlSnippetRepository(null!));
+    {
+        Assert.Throws<ArgumentNullException>(() => new PostgreSqlSnippetRepository((NpgsqlDataSource)null!));
+        Assert.Throws<ArgumentNullException>(() => new PostgreSqlSnippetRepository((Func<NpgsqlDataSource>)null!));
+    }
 
     [IsolatedPostgreSqlFact]
     public async Task EmptyLibraryMappingOrderingAndChangedTimestampAreSupportedAsync()
