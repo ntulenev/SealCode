@@ -27,7 +27,7 @@ public sealed class AdminUserManagerTests
     {
         var manager = new AdminUserManager(CreateSettings(), new HttpContextAccessor());
 
-        var read = () => manager.IsAdmin();
+        var read = manager.IsAdmin;
         read.Should().Throw<InvalidOperationException>().WithMessage("*outside an HTTP request*");
         var login = () => manager.TrySetCurrentUserAsync(CancellationToken.None);
         await login.Should().ThrowAsync<InvalidOperationException>().WithMessage("*outside an HTTP request*");

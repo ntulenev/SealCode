@@ -6,8 +6,8 @@ using Microsoft.Extensions.Options;
 
 using Models.Configuration;
 
-using SealCode.Hub;
 using SealCode.Hosting;
+using SealCode.Hub;
 
 namespace SealCode;
 

@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+
 using FluentAssertions;
+
 using Models.Configuration;
 
 namespace Models.Tests;
@@ -38,7 +40,7 @@ public sealed class AdminUserConfigurationTests
     [InlineData("abc")]
     public void ValidationShouldFailWhenPasswordIsInvalid(string? value)
     {
-        var user = new AdminUserConfiguration { Name = "Admin", Password = value! };
+        var user = new AdminUserConfiguration { Name = "Admin", Password = value };
 
         var isValid = Validator.TryValidateObject(user, new ValidationContext(user), [], true);
 

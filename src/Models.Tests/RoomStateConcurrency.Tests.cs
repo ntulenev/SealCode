@@ -7,19 +7,19 @@ public sealed class RoomStateConcurrencyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ConcurrentJoinsPreserveCapacityAndUniqueNames(bool sameName)
+    public async Task ConcurrentJoinsPreserveCapacityAndUniqueNamesAsync(bool sameName)
     {
         for (var iteration = 0; iteration < 100; iteration++)
         {
             var room = Room();
-            await Concurrency.RunTogether(Enumerable.Range(0, 8).Select<int, Action>(index => () =>
+            await Concurrency.RunTogetherAsync([.. Enumerable.Range(0, 8).Select<int, Action>(index => () =>
             {
                 try
                 {
                     room.AddUser(new($"connection-{index}"), new(sameName ? "Alice" : $"User-{index}"), 2);
                 }
                 catch (AddRoomUserException) { }
-            }).ToArray());
+            })]);
             var users = room.CreateUsersSnapshot();
             Assert.Equal(sameName ? 1 : 2, users.Length);
             Assert.Equal(users.Length, users.Select(user => user.Value).Distinct(StringComparer.OrdinalIgnoreCase).Count());
@@ -27,7 +27,7 @@ public sealed class RoomStateConcurrencyTests
     }
 
     [Fact]
-    public async Task CloseSerializesAgainstAllMutations()
+    public async Task CloseSerializesAgainstAllMutationsAsync()
     {
         for (var iteration = 0; iteration < 100; iteration++)
         {
@@ -44,7 +44,7 @@ public sealed class RoomStateConcurrencyTests
                     1 => () => room.AddUser(new("bob"), new("Bob"), 5),
                     _ => () => checkpointAccepted = room.Checkpoint(new("alice"), new(0), [1], new("checkpoint"), DateTimeOffset.UnixEpoch)
                 };
-                await Concurrency.RunTogether([
+                await Concurrency.RunTogetherAsync([
                     () =>
                     {
                         try
@@ -64,11 +64,11 @@ public sealed class RoomStateConcurrencyTests
                 Assert.Equal(operation == 1 && succeeded, room.CreateUsersSnapshot().Any(user => user.Value == "Bob"));
                 if (operation == 2)
                 {
-                    Assert.Equal(succeeded ? true : (bool?)null, checkpointAccepted);
+                    Assert.Equal(succeeded ? true : null, checkpointAccepted);
                     Assert.Equal(succeeded ? "checkpoint" : "", room.Text.Value);
                 }
                 Assert.Equal(0, room.JournalCount);
-                Assert.Equal(operation == 2 && succeeded ? new byte[] { 1 } : [], room.YjsState);
+                Assert.Equal(operation == 2 && succeeded ? [1] : [], room.YjsState);
                 Assert.Throws<RoomNotFoundException>(mutation);
             }
         }
@@ -86,7 +86,7 @@ public sealed class RoomStateConcurrencyTests
     }
 
     [Fact]
-    public async Task ExpirationRacesWithTheLastDepartureAndANewJoin()
+    public async Task ExpirationRacesWithTheLastDepartureAndANewJoinAsync()
     {
         for (var iteration = 0; iteration < 100; iteration++)
         {
@@ -95,7 +95,7 @@ public sealed class RoomStateConcurrencyTests
             var closed = false;
             var bobAdded = false;
             var bobRejected = false;
-            await Concurrency.RunTogether([
+            await Concurrency.RunTogetherAsync([
                 () => room.Leave(new("alice")),
                 () => closed = room.TryCloseIfIdle(DateTimeOffset.MaxValue),
                 () =>
@@ -125,15 +125,15 @@ public sealed class RoomStateConcurrencyTests
     }
 
     [Fact]
-    public async Task ParallelAppendsAssignContiguousUniqueRevisions()
+    public async Task ParallelAppendsAssignContiguousUniqueRevisionsAsync()
     {
         for (var iteration = 0; iteration < 100; iteration++)
         {
             var room = Room();
             room.AddUser(new("alice"), new("Alice"), 5);
             var revisions = new System.Collections.Concurrent.ConcurrentBag<long>();
-            await Concurrency.RunTogether(Enumerable.Range(0, 32).Select<int, Action>(_ => () =>
-                revisions.Add(room.Append(new("alice"), [1], DateTimeOffset.UnixEpoch).DocumentRevision.Value)).ToArray());
+            await Concurrency.RunTogetherAsync([.. Enumerable.Range(0, 32).Select<int, Action>(_ => () =>
+                revisions.Add(room.Append(new("alice"), [1], DateTimeOffset.UnixEpoch).DocumentRevision.Value))]);
             Assert.Equal(Enumerable.Range(1, 32).Select(value => (long)value), revisions.Order());
         }
     }

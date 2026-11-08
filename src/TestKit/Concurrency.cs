@@ -4,7 +4,7 @@ namespace TestKit;
 
 internal static class Concurrency
 {
-    internal static async Task RunTogether(IReadOnlyList<Action> actions)
+    internal static async Task RunTogetherAsync(IReadOnlyList<Action> actions)
     {
         if (actions.Count == 0)
         {

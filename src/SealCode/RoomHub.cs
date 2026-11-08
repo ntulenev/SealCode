@@ -5,13 +5,12 @@ using Microsoft.AspNetCore.SignalR;
 using Models;
 using Models.Exceptions;
 
-using Transport.Models;
-
 using SealCode.Hub;
 
-using SignalRHub = Microsoft.AspNetCore.SignalR.Hub;
-
 using Transport;
+using Transport.Models;
+
+using SignalRHub = Microsoft.AspNetCore.SignalR.Hub;
 
 namespace SealCode;
 

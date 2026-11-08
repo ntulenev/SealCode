@@ -21,7 +21,7 @@ public sealed class RoomDocumentUpdate
         }
 
         Revision = revision;
-        _payload = [.. payload];
+        Payload = [.. payload];
     }
 
     /// <summary>
@@ -32,6 +32,5 @@ public sealed class RoomDocumentUpdate
     /// <summary>
     /// Gets a copy of the encoded CRDT update.
     /// </summary>
-    public byte[] Payload => [.. _payload];
-    private readonly byte[] _payload;
+    public byte[] Payload => [.. field];
 }

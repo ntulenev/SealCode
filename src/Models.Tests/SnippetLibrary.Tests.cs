@@ -20,7 +20,7 @@ public sealed class SnippetLibraryTests
     [Fact]
     public void ConfigurationDefaultsDisableTheLibraryAndRestrictItsAudience()
     {
-        var configuration = new Models.Configuration.SnippetConfiguration();
+        var configuration = new Configuration.SnippetConfiguration();
 
         Assert.False(configuration.Enabled);
         Assert.True(configuration.SuperAdminsOnly);
@@ -39,10 +39,7 @@ public sealed class SnippetLibraryTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void QuestionRejectsNonpositiveNumbers(int number)
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new SnippetQuestion(number, "Topic", "Coverage", "Question"));
-    }
+    public void QuestionRejectsNonpositiveNumbers(int number) => Assert.Throws<ArgumentOutOfRangeException>(() => new SnippetQuestion(number, "Topic", "Coverage", "Question"));
 
     [Theory]
     [InlineData(null)]

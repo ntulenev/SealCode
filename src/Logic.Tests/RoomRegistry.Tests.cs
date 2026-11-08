@@ -24,14 +24,14 @@ public sealed class RoomRegistryTests
             Languages = [],
             Limits = new RoomLimits { MaxRooms = 2 }
         }));
-        await Concurrency.RunTogether(Enumerable.Range(0, 32).Select<int, Action>(index => () =>
+        await Concurrency.RunTogetherAsync([.. Enumerable.Range(0, 32).Select<int, Action>(index => () =>
         {
             try
             {
                 registry.CreateRoom(new($"Room-{index}"), new("csharp"), new("admin"));
             }
             catch (RoomLimitException) { }
-        }).ToArray());
+        })]);
         registry.GetRoomsSnapshot().Should().HaveCount(2);
     }
 
@@ -141,7 +141,7 @@ public sealed class RoomRegistryTests
         var notifier = new Mock<IRoomNotifier>();
         using var request = new CancellationTokenSource();
         notifier.Setup(n => n.RoomKilledAsync(It.IsAny<RoomId>(), It.IsAny<RoomDeletionReason>(), It.IsAny<CancellationToken>()))
-            .Callback(() => request.Cancel()).ThrowsAsync(new IOException("delivery failed"));
+            .Callback(request.Cancel).ThrowsAsync(new IOException("delivery failed"));
         var registry = CreateRegistry();
         var room = registry.CreateRoom(new("Room"), new("csharp"), new("admin"));
         _ = RoomStateBuilder.Participant(room);

@@ -15,7 +15,7 @@ internal sealed class RoomDocumentJournal
     /// <param name="state">The serialized checkpoint, or null for an empty initial state.</param>
     public RoomDocumentJournal(RoomLimits limits, byte[]? state)
     {
-        _state = state is null ? [] : [.. state];
+        State = state is null ? [] : [.. state];
         _limits = limits;
     }
 
@@ -32,7 +32,7 @@ internal sealed class RoomDocumentJournal
     /// <summary>
     /// Gets a copy of the retained serialized checkpoint.
     /// </summary>
-    internal byte[] State => [.. _state];
+    internal byte[] State { get => [.. field]; private set; }
 
     /// <summary>
     /// Gets the total decoded size of retained incremental updates.
@@ -106,7 +106,7 @@ internal sealed class RoomDocumentJournal
             RoomMetrics.CheckpointRejected.Add(1);
             throw new RoomLimitException("CheckpointTooLarge");
         }
-        _state = [.. state];
+        State = [.. state];
         YjsCheckpointRevision = revision;
         Clear();
         RoomMetrics.CheckpointAccepted.Add(1);
@@ -131,7 +131,6 @@ internal sealed class RoomDocumentJournal
         _updates.Clear();
     }
 
-    private byte[] _state;
     private readonly List<RoomDocumentUpdate> _updates = [];
     private readonly RoomLimits _limits;
 }

@@ -24,8 +24,5 @@ public sealed class SnippetCatalogStartupServiceTests
     }
 
     [Fact]
-    public void ConstructorRejectsANullCatalog()
-    {
-        Assert.Throws<ArgumentNullException>(() => new SnippetCatalogStartupService(null!));
-    }
+    public void ConstructorRejectsANullCatalog() => Assert.Throws<ArgumentNullException>(() => new SnippetCatalogStartupService(null!));
 }

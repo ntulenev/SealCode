@@ -155,6 +155,6 @@ public sealed class GoogleSignInTests
     private sealed class FixedGoogleIdentityVerifier(GoogleIdentity identity) : IGoogleIdentityVerifier
     {
         public Task<GoogleIdentity?> VerifyAsync(string credential, string clientId)
-            => Task.FromResult<GoogleIdentity?>(credential == "valid" && clientId == ClientId ? identity : null);
+            => Task.FromResult(credential == "valid" && clientId == ClientId ? identity : null);
     }
 }

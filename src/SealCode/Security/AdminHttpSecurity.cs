@@ -1,8 +1,8 @@
 using System.Threading.RateLimiting;
 
-using SealCode.Hosting;
-
 using Microsoft.AspNetCore.Antiforgery;
+
+using SealCode.Hosting;
 
 namespace SealCode.Security;
 

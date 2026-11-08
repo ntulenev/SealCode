@@ -13,8 +13,5 @@ public sealed class ConnectionSourceTests
     [InlineData("2001:db8:1:2::1", "2001:db8:1:2::")]
     [InlineData("2001:db8:1:2:ffff::2", "2001:db8:1:2::")]
     [InlineData("2001:db8:1:3::1", "2001:db8:1:3::")]
-    public void NormalizesSources(string? address, string expected)
-    {
-        Assert.Equal(expected, ConnectionSource.From(address is null ? null : IPAddress.Parse(address)));
-    }
+    public void NormalizesSources(string? address, string expected) => Assert.Equal(expected, ConnectionSource.From(address is null ? null : IPAddress.Parse(address)));
 }

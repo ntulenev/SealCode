@@ -33,7 +33,7 @@ public sealed class RoomState
         RoomLimits? limits = null,
         TimeProvider? timeProvider = null)
     {
-        _limits = limits ?? new RoomLimits();
+        Limits = limits ?? new RoomLimits();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _lastActivityUtc = _timeProvider.GetUtcNow();
         RoomId = roomId;
@@ -43,7 +43,7 @@ public sealed class RoomState
         Version = version;
         LastUpdatedUtc = lastUpdatedUtc;
         CreatedBy = createdBy;
-        _journal = new RoomDocumentJournal(_limits, yjsState);
+        _journal = new RoomDocumentJournal(Limits, yjsState);
     }
 
     /// <summary>
@@ -190,7 +190,7 @@ public sealed class RoomState
     /// <summary>
     /// Gets the room resource budgets.
     /// </summary>
-    public RoomLimits Limits => _limits;
+    public RoomLimits Limits { get; }
 
     /// <summary>
     /// Determines whether the provided admin user created this room.
@@ -456,5 +456,4 @@ public sealed class RoomState
     private readonly Lock _versionGuard = new();
     private readonly RoomDocumentJournal _journal;
     private readonly RoomMembership _membership = new();
-    private readonly RoomLimits _limits;
 }

@@ -18,10 +18,7 @@ public sealed class ResourceBudgetTests
     }
 
     [Fact]
-    public void NewConnectionLimitDefaultsToThirty()
-    {
-        Assert.Equal(30, new RoomLimits().NewConnectionsPerSourcePerMinute);
-    }
+    public void NewConnectionLimitDefaultsToThirty() => Assert.Equal(30, new RoomLimits().NewConnectionsPerSourcePerMinute);
 
     [Theory]
     [InlineData(0)]

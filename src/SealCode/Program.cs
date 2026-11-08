@@ -26,7 +26,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = StaticAssetCaching.Apply });
 app.UseAuthentication();
 app.UseAuthorization();
-app.Use((context, next) => AdminHttpSecurity.InvokeAsync(context, next));
+app.Use(AdminHttpSecurity.InvokeAsync);
 app.MapSealCodeEndpoints();
 app.MapAdminEndpoints();
 app.MapSnippetEndpoints();
