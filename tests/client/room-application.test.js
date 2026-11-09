@@ -1,0 +1,195 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { roomFixture, flush } from './helpers/room-fixture.js';
+
+test('joining wires room metadata, participants, shared text, local delivery and collaborative undo', async (context) => {
+  const f = await roomFixture(context);
+  assert.equal(f.elements.joinBtn.disabled, false);
+  assert.equal(f.editor.readOnly, true);
+  assert.equal(f.view.__debugYjsSend(), false);
+  assert.equal(await f.view.__debugReconnect(), false);
+  await f.join();
+  assert.equal(f.elements.roomNameEl.textContent, 'Interview');
+  assert.equal(f.elements.createdByEl.textContent, 'Admin');
+  assert.equal(f.elements.connectionStatusEl.textContent, 'connected');
+  assert.equal(f.elements.joinOverlay.classList.contains('hidden'), true);
+  assert.equal(f.model.getValue(), 'seed');
+  assert.equal(f.model.language, 'sql');
+  assert.equal(f.editor.readOnly, false);
+  f.model.setValue('local edit');
+  await f.tick(100);
+  assert.equal(f.server.getText('monaco').toString(), 'local edit');
+  assert.equal(f.view.__debugUndoState().canUndo, true);
+  await f.model.undo();
+  await f.tick(100);
+  assert.equal(f.model.getValue(), 'seed');
+  assert.equal(f.server.getText('monaco').toString(), 'seed');
+  await f.model.redo();
+  await f.tick(100);
+  assert.equal(f.server.getText('monaco').toString(), 'local edit');
+  assert.equal(await f.view.__debugReconnect(), true);
+  assert.equal(f.model.getValue(), 'local edit');
+  assert.equal(f.view.__debugUndoState().canUndo, true);
+  f.hub.emit('RoomKilled', 'Room expired');
+  assert.equal(f.editor.readOnly, true);
+  assert.equal(f.elements.joinError.textContent, 'Room expired');
+  assert.equal(f.elements.joinOverlay.classList.contains('hidden'), false);
+  assert.equal(f.view.__debugYjsSend(), false);
+});
+
+test('hub events reject stale metadata and presence while applying remote CRDT edits', async (context) => {
+  const f = await roomFixture(context);
+  await f.join();
+  f.hub.emit('UserJoined', 'Bob', ['Alice', 'Bob'], 2);
+  f.hub.emit('UserJoined', 'Old', ['Old'], 1);
+  assert.equal(f.elements.participantsList.children.length, 2);
+  f.hub.emit('CursorUpdated', 'Bob', 3);
+  f.hub.emit('CursorUpdated', '', 0);
+  f.hub.emit('UserSelection', 'Bob', true);
+  f.hub.emit('UserCopy', 'Bob');
+  f.hub.emit('LanguageUpdated', 'python', 5, 2);
+  f.hub.emit('LanguageUpdated', 'sql', 4, 1);
+  assert.equal(f.model.language, 'python');
+  assert.ok(f.elements.languageSelect.options.some((option) => option.value === 'python'));
+  let update;
+  f.server.on('update', (bytes) => { update = bytes; });
+  f.server.getText('monaco').insert(4, ' remote');
+  f.hub.emit('YjsUpdated', Buffer.from(update).toString('base64'), 1, 6, 'Bob');
+  assert.equal(f.model.getValue(), 'seed remote');
+  assert.equal(f.view.__debugUndoState().canUndo, false);
+  f.hub.emit('YjsCheckpointed', -1);
+  f.hub.emit('YjsCheckpointed', 1);
+  f.hub.emit('UserLeft', 'Bob', ['Alice'], 3);
+  f.hub.emit('UserLeft', 'Old', [], 1);
+  assert.equal(f.elements.participantsList.children.length, 1);
+  assert.equal(f.elements.versionNumberEl.textContent, 6);
+});
+
+test('join validation and rejected membership restore retry controls', async (context) => {
+  const f = await roomFixture(context);
+  f.elements.displayNameInput.value = '  ';
+  await f.join();
+  assert.equal(f.elements.joinError.textContent, 'Display name is required.');
+  assert.equal(f.calls.some((call) => call.method === 'JoinRoom'), false);
+  await f.nodes.get('generateDisplayName').click();
+  assert.ok(f.elements.displayNameInput.value.trim());
+  f.failures.set('JoinRoom', new Error('Room full'));
+  await f.join();
+  assert.equal(f.elements.joinError.textContent, 'Room full');
+  assert.equal(f.elements.joinBtn.disabled, false);
+  assert.equal(f.elements.displayNameInput.disabled, false);
+  assert.equal(f.editor.readOnly, true);
+  f.failures.clear();
+  await f.join();
+  assert.equal(f.editor.readOnly, false);
+});
+
+test('failed transport startup keeps editing disabled and allows the user to retry joining', async (context) => {
+  const f = await roomFixture(context, { startError: true });
+  await f.join();
+  assert.equal(f.elements.connectionStatusEl.textContent, 'disconnected');
+  assert.match(f.elements.joinError.textContent, /Waiting to reconnect/);
+  assert.equal(f.editor.readOnly, true);
+  assert.equal(f.elements.joinBtn.disabled, false);
+  assert.equal(f.elements.displayNameInput.disabled, false);
+  assert.equal(f.calls.some((call) => call.method === 'JoinRoom'), false);
+});
+
+test('language changes roll back on refusal or disconnect and are delivered when permitted', async (context) => {
+  const f = await roomFixture(context);
+  f.elements.languageSelect.value = 'csharp';
+  await f.elements.languageSelect.fire('change');
+  assert.equal(f.calls.length, 0);
+  await f.join();
+  f.failures.set('SetLanguage', new Error('denied'));
+  f.elements.languageSelect.value = 'csharp';
+  await f.elements.languageSelect.fire('change');
+  assert.equal(f.model.language, 'sql');
+  assert.equal(f.elements.languageSelect.value, 'sql');
+  f.failures.clear();
+  f.hub.state = 'Disconnected';
+  f.elements.languageSelect.value = 'csharp';
+  await f.elements.languageSelect.fire('change');
+  assert.equal(f.model.language, 'sql');
+  f.hub.state = 'Connected';
+  f.elements.languageSelect.value = 'csharp';
+  await f.elements.languageSelect.fire('change');
+  assert.equal(f.model.language, 'csharp');
+});
+
+test('editor selection and copy controls suppress empty copies and broadcast only selection transitions', async (context) => {
+  const f = await roomFixture(context);
+  await f.join();
+  let prevented = 0;
+  const event = { preventDefault: () => prevented++, stopImmediatePropagation() {} };
+  await f.document.fire('copy', event);
+  assert.equal(prevented, 1);
+  f.editor.selection = { startLineNumber: 1, endLineNumber: 2, isEmpty: () => false };
+  await f.document.fire('copy', event);
+  assert.equal(f.calls.filter((call) => call.method === 'UpdateCopy').length, 1);
+  f.callbacks.selection({ reason: 3 });
+  f.callbacks.selection({ reason: 3 });
+  assert.equal(f.calls.filter((call) => call.method === 'UpdateSelection').length, 1);
+  f.editor.selection = { startLineNumber: 1, endLineNumber: 1, isEmpty: () => true };
+  f.callbacks.selection({ reason: 3 });
+  assert.equal(f.calls.filter((call) => call.method === 'UpdateSelection').length, 2);
+  const key = (key) => f.callbacks.key({ browserEvent: { ...event, ctrlKey: true, key }, preventDefault() {}, stopPropagation() {} });
+  key('c');
+  assert.equal(prevented, 2);
+  key('v');
+  f.callbacks.paste();
+  key('x');
+  f.model.setValue('changed');
+  key('z');
+  assert.equal(f.model.getValue(), 'seed');
+  key('y');
+  assert.equal(f.model.getValue(), 'changed');
+  await f.tick(100);
+  assert.ok(f.calls.some((call) => call.method === 'UpdateCursor'));
+});
+
+test('whiteboard composition shares transport and history without loading code-language controls', async (context) => {
+  const f = await roomFixture(context, { board: true });
+  await f.join();
+  assert.equal(f.requests.includes('/languages'), false);
+  assert.equal(f.board.readOnly, false);
+  f.board.beforeChange();
+  f.board.scope.doc.transact(() => f.board.scope.set('service', { text: 'API' }), f.board.binding);
+  f.board.onChange();
+  assert.equal(f.view.__debugYjsSend(), true);
+  await f.tick(100);
+  assert.deepEqual(f.server.getMap('whiteboard').get('service'), { text: 'API' });
+  assert.equal(f.board.undo(), true);
+  await f.tick(100);
+  assert.equal(f.server.getMap('whiteboard').has('service'), false);
+  assert.equal(f.board.redo(), true);
+  await f.tick(100);
+  assert.deepEqual(f.server.getMap('whiteboard').get('service'), { text: 'API' });
+  await f.nodes.get('downloadLocalText').click();
+  assert.equal(f.board.downloads, 1);
+  await f.view.fire('offline');
+  assert.equal(f.board.readOnly, true);
+  assert.equal(f.board.undo(), false);
+  await f.view.fire('online');
+  await flush();
+  assert.equal(f.board.readOnly, false);
+});
+
+test('configured snapshot warnings appear and clear when the user reduces the document', async (context) => {
+  const f = await roomFixture(context, { text: '', features: { Limits: { MaxSnapshotCharacters: 5 } } });
+  await f.join();
+  f.model.setValue('too long');
+  assert.equal(f.elements.syncError.dataset.kind, 'text-size');
+  assert.equal(f.nodes.get('downloadLocalText').classList.contains('hidden'), false);
+  f.model.setValue('short');
+  assert.equal(f.elements.syncError.classList.contains('hidden'), true);
+});
+
+test('missing feature and language responses keep the join usable with server language fallback', async (context) => {
+  const f = await roomFixture(context, { fetchError: true });
+  assert.equal(f.elements.languageSelect.disabled, true);
+  await f.join();
+  assert.equal(f.editor.readOnly, false);
+  assert.equal(f.elements.languageSelect.value, 'sql');
+  assert.ok(console.warn.mock.calls.length);
+});
