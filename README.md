@@ -36,6 +36,9 @@ These screenshots show the running application with disposable demo accounts, sa
 ### Home page and themes
 
 Paste a link to join a room, open room management, or change the theme from the header.
+Below the introduction, explore collaborative code, whiteboards, room management
+and the optional question library through real product screenshots. Select a
+screenshot to enlarge it; Escape closes the preview and returns focus to the link.
 
 | Dark theme (default) | Light theme |
 | --- | --- |
@@ -959,7 +962,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.16.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.17.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.

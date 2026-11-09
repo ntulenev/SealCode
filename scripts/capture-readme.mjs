@@ -297,12 +297,17 @@ try {
       admin.context().waitForEvent('page'),
       admin.getByRole('link', { name: 'Open in new tab' }).click()
     ]);
+    await libraryTab.setViewportSize({ width: 1440, height: 1000 });
     await libraryTab.getByRole('button', { name: 'SQL', exact: true }).click();
     await expect(libraryTab.locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
     await expect(libraryTab.locator('#snippetSyncTime')).toHaveAttribute('datetime', /\d{4}-\d{2}-\d{2}T/);
     await expect(libraryTab.locator('.snippet-step')).toHaveCount(2);
     await expect(libraryTab.locator('.snippet-step').nth(1).locator('.snippet-code [class^="mtk"]')).not.toHaveCount(0);
     await screenshot(libraryTab, join(images, 'snippets-tab.png'));
+    await setTheme(admin, 'light');
+    await expect(libraryTab.locator('html')).toHaveAttribute('data-theme', 'light');
+    await screenshot(libraryTab, join(images, 'snippets-tab-light.png'));
+    cpSync(join(images, 'snippets-tab-light.png'), join(root, 'src/SealCode/wwwroot/product/snippets-tab-light.png'));
     await libraryTab.close();
     await admin.getByRole('button', { name: 'Close' }).click();
   }
