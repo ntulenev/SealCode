@@ -1,17 +1,18 @@
 # SealCode
 
-SealCode is a self-hosted collaborative code editor for small, trusted groups, suitable for pair programming, interviews and discussing code together. Each room contains one shared text document, with live editing, participant presence and a shared syntax-highlighting language.
+SealCode is a self-hosted collaborative code editor for small, trusted groups, suitable for pair programming, interviews and discussing code together. Code rooms contain a shared text document with live editing and a shared syntax-highlighting language. Whiteboard rooms offer an infinite canvas for collaborative system design diagrams. Both include participant presence.
 
 The backend uses ASP.NET Core Minimal API and SignalR on .NET 10; the browser uses Monaco Editor and Yjs for CRDT synchronization. Rooms live entirely in server memory. This is a personal project intended for private use.
 
 For a description of how the backend and real-time collaboration work, see [Backend architecture](docs/backend.md).
 
-[Quick start](#quick-start) · [Screenshots](#screenshots) · [Question library](#private-question-library) · [Autocomplete](#autocomplete) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [Whiteboards](#whiteboard-rooms) · [Question library](#private-question-library) · [Autocomplete](#autocomplete) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
 
 ![SealCode in dark theme: a JavaScript room with four participants, shared code and live activity indicators](Room.png)
 
 ## Features
 
+- Collaborative whiteboard rooms with rectangles, arrows, lines, text, databases, queues, ellipses and diamonds; pan, zoom, labels, resizing and selective undo/redo.
 - Real-time multi-user editing in Monaco, with syntax highlighting, participant presence and remote cursors.
 - Monaco's built-in autocomplete is always enabled, with language-specific IntelliSense limitations described below.
 - Join through an invitation link or paste it on the home page; participants only need a display name, not an account.
@@ -72,6 +73,38 @@ The editor, participant bar and surrounding controls follow the same theme.
 ![Admin login screen with the pixel seal, username and password fields](docs/images/admin-login.png)
 
 </details>
+
+## Whiteboard rooms
+
+| Dark theme | Light theme |
+| --- | --- |
+| ![Collaborative whiteboard with system design primitives in dark theme](docs/images/whiteboard-dark.png) | ![The same shared diagram in light theme](docs/images/whiteboard-light.png) |
+
+In the admin panel, use **Create whiteboard** with a name. **Create room** continues
+creating code rooms with a language. Both appear in the same list and use the same
+invitation links, ownership/deletion rules, `MaxRooms`, `MaxUsersPerRoom`, idle
+expiration and transport resource budgets. The room kind is fixed at creation.
+
+Choose a tool, then drag on the canvas (or click to insert a default-size element).
+Use Select to move an element and its corner handle to resize it. Double-click an
+element or choose **Label** to edit its text; Enter saves, Shift+Enter inserts a
+line break and Escape cancels. Text is plain text, including labels on shapes.
+
+- Tools: **V** select, **H** pan, **R** rectangle, **A** arrow, **L** line,
+  **T** text, **D** database, **Q** queue, **O** ellipse, **M** diamond.
+- Pan with Space+drag, middle-button drag, the Pan tool or wheel/trackpad scrolling.
+  Zoom with Ctrl/Cmd+wheel or the zoom buttons; **Fit** frames the diagram.
+- Delete/Backspace removes the selection; Ctrl/Cmd+D duplicates it.
+  Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) undo/redo your own changes.
+- **Download board** exports the current local diagram as JSON, including changes
+  that could not be sent. Import is not currently supported.
+
+The board uses local SVG rendering and the existing Yjs journal/checkpoint and
+reconnect protocol. Separate elements merge independently; concurrent changes to
+one element resolve through Yjs's map conflict rules. A completed drawing, move,
+resize or label edit is shared when the gesture is committed. Viewport, tool and
+selection remain local. Rooms are in memory and disappear on server restart.
+The MVP has no connector attachment/routing, freehand drawing or image uploads.
 
 ## Private question library
 
@@ -896,7 +929,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.15.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.16.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.

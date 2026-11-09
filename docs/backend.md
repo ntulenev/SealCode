@@ -3,8 +3,8 @@
 ## 1. Overview
 
 SealCode is an ASP.NET Core Minimal API and SignalR application targeting .NET 10.
-One application process owns all rooms in memory. A room is one shared editing
-buffer, its language, and its participants.
+One application process owns all rooms in memory. A room hosts either a shared
+code buffer with a language or a collaborative diagram canvas, plus participants.
 
 The server coordinates collaboration; the browser performs the CRDT merge using
 Yjs. The server does not interpret CRDT operations. It retains opaque Yjs update
@@ -198,7 +198,7 @@ executed once for every route.
 
 | Public route | Successful response | Explicit Cache-Control policy |
 | --- | --- | --- |
-| `/room/{roomId}` | room.html for an existing room; missing room returns 404 | no-cache on the HTML response |
+| `/room/{roomId}` | room.html or whiteboard.html according to the immutable room kind; missing room returns 404 | no-cache on the HTML response |
 | `/features` | CollaborativeUndoEnabled, MaxYjsMessageBytes and Limits | None set by this endpoint |
 | `/languages` | Configured language identifiers | None set by this endpoint |
 | `/health` | JSON string "ok" | None set by this endpoint |
@@ -230,6 +230,22 @@ the antiforgery token endpoint `/admin/token` is mapped by MapSealCodeEndpoints
 and answers with Cache-Control: no-store.
 
 ## 4. Room model
+
+`RoomKind` is immutable (`Code` or `Whiteboard`). Admin creation accepts
+`kind: "whiteboard"`; omitted/null/`"code"` preserves the existing code-room API.
+Create/list/join responses include a lowercase `Kind` field. Whiteboards use the
+same registry, shared `MaxRooms` capacity, membership rules, ownership, expiration,
+SignalR methods and payload budgets. Language changes are rejected for whiteboards;
+their internal language is `plaintext` and their text checkpoint field is empty.
+
+The whiteboard client binds `YjsSession` to the `whiteboard` Y.Map instead of a
+Monaco model. Map keys are element IDs; values contain plain labels and SVG
+geometry. Committed gestures are separate undo transactions with a local binding
+origin. Concurrent edits to different keys merge independently, while updates to
+the same element use Yjs map conflict resolution. Checkpoints encode the entire
+Y.Doc, including the board, through the existing compaction/recovery path.
+Rendering rejects malformed elements and inserts labels as text, without HTML.
+Viewport, selection and in-progress gestures stay local to each participant.
 
 RoomState is the aggregate. Its single lock serializes successful joins,
 departures, document appends, checkpoints, metadata changes, synchronization
