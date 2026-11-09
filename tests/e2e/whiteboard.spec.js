@@ -61,6 +61,18 @@ test('whiteboard creation, collaborative diagrams, selective undo and reconnect 
     await page.getByRole('textbox', { name: 'Element label' }).press('Enter');
     await expect(bob.locator('[data-shape-type="text"]')).toHaveText('Order service');
     await expect(shapes(bob)).toHaveCount(8);
+    await draw(page, 'bidirectional-arrow', 590, 450, -150, -40);
+    const doubleArrow = (p) => p.locator('[data-shape-type="bidirectional-arrow"]');
+    await expect(doubleArrow(page).locator('path')).toHaveCount(2);
+    await expect(doubleArrow(bob).locator('path')).toHaveCount(2);
+    const arrowSvg = await doubleArrow(page).evaluate((el) => el.outerHTML);
+    await expect.poll(() => doubleArrow(bob).evaluate((el) => el.outerHTML)).toBe(arrowSvg);
+    await page.locator('.board-controls').getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(doubleArrow(bob)).toHaveCount(0);
+    await expect(shapes(bob)).toHaveCount(8);
+    await page.locator('.board-controls').getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect(doubleArrow(bob).locator('path')).toHaveCount(2);
+    await expect(shapes(bob)).toHaveCount(9);
     const rectangle = page.locator('[data-shape-type="rectangle"]');
     await rectangle.dblclick();
     await page.getByRole('textbox', { name: 'Element label' }).fill('API gateway');
@@ -69,16 +81,17 @@ test('whiteboard creation, collaborative diagrams, selective undo and reconnect 
     // Edits to different elements from both participants must survive.
     await draw(page, 'rectangle', 810, 180, 100, 60);
     await draw(bob, 'queue', 810, 330, 100, 60);
-    await expect(shapes(page)).toHaveCount(10);
-    await expect(shapes(bob)).toHaveCount(10);
+    await expect(shapes(page)).toHaveCount(11);
+    await expect(shapes(bob)).toHaveCount(11);
     await page.evaluate(() => window.__debugReconnect());
     await expect(page.locator('#connectionStatus')).toHaveText('connected');
-    await expect(shapes(page)).toHaveCount(10);
+    await expect(shapes(page)).toHaveCount(11);
     await bob.reload();
     await bob.locator('#displayNameInput').fill('Bob after reload');
     await bob.locator('#joinBtn').click();
     await expect(bob.locator('#joinOverlay')).toBeHidden();
-    await expect(shapes(bob)).toHaveCount(10);
+    await expect(shapes(bob)).toHaveCount(11);
+    await expect.poll(() => doubleArrow(bob).evaluate((el) => el.outerHTML)).toBe(arrowSvg);
     await page.getByRole('button', { name: 'Fit diagram' }).click();
     for (const theme of ['dark', 'light']) {
       if (theme === 'light') await page.locator('.site-header [data-theme-toggle]').click();

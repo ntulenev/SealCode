@@ -79,7 +79,7 @@ test('drawing tools render all primitives, labels safely and normalize reverse d
         assert.equal(f.map.get(shape.id).text, '<script>\nService');
       }
     }
-    assert.equal(f.map.size, 8);
+    assert.equal(f.map.size, shapeTypes.length);
     const shape = f.draw('rectangle', 0, 0);
     assert.equal(shape.width, 150);
     f.tool('select');
@@ -99,14 +99,43 @@ test('drawing tools render all primitives, labels safely and normalize reverse d
     f.editor().value = 'Discard'; f.editor().fire('keydown', { key: 'Escape' });
     assert.equal(f.map.get(shape.id).text, 'Gateway');
     f.host.fire('keydown', { ctrlKey: true, key: 'd' });
-    assert.equal(f.map.size, 10);
+    assert.equal(f.map.size, shapeTypes.length + 2);
     f.host.fire('keydown', { key: 'Delete' });
-    assert.equal(f.map.size, 9);
+    assert.equal(f.map.size, shapeTypes.length + 1);
     f.host.fire('keydown', { key: 'Enter' });
     f.pointer('pointerdown', 20, 50);
     f.pointer('pointerup', 20, 50);
     f.button('Delete selected').click();
     f.svg.fire('dblclick');
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('arrowheads point outwards at both endpoints for horizontal, vertical and reverse drags', () => {
+  const f = fixture();
+  try {
+    f.host.fire('keydown', { key: 'b' });
+    assert.equal(f.svg.dataset.tool, 'bidirectional-arrow');
+    assert.equal(f.button('Bidirectional arrow (B)').getAttribute('aria-pressed'), 'true');
+    for (const [dx, dy] of [[160, 0], [-160, 0], [0, 120], [0, -120], [130, 70], [-130, -70], [-130, 70], [130, -70]]) {
+      for (const type of ['line', 'arrow', 'bidirectional-arrow']) {
+        const shape = f.draw(type, dx, dy);
+        assert.deepEqual([shape.x, shape.y, shape.width, shape.height], [100, 150, dx, dy]);
+        const paths = f.shapeElement(shape.id).children.filter((el) => el.tag === 'path');
+        assert.equal(paths.length, type === 'line' ? 0 : type === 'arrow' ? 1 : 2);
+        for (const [index, path] of paths.entries()) {
+          const [ax, ay, tx, ty, bx, by] = path.getAttribute('d').match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi).map(Number);
+          assert.deepEqual([tx, ty], index === 0 ? [100 + dx, 150 + dy] : [100, 150]);
+          const direction = index === 0 ? 1 : -1;
+          const length = Math.hypot(dx, dy);
+          for (const [x, y] of [[ax, ay], [bx, by]]) {
+            assert.ok(Math.abs(Math.hypot(tx - x, ty - y) - 15) < 1e-9);
+            const projection = ((tx - x) * dx + (ty - y) * dy) / length * direction;
+            assert.ok(Math.abs(projection - 15 * Math.cos(Math.PI / 6)) < 1e-9);
+          }
+          assert.ok(Math.abs((ax + bx - 2 * tx) * dy - (ay + by - 2 * ty) * dx) < 1e-8);
+        }
+      }
+    }
   } finally { f.binding.destroy(); f.doc.destroy(); }
 });
 

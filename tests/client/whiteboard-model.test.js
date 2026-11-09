@@ -14,7 +14,7 @@ test('shared shapes validate geometry and labels without trusting document conte
   for (const value of [null, {}, { ...shape(), id: 1 }, { ...shape(), id: 'x'.repeat(101) }, { ...shape(), type: '<script>' }, { ...shape(), text: null }, { ...shape(), text: 'x'.repeat(4001) }, { ...shape(), x: Infinity }, { ...shape(), y: NaN }, { ...shape(), width: 1e9 }]) assert.equal(isShape(value), false);
   assert.deepEqual(bounds(shape()), { x: 20, y: 60, width: 80, height: 60 });
   assert.deepEqual(normalizeShape(shape()), { ...shape(), x: 20, y: 60, width: 80, height: 60 });
-  for (const type of ['arrow', 'line']) assert.deepEqual(normalizeShape(shape('one', type)), shape('one', type));
+  for (const type of ['arrow', 'bidirectional-arrow', 'line']) assert.deepEqual(normalizeShape(shape('one', type)), shape('one', type));
 });
 
 test('concurrent shapes converge, selective undo preserves remote edits, checkpoints retain diagrams', () => {

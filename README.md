@@ -12,7 +12,7 @@ For a description of how the backend and real-time collaboration work, see [Back
 
 ## Features
 
-- Collaborative whiteboard rooms with rectangles, arrows, lines, text, databases, queues, ellipses and diamonds; pan, zoom, labels, resizing and selective undo/redo.
+- Collaborative whiteboard rooms with rectangles, one-way and bidirectional arrows, lines, text, databases, queues, ellipses and diamonds; pan, zoom, labels, resizing and selective undo/redo.
 - Real-time multi-user editing in Monaco, with syntax highlighting, participant presence and remote cursors.
 - Monaco's built-in autocomplete is always enabled, with language-specific IntelliSense limitations described below.
 - Join through an invitation link or paste it on the home page; participants only need a display name, not an account.
@@ -120,7 +120,7 @@ Use Select to move an element and its corner handle to resize it. Double-click a
 element or choose **Label** to edit its text; Enter saves, Shift+Enter inserts a
 line break and Escape cancels. Text is plain text, including labels on shapes.
 
-- Tools: **V** select, **H** pan, **R** rectangle, **A** arrow, **L** line,
+- Tools: **V** select, **H** pan, **R** rectangle, **A** arrow, **B** bidirectional arrow, **L** line,
   **T** text, **D** database, **Q** queue, **O** ellipse, **M** diamond.
 - Pan with Space+drag, middle-button drag, the Pan tool or wheel/trackpad scrolling.
   Zoom with Ctrl/Cmd+wheel or the zoom buttons; **Fit** frames the diagram.

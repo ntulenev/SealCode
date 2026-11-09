@@ -4,6 +4,7 @@ const NS = 'http://www.w3.org/2000/svg';
 const tools = [
   ['select', 'Select', 'V', '↖'], ['pan', 'Pan', 'H', '✥'],
   ['rectangle', 'Rectangle', 'R', '▭'], ['arrow', 'Arrow', 'A', '↗'],
+  ['bidirectional-arrow', 'Bidirectional arrow', 'B', '↔'],
   ['line', 'Line', 'L', '╱'], ['text', 'Text', 'T', 'T'],
   ['database', 'Database', 'D', '▤'], ['queue', 'Queue', 'Q', '▥'],
   ['ellipse', 'Ellipse', 'O', '○'], ['diamond', 'Diamond', 'M', '◇']
@@ -196,14 +197,17 @@ export function createWhiteboardView(host) {
     const group = node('g', { 'data-shape-id': s.id, 'data-shape-type': s.type, class: 'board-shape' });
     const { x, y, width: w, height: h } = bounds(s);
     const cy = y + h / 2;
-    if (s.type === 'arrow' || s.type === 'line') {
+    if (['arrow', 'bidirectional-arrow', 'line'].includes(s.type)) {
       const ex = s.x + s.width, ey = s.y + s.height;
       group.append(node('line', { x1: s.x, y1: s.y, x2: ex, y2: ey, class: 'board-line-hit' }));
       group.append(node('line', { x1: s.x, y1: s.y, x2: ex, y2: ey }));
-      if (s.type === 'arrow') {
+      if (s.type !== 'line') {
         const angle = Math.atan2(s.height, s.width);
-        const a = angle - Math.PI / 6, b = angle + Math.PI / 6;
-        group.append(node('path', { d: `M ${ex - 15 * Math.cos(a)} ${ey - 15 * Math.sin(a)} L ${ex} ${ey} L ${ex - 15 * Math.cos(b)} ${ey - 15 * Math.sin(b)}`, fill: 'none' }));
+        const tips = s.type === 'bidirectional-arrow' ? [[ex, ey, angle], [s.x, s.y, angle + Math.PI]] : [[ex, ey, angle]];
+        for (const [tx, ty, direction] of tips) {
+          const a = direction - Math.PI / 6, b = direction + Math.PI / 6;
+          group.append(node('path', { d: `M ${tx - 15 * Math.cos(a)} ${ty - 15 * Math.sin(a)} L ${tx} ${ty} L ${tx - 15 * Math.cos(b)} ${ty - 15 * Math.sin(b)}`, fill: 'none' }));
+        }
       }
     } else if (s.type === 'ellipse') {
       group.append(node('ellipse', { cx: x + w / 2, cy, rx: w / 2, ry: h / 2, class: 'board-fill' }));

@@ -1,5 +1,5 @@
 /** @typedef {{id: string, type: string, x: number, y: number, width: number, height: number, text: string}} Shape */
-export const shapeTypes = ['rectangle', 'arrow', 'line', 'text', 'database', 'queue', 'ellipse', 'diamond'];
+export const shapeTypes = ['rectangle', 'arrow', 'bidirectional-arrow', 'line', 'text', 'database', 'queue', 'ellipse', 'diamond'];
 
 /** Validates untrusted shared data before rendering it in the SVG workspace.
  * @param {unknown} value
@@ -22,7 +22,7 @@ export function bounds(shape) {
 
 /** @param {Shape} shape */
 export function normalizeShape(shape) {
-  return ['arrow', 'line'].includes(shape.type) ? shape : { ...shape, ...bounds(shape) };
+  return ['arrow', 'bidirectional-arrow', 'line'].includes(shape.type) ? shape : { ...shape, ...bounds(shape) };
 }
 
 /** The origin is local to a binding, so undo never tracks a remote participant.
