@@ -54,3 +54,5 @@
   .limit-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .limit-row dd { text-align: left; }
 }
+
+.whiteboard-create-grid > p { margin: 0; align-self: center; font-size: 13px; }

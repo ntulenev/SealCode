@@ -41,14 +41,14 @@ async function fixture({
   post
 } = {}) {
   const elements = Object.fromEntries(
-    ['rooms', 'createRoom', 'roomName', 'roomLanguage', 'createResult', 'adminGreeting', 'myRoomsOnly']
+    ['rooms', 'createRoom', 'roomName', 'roomLanguage', 'createResult', 'adminGreeting', 'myRoomsOnly', 'createWhiteboard', 'whiteboardName', 'whiteboardResult']
       .map((id) => [id, element()])
   );
   elements.myRoomsOnly.checked = true;
-  elements.roomName.maxLength = 160;
+  elements.roomName.maxLength = elements.whiteboardName.maxLength = 160;
   const fetch = async (url, options) => {
     if (url.startsWith('/admin/rooms') && !options && getRooms) return getRooms(url);
-    if (options?.method === 'POST' && post) return post();
+    if (options?.method === 'POST' && post) return post(url, options);
     return {
       ok: url !== '/admin/token' || tokenStatus === 200,
       status: url === '/admin/token' ? tokenStatus : 200,
@@ -176,4 +176,41 @@ test('create ignores a second click while the first request is pending', async (
   finish({ ok: true, json: async () => ({ RoomId: 'id' }) });
   await first;
   assert.equal(elements.createRoom.disabled, false);
+});
+
+
+test('whiteboard creation omits code language, validates names and displays its link', async () => {
+  const calls = [];
+  const elements = await fixture({ post: async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ RoomId: 'design' }) };
+  } });
+  const create = elements.createWhiteboard.handlers.click;
+  await create();
+  assert.match(elements.whiteboardResult.textContent, /name is required/);
+  elements.whiteboardName.value = 'x'.repeat(161);
+  await create();
+  assert.equal(calls.length, 0);
+  elements.whiteboardName.value = '  Architecture  ';
+  await create();
+  assert.deepEqual(calls, [{ name: 'Architecture', kind: 'whiteboard' }]);
+  assert.equal(elements.whiteboardName.value, '');
+  assert.match(elements.whiteboardResult.textContent, /https:\/\/example.com\/room\/design/);
+  assert.equal(elements.createWhiteboard.disabled, false);
+});
+
+test('whiteboard creation prevents duplicate submissions and reports capacity or expired sessions', async () => {
+  let complete;
+  const elements = await fixture({ post: () => new Promise((resolve) => { complete = resolve; }) });
+  elements.whiteboardName.value = 'Design';
+  const pending = elements.createWhiteboard.handlers.click();
+  await elements.createWhiteboard.handlers.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  complete({ ok: false, status: 409 });
+  await pending;
+  assert.match(elements.whiteboardResult.textContent, /Room limit reached/);
+  const expired = await fixture({ post: async () => ({ ok: false, status: 401 }) });
+  expired.whiteboardName.value = 'Design';
+  await expired.createWhiteboard.handlers.click();
+  assert.match(expired.whiteboardResult.textContent, /Session expired/);
 });

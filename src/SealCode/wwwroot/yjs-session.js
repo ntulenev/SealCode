@@ -16,6 +16,7 @@ export class YjsSession {
     BoundedUndoManager,
     CheckpointJournalTracker,
     editor = null,
+    bindDocument = null,
     getDisplayName,
     undoEnabled,
     cursorPositions,
@@ -32,6 +33,7 @@ export class YjsSession {
     this.Awareness = Awareness;
     this.BoundedUndoManager = BoundedUndoManager;
     this.editor = editor;
+    this.bindDocument = bindDocument;
     this.getDisplayName = getDisplayName;
     this.undoEnabled = undoEnabled;
     this.cursorPositions = cursorPositions;
@@ -221,7 +223,7 @@ export class YjsSession {
    * @param {number} checkpointRevision
    */
   initializeYjs(text, stateBase64, updates, documentRevision, checkpointRevision) {
-    if (!this.model) return;
+    if (!this.model && !this.bindDocument) return;
     this.disposeYjs(true);
     this.ydoc = new this.Y.Doc();
     this.ytext = this.ydoc.getText('monaco');
@@ -232,17 +234,14 @@ export class YjsSession {
     }
     this.isApplyingRemoteUpdate = true;
     try {
-      this.monacoBinding = new this.MonacoBinding(
-        this.ytext,
-        this.model,
-        new Set([this.editor]),
-        this.awareness
-      );
+      this.monacoBinding = this.bindDocument
+        ? this.bindDocument(this.ydoc)
+        : new this.MonacoBinding(this.ytext, this.model, new Set([this.editor]), this.awareness);
     } finally {
       this.isApplyingRemoteUpdate = false;
     }
     if (this.undoEnabled()) {
-      this.undoHistory = new this.BoundedUndoManager(this.Y, this.ytext, {
+      this.undoHistory = new this.BoundedUndoManager(this.Y, this.monacoBinding.scope ?? this.ytext, {
         trackedOrigin: this.monacoBinding,
         maxDepth: maxUndoDepth,
         maxEstimatedBytes: maxUndoEstimatedBytes,

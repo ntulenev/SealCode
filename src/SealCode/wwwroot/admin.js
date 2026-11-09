@@ -88,7 +88,7 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
       const lang = document.createElement('div');
       const languageBadge = document.createElement('span');
       languageBadge.className = 'badge';
-      languageBadge.textContent = room.Language;
+      languageBadge.textContent = room.Kind === 'whiteboard' ? 'Whiteboard' : room.Language;
       lang.appendChild(languageBadge);
 
       const users = document.createElement('div');
@@ -195,18 +195,49 @@ export function createAdminPage({ document, window, fetch, confirm, clipboard })
     }
   });
 
+  const createWhiteboard = /** @type {HTMLButtonElement} */ (document.getElementById('createWhiteboard'));
+  createWhiteboard?.addEventListener('click', async () => {
+    if (createWhiteboard.disabled) return;
+    const input = /** @type {HTMLInputElement} */ (document.getElementById('whiteboardName'));
+    const result = document.getElementById('whiteboardResult');
+    const name = input.value.trim();
+    if (!name || name.length > input.maxLength) {
+      result.textContent = `Whiteboard name is required and must be at most ${input.maxLength} characters.`;
+      return;
+    }
+    createWhiteboard.disabled = true;
+    try {
+      const response = await fetch('/admin/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': await token(fetch) },
+        body: JSON.stringify({ name, kind: 'whiteboard' })
+      });
+      if (!response.ok || response.redirected) throw requestError(response);
+      const room = await response.json();
+      result.textContent = `Whiteboard created: ${window.location.origin}/room/${encodeURIComponent(room.RoomId)}`;
+      input.value = '';
+      await fetchRooms();
+    } catch (error) {
+      result.textContent = error instanceof Error ? error.message : 'Request failed. Try again.';
+    } finally {
+      createWhiteboard.disabled = false;
+    }
+  });
+
   /** @param {Response} response */
   function requestError(response) {
     return new Error(
       response.status === 401 || response.redirected
         ? 'Session expired. Sign in again.'
-        : 'Request failed. Try again.'
+        : response.status === 409
+          ? 'Room limit reached. Delete an unused room and try again.'
+          : 'Request failed. Try again.'
     );
   }
   /** @param {unknown} error */
   function showError(error) {
     resultEl.textContent =
-      error instanceof Error && error.message === 'Session expired. Sign in again.'
+      error instanceof Error && ['Session expired. Sign in again.', 'Room limit reached. Delete an unused room and try again.'].includes(error.message)
         ? error.message
         : 'Request failed. Try again.';
   }

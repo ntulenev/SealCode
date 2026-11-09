@@ -1,0 +1,28 @@
+.whiteboard { position: relative; flex: 1; min-width: 0; height: max(520px, calc(100svh - 330px)); min-height: 520px; overflow: hidden; background: var(--editor-bg); }
+.board-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 24px 24px; outline-offset: -3px; cursor: crosshair; }
+.board-canvas[data-tool="select"] { cursor: default; }
+.board-canvas[data-tool="pan"] { cursor: grab; }
+.board-toolbar, .board-controls { position: absolute; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; padding: 5px; border: 1px solid var(--border); background: var(--panel); border-radius: 8px; box-shadow: 0 3px 14px #0002; }
+.board-toolbar { top: 12px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); }
+.board-controls { bottom: 12px; left: 12px; max-width: calc(100% - 24px); }
+.board-toolbar button, .board-controls button { min-height: 36px; min-width: 36px; padding: 5px 9px; border-color: transparent; font-size: 15px; }
+.board-toolbar button { font-size: 23px; font-weight: 400; }
+.board-toolbar button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.board-shape { stroke: var(--text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; cursor: inherit; }
+.board-shape line, .board-shape path, .board-shape rect, .board-shape ellipse { vector-effect: non-scaling-stroke; }
+.board-fill { fill: var(--panel); }
+.board-line-hit { stroke: transparent; stroke-width: 18; }
+.board-text-hit { fill: transparent; stroke: none; }
+.board-label { fill: var(--text); stroke: none; font: 18px var(--sans); user-select: none; }
+.board-selection { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 4; pointer-events: none; vector-effect: non-scaling-stroke; }
+.board-resize { fill: var(--panel); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; vector-effect: non-scaling-stroke; }
+.board-label-editor { position: absolute; z-index: 3; min-height: 84px; max-height: 220px; resize: vertical; border-color: var(--accent); font-size: 18px; }
+.board-hint { position: absolute; inset: 48% 16px auto; text-align: center; pointer-events: none; color: var(--muted); font-size: 13px; }
+.board-readonly .board-canvas { cursor: default; }
+@media (max-width: 600px) {
+  .whiteboard { height: max(560px, calc(100svh - 330px)); }
+  .board-toolbar { width: 240px; }
+  .board-controls { right: 12px; }
+  .board-hint { max-width: 260px; margin-inline: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .whiteboard button { transition: none; } }

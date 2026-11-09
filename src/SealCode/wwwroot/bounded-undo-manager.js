@@ -11,7 +11,7 @@ const ESTIMATED_ITEM_OVERHEAD_BYTES = 128;
 export class BoundedUndoManager {
   /**
    * @param {typeof import('yjs')} Y
-   * @param {import('yjs').Text} scope
+   * @param {import('yjs').Text | import('yjs').Map<any>} scope
    * @param {{trackedOrigin: unknown, maxDepth?: number, maxEstimatedBytes?: number, captureTimeout?: number}} options
    */
   constructor(Y, scope, options) {

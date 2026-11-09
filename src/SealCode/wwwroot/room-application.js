@@ -46,7 +46,8 @@ export function createRoomApplication({
   window,
   document,
   roomId,
-  elements
+  elements,
+  board = null
 }) {
   const {
     connectionStatusEl,
@@ -99,6 +100,7 @@ export function createRoomApplication({
   const connection = connectionLifecycle.connection;
   const roomView = new RevisionedRoomView({
     language: (language) => {
+      if (board) return;
       ensureLanguageOption(language);
       languageSelect.value = language;
       setLanguage(language);
@@ -129,6 +131,7 @@ export function createRoomApplication({
   const yjs = new YjsSession({
     Y,
     MonacoBinding,
+    bindDocument: board ? (doc) => board.bind(doc) : null,
     Awareness,
     BoundedUndoManager,
     CheckpointJournalTracker,
@@ -241,7 +244,7 @@ export function createRoomApplication({
         setEditorReadOnly(true);
         showSyncError(
           'update-size',
-          'An edit is too large or the room limit was reached. Copy your text before reloading; some changes have not synced.'
+          board ? 'The board limit was reached. Download the local board before reloading; some changes have not synced.' : 'An edit is too large or the room limit was reached. Copy your text before reloading; some changes have not synced.'
         );
       } else
         showSyncError(
@@ -291,7 +294,7 @@ export function createRoomApplication({
         } catch (error) {
           if (classifyJournalRecoveryError(error)) {
             showSyncError('checkpoint-size',
-              'The room state cannot be compacted. Copy your text before reloading.');
+              board ? 'The board cannot be compacted. Download the local board before reloading.' : 'The room state cannot be compacted. Copy your text before reloading.');
             return;
           }
           if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
@@ -482,6 +485,7 @@ export function createRoomApplication({
     );
   }
   downloadLocalText?.addEventListener('click', () => {
+    if (board) return board.download();
     if (!model) return;
     const blob = new Blob([model.getValue()], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -591,6 +595,7 @@ export function createRoomApplication({
   }
 
   function canEditDocument() {
+    if (board) return !board.readOnly && !updateSender.blocked && lifecycle.participating;
     return (
       editor &&
       !editor.getOption(monaco.editor.EditorOption.readOnly) &&
@@ -616,12 +621,13 @@ export function createRoomApplication({
   }
 
   function setEditorReadOnly(isReadOnly) {
+    if (board) return board.setReadOnly(isReadOnly || updateSender.blocked);
     if (!editor) return;
     editor.updateOptions({ readOnly: isReadOnly || updateSender.blocked });
   }
 
   function setLanguageReadOnly(isReadOnly) {
-    if (!languageSelect) return;
+    if (board || !languageSelect) return;
     languageSelect.disabled = isReadOnly;
   }
 
@@ -630,7 +636,15 @@ export function createRoomApplication({
     updateSender.enqueue(update);
   }
 
-  function initMonaco() {
+  function initWorkspace() {
+    if (board) {
+      board.undo = performCollaborativeUndo;
+      board.redo = performCollaborativeRedo;
+      board.beforeChange = () => yjs.undoHistory?.stopCapturing();
+      board.onChange = () => presence.markActiveEditor(displayName);
+      editorReadyResolve();
+      return;
+    }
     ({ model, editor } = createMonacoAdapter(monaco, editorHost, {
       language: languageSelect?.value,
       undo: performCollaborativeUndo,
@@ -754,7 +768,7 @@ export function createRoomApplication({
     RoomKilled: (reason) => lifecycle.closeRoom(reason)
   });
 
-  languageSelect.addEventListener('change', async () => {
+  languageSelect?.addEventListener('change', async () => {
     if (!displayName) return;
     if (!languageSelect.value) return;
     const restoreRoomLanguage = () => {
@@ -798,7 +812,7 @@ export function createRoomApplication({
 
   setStatus('disconnected');
   const featuresReady = loadFeatures();
-  const languagesReady = loadLanguages().finally(() => {
+  const languagesReady = (board ? Promise.resolve() : loadLanguages()).finally(() => {
     if (!lifecycle.joined) setLanguageReadOnly(true);
   });
 
@@ -859,8 +873,8 @@ export function createRoomApplication({
   });
 
   if (!displayNameInput.value) displayNameInput.value = generateDisplayName();
-  initMonaco();
-  // The native form must stay inert until its click handler and editor are ready.
+  initWorkspace();
+  // The native form must stay inert until its click handler and workspace are ready.
   joinBtn.querySelector('[data-join-label]').textContent = 'Join room';
   displayNameInput.disabled = false;
   generateNameBtn.disabled = false;

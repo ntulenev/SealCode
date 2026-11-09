@@ -112,6 +112,7 @@
  * @property {typeof import('./bounded-undo-manager.js').BoundedUndoManager} BoundedUndoManager
  * @property {typeof import('./room-sync.js').CheckpointJournalTracker} CheckpointJournalTracker
  * @property {any} [editor] Monaco editor adapter.
+ * @property {(doc: import("yjs").Doc) => any} [bindDocument] Optional workspace binding.
  * @property {() => string} getDisplayName
  * @property {() => boolean} undoEnabled
  * @property {Record<string, number>} cursorPositions
