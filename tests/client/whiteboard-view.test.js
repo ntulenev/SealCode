@@ -36,11 +36,13 @@ class Element {
 }
 class TextArea extends Element {}
 class Input extends Element {}
+class Button extends Element {}
 function fixture() {
   const win = new Element('window');
   win.crypto = { randomUUID }; win.HTMLTextAreaElement = TextArea; win.HTMLInputElement = Input;
+  win.HTMLButtonElement = Button;
   const document = { defaultView: win };
-  document.createElement = (tag) => new (tag === 'textarea' ? TextArea : Element)(tag, document);
+  document.createElement = (tag) => new (tag === 'textarea' ? TextArea : tag === 'button' ? Button : Element)(tag, document);
   document.createElementNS = (_, tag) => new Element(tag, document);
   const host = new Element('section', document);
   const board = createWhiteboardView(host);
@@ -183,5 +185,39 @@ test('double clicks remain stable when SVG children were replaced between pointe
     f.editor().value = 'Gateway';
     f.editor().fire('keydown', { key: 'Enter' });
     assert.equal(f.map.get(shape.id).text, 'Gateway');
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('a second pointer cannot replace or cancel the active drawing gesture', () => {
+  const f = fixture();
+  try {
+    f.tool('rectangle');
+    f.pointer('pointerdown', 100, 150);
+    f.pointer('pointermove', 250, 230);
+    f.pointer('pointerdown', 400, 400, f.svg, { pointerId: 2 });
+    f.pointer('pointermove', 500, 500, f.svg, { pointerId: 2 });
+    f.pointer('pointercancel', 500, 500, f.svg, { pointerId: 2 });
+    f.pointer('lostpointercapture', 500, 500, f.svg, { pointerId: 2 });
+    f.pointer('pointerup', 500, 500, f.svg, { pointerId: 2 });
+    f.pointer('pointerup', 250, 230);
+    assert.equal(f.map.size, 1);
+    const [shape] = f.map.values();
+    assert.deepEqual([shape.x, shape.y, shape.width, shape.height], [100, 150, 150, 80]);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('toolbar Enter and Space retain native activation without editing labels or starting a pan', () => {
+  const f = fixture();
+  try {
+    const shape = f.draw('rectangle');
+    const button = f.button('Zoom in');
+    const preventDefault = () => assert.fail('Native button activation was prevented');
+    f.host.fire('keydown', { key: 'Enter', target: button, preventDefault });
+    f.host.fire('keydown', { key: ' ', code: 'Space', target: button, preventDefault });
+    assert.equal(f.editor(), undefined);
+    f.pointer('pointerdown', 140, 180, f.shapeElement(shape.id));
+    f.pointer('pointermove', 180, 210);
+    f.pointer('pointerup', 180, 210);
+    assert.deepEqual([f.map.get(shape.id).x, f.map.get(shape.id).y], [140, 180]);
   } finally { f.binding.destroy(); f.doc.destroy(); }
 });

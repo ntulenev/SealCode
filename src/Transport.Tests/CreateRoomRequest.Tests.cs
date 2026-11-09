@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using FluentAssertions;
 
 using Transport.Models;
@@ -6,6 +8,19 @@ namespace Transport.Tests;
 
 public sealed class CreateRoomRequestTests
 {
+    [Theory]
+    [InlineData(/*lang=json,strict*/ "{\"name\":\"Room\",\"language\":\"sql\"}", "code")]
+    [InlineData(/*lang=json,strict*/ "{\"name\":\"Room\",\"kind\":\"whiteboard\"}", "whiteboard")]
+    [InlineData(/*lang=json,strict*/ "{\"name\":\"Room\",\"kind\":null}", null)]
+    public void JsonCreationPreservesLegacyDefaultsAndSupportsWhiteboards(string json, string? expectedKind)
+    {
+        var request = JsonSerializer.Deserialize<CreateRoomRequest>(json, JsonSerializerOptions.Web);
+
+        request.Should().NotBeNull();
+        request.Name.Should().Be("Room");
+        request.Kind.Should().Be(expectedKind);
+    }
+
     [Fact(DisplayName = "CtorShouldSetValues")]
     [Trait("Category", "Unit")]
     public void CtorShouldSetValues()

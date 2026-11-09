@@ -22,6 +22,7 @@ public sealed class RoomStateTests
         var state = new RoomState(roomId, name, language, text, version, updatedUtc, createdBy, yjsState);
 
         state.RoomId.Should().Be(roomId);
+        state.Kind.Should().Be(RoomKind.Code);
         state.Name.Should().Be(name);
         state.Language.Should().Be(language);
         state.Text.Should().Be(text);
@@ -323,7 +324,49 @@ public sealed class RoomStateTests
         result.Should().BeFalse();
     }
 
-    private static RoomState CreateState(byte[]? yjsState = null)
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(2)]
+    public void ConstructorRejectsUnknownRoomKinds(int value)
+    {
+        var action = () => CreateState(kind: (RoomKind)value);
+
+        action.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("kind");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WhiteboardLanguageRejectionPreservesStateAndChecksMembershipFirst(bool participant)
+    {
+        var state = CreateState(kind: RoomKind.Whiteboard);
+        var connection = new ConnectionId("connection");
+        if (participant)
+        {
+            state.AddUser(connection, new RoomUser("Alice"), 5);
+        }
+        var before = state.GetRevisions();
+        var version = state.Version;
+        var updated = state.LastUpdatedUtc;
+        var language = state.Language;
+
+        var action = () => state.ChangeLanguage(connection, new RoomLanguage("sql"), DateTimeOffset.UtcNow, new AllowAllLanguageValidator());
+
+        if (participant)
+        {
+            action.Should().Throw<ArgumentException>().WithParameterName("language");
+        }
+        else
+        {
+            action.Should().Throw<UnauthorizedAccessException>();
+        }
+        state.GetRevisions().Should().BeEquivalentTo(before);
+        state.Version.Should().Be(version);
+        state.Language.Should().Be(language);
+        state.LastUpdatedUtc.Should().Be(updated);
+    }
+
+    private static RoomState CreateState(byte[]? yjsState = null, RoomKind kind = RoomKind.Code)
         => new(
             RoomId.New(),
             new RoomName("Room"),
@@ -332,7 +375,7 @@ public sealed class RoomStateTests
             new RoomVersion(1),
             new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             new AdminUser("admin"),
-            yjsState);
+            yjsState, kind: kind);
 
     private sealed class AllowAllLanguageValidator : ILanguageValidator
     {

@@ -44,7 +44,7 @@ test('active and copy states expire while selection follows transitions', (conte
   assert.equal(presence.selectingUsers.has('Alice'), false);
 });
 
-test('remote carets clamp columns, keep stable styles and restore after hiding', (context) => {
+test('remote carets clamp columns, keep stable styles and restore after hiding', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100 });
   const children = [];
   let style;
@@ -109,16 +109,45 @@ test('remote carets clamp columns, keep stable styles and restore after hiding',
   assert.deepEqual([...children[1].classes], ['active', 'copied', 'copying']);
   assert.deepEqual(presence.getLineColFromOffset(-1), { line: 2, col: 1 });
   presence.renderRemoteCarets();
+  await Promise.resolve();
   assert.equal(decorations.length, 1);
   assert.equal(decorations[0].range.col, 5);
   const css = style.textContent;
   presence.hideRemoteCaretsTemporarily();
+  await Promise.resolve();
   assert.equal(decorations.length, 0);
   context.mock.timers.tick(800);
+  await Promise.resolve();
   assert.equal(decorations.length, 1);
   assert.equal(style.textContent, css);
   presence.renderUsers(null);
   assert.equal(children.length, 0);
+});
+
+test('caret rendering waits for the decoration transaction and coalesces reentrant requests', async () => {
+  const presence = view();
+  presence.editor = { getModel: () => ({}) };
+  let calls = 0;
+  let insideTransaction = true;
+  presence.renderRemoteCaretsNow = () => {
+    assert.equal(insideTransaction, false);
+    calls++;
+    presence.renderRemoteCarets();
+  };
+  presence.renderRemoteCarets();
+  presence.renderRemoteCarets();
+  assert.equal(calls, 0);
+  insideTransaction = false;
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  presence.renderRemoteCarets();
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  // A queued render remains harmless when the editor is detached first.
+  delete presence.renderRemoteCaretsNow;
+  presence.renderRemoteCarets();
+  presence.editor = null;
+  await Promise.resolve();
 });
 
 test('retaining users cleans every departed presence collection and preserves self', () => {

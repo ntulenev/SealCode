@@ -36,6 +36,7 @@ export class PresenceView {
     this.copyingUsers = new Map();
     this.caretClassMap = new Map();
     this.caretClassCounter = 0;
+    this.caretRenderQueued = false;
   }
 
   get displayName() {
@@ -131,6 +132,20 @@ export class PresenceView {
   }
 
   renderRemoteCarets() {
+    if (this.caretRenderQueued || !this.editor || !this.model) return;
+    // Monaco may emit cursor/content events inside its decoration transaction.
+    // Coalesce requests after that stack unwinds and ignore reentrant requests.
+    this.caretRenderQueued = true;
+    queueMicrotask(() => {
+      try {
+        this.renderRemoteCaretsNow();
+      } finally {
+        this.caretRenderQueued = false;
+      }
+    });
+  }
+
+  renderRemoteCaretsNow() {
     if (!this.editor || !this.model) return;
     if (this.hideRemoteCarets) {
       this.editor.remoteCaretDecorations = this.editor.deltaDecorations(

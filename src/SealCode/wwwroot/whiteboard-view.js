@@ -132,16 +132,13 @@ export function createWhiteboardView(host) {
   function commit(shape) {
     if (!binding || api.readOnly || !isShape(shape)) return;
     api.beforeChange();
-    binding.scope.doc.transact(() => binding.scope.set(shape.id, normalizeShape(shape)), bindingOrigin());
+    binding.scope.doc.transact(() => binding.scope.set(shape.id, normalizeShape(shape)), undoOrigin);
     api.onChange();
   }
-  // YjsSession tracks the returned binding object as the local undo origin.
-  function bindingOrigin() { return undoOrigin; }
-
   function removeSelected() {
     if (api.readOnly || !binding || !selected) return;
     api.beforeChange();
-    binding.scope.doc.transact(() => binding.scope.delete(selected), bindingOrigin());
+    binding.scope.doc.transact(() => binding.scope.delete(selected), undoOrigin);
     selected = '';
     api.onChange();
     render();
@@ -272,6 +269,8 @@ export function createWhiteboardView(host) {
     input.select();
   }
   svg.addEventListener('pointerdown', (event) => {
+    // Keep one gesture owner: a second touch must not replace its draft.
+    if (gesture) return;
     if (event.button !== 0 && event.button !== 1) return;
     if (textEditor) textEditor.blur();
     const start = local(event);
@@ -336,8 +335,12 @@ export function createWhiteboardView(host) {
     render();
   });
   function cancelGesture() { gesture = null; render(); }
-  svg.addEventListener('pointercancel', cancelGesture);
-  svg.addEventListener('lostpointercapture', cancelGesture);
+  /** @param {PointerEvent} event */
+  function cancelPointer(event) {
+    if (gesture?.pointerId === event.pointerId) cancelGesture();
+  }
+  svg.addEventListener('pointercancel', cancelPointer);
+  svg.addEventListener('lostpointercapture', cancelPointer);
   svg.addEventListener('dblclick', (event) => {
     if (textEditor) return;
     const point = world(local(event));
@@ -359,6 +362,8 @@ export function createWhiteboardView(host) {
   }, { passive: false });
   host.addEventListener('keydown', (event) => {
     if (event.target instanceof win.HTMLTextAreaElement || event.target instanceof win.HTMLInputElement) return;
+    // Preserve native keyboard activation for the focused toolbar button.
+    if (event.target instanceof win.HTMLButtonElement && ['Enter', ' '].includes(event.key)) return;
     const modifier = event.ctrlKey || event.metaKey;
     if (event.code === 'Space') { event.preventDefault(); space = true; }
     if (event.key === 'Escape') { cancelGesture(); selected = ''; setTool('select'); render(); }

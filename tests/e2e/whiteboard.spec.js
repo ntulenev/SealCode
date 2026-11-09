@@ -38,6 +38,12 @@ test('whiteboard creation, collaborative diagrams, selective undo and reconnect 
     await draw(page, 'rectangle', 70, 160);
     await expect(shapes(page)).toHaveCount(1);
     await expect(shapes(bob)).toHaveCount(1);
+    const zoomIn = page.getByRole('button', { name: 'Zoom in', exact: true });
+    await zoomIn.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toHaveText('120%');
+    await expect(page.getByRole('textbox', { name: 'Element label' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Reset view', exact: true }).click();
     await draw(bob, 'database', 440, 160);
     await expect(shapes(page)).toHaveCount(2);
     await page.locator('.board-controls').getByRole('button', { name: 'Undo', exact: true }).click();
@@ -85,6 +91,47 @@ test('whiteboard creation, collaborative diagrams, selective undo and reconnect 
     await bob.close();
     await page.request.delete(`/admin/rooms/${path.split('/').pop()}`, { headers: await csrf(page.request) });
   }
+});
+
+test('whiteboard checkpoints restore the whole diagram for a late participant', async ({ page, context, isolatedHost }) => {
+  const host = await isolatedHost({ Limits: { CheckpointEveryRevisions: 1 } });
+  await page.goto(`${host.baseURL}/admin/login`);
+  await page.locator('input[name="name"]').fill('BrowserAdmin');
+  await page.locator('input[name="password"]').fill('browser-pass');
+  await page.locator('button[type="submit"]').click();
+  await expect(page.locator('#adminGreeting')).toHaveText('Hello, BrowserAdmin!');
+  await page.locator('#whiteboardName').fill('Checkpoint diagram');
+  await page.locator('#createWhiteboard').click();
+  const row = page.locator('.room-row').filter({ hasText: 'Checkpoint diagram' });
+  await expect(row.locator('.badge')).toHaveText('Whiteboard');
+  const path = await row.locator('a').getAttribute('href');
+  const pendingCheckpoints = new Set();
+  let acceptedCheckpoint = false;
+  page.on('websocket', (socket) => {
+    socket.on('framesent', ({ payload }) => {
+      for (const frame of String(payload).split('\x1e').filter(Boolean)) {
+        const message = JSON.parse(frame);
+        if (message.target === 'CheckpointYjs') pendingCheckpoints.add(message.invocationId);
+      }
+    });
+    socket.on('framereceived', ({ payload }) => {
+      for (const frame of String(payload).split('\x1e').filter(Boolean)) {
+        const message = JSON.parse(frame);
+        if (pendingCheckpoints.has(message.invocationId) && message.result === true) acceptedCheckpoint = true;
+      }
+    });
+  });
+  await join(page, `${host.baseURL}${path}`, 'Alice');
+  await expect(page).toHaveTitle('Whiteboard — SealCode');
+  await draw(page, 'database', 100, 160);
+  await expect.poll(() => acceptedCheckpoint).toBe(true);
+  const late = await context.newPage();
+  try {
+    await join(late, `${host.baseURL}${path}`, 'Late participant');
+    await expect(late.locator('[data-shape-type="database"]')).toHaveCount(1);
+    await draw(late, 'queue', 400, 180);
+    await expect(page.locator('[data-shape-id]')).toHaveCount(2);
+  } finally { await late.close(); }
 });
 
 test('mixed room capacity, participant capacity and deletion use the existing limits', async ({ page, context, isolatedHost }) => {
