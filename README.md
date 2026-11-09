@@ -6,13 +6,14 @@ The backend uses ASP.NET Core Minimal API and SignalR on .NET 10; the browser us
 
 For a description of how the backend and real-time collaboration work, see [Backend architecture](docs/backend.md).
 
-[Quick start](#quick-start) · [Screenshots](#screenshots) · [Question library](#private-question-library) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [Question library](#private-question-library) · [Autocomplete](#autocomplete) · [Themes and presence](#themes-and-presence) · [Admin MCP](#admin-mcp)
 
 ![SealCode in dark theme: a JavaScript room with four participants, shared code and live activity indicators](Room.png)
 
 ## Features
 
 - Real-time multi-user editing in Monaco, with syntax highlighting, participant presence and remote cursors.
+- Monaco's built-in autocomplete is always enabled, with language-specific IntelliSense limitations described below.
 - Join through an invitation link or paste it on the home page; participants only need a display name, not an account.
 - Responsive desktop and mobile layouts with the pixel-art seal identity.
 - Dark and light themes across every page and the editor. Dark is the default; the browser remembers the choice and synchronizes it between tabs.
@@ -429,6 +430,7 @@ port (5087) or the production HTTPS check port (5088).
 | `npm run test:client` | Client synchronization, recovery, undo, presence, lifecycle, invitation validation and theme unit tests |
 | `npm run test:e2e` | Browser collaboration, recovery, limits, security and UI tests, including smoke |
 | `npx playwright test tests/e2e/appearance.spec.js` | Theme persistence and tab synchronization, blocked storage, first-render theme, desktop/mobile layouts, keyboard joining, slow editor loading, and preserving text/selection/undo when changing theme |
+| `npx playwright test tests/e2e/autocomplete.spec.js` | Always-enabled suggestions, C# word completion and IntelliSense limitations, native Enter/Tab completion, concurrent edits in the same prefix in both delivery orders, model/rendered-text convergence, undo/redo and reconnect; records the overlapping-deletion undo limitation described below |
 | `npm test` | Client unit tests and the browser suite |
 | `npx playwright test tests/e2e/snippets.spec.js` | Private library popup/tab/room, search and descriptions, clipboard, ordinary-admin permissions, guests and logout |
 | `npm run typecheck` | Static JavaScript type checking |
@@ -659,6 +661,39 @@ are rejected before Base64 decoding, with the locked check remaining authoritati
   uncommitted source changes; publish committed code for an identifiable release.
 
 
+## Autocomplete
+
+Rooms use Monaco's built-in autocomplete, which is always enabled. Accept a selected
+suggestion with **Enter** or **Tab**, or open suggestions manually with **Ctrl+Space**.
+Press **Escape** to dismiss the current suggestions. JavaScript and TypeScript have Monaco's
+built-in IntelliSense: typing `obj.` offers members when Monaco can infer the
+object's type. For C# and SQL, autocomplete only reuses words already present in
+the current room. For example, after declaring `CustomerService`, typing
+`CustomerS` offers `CustomerService`. In a fresh C# document, `pub` does not offer
+`public`, and `Console.` does not list .NET methods. Monaco's built-in C# support
+provides syntax highlighting and document-word suggestions, without a C# semantic
+completion provider. Full C# IntelliSense would require an additional language
+service, which is outside this built-in-only integration.
+
+HTML and CSS/SCSS/Less have built-in tag, attribute, property and value
+suggestions. JSON property/value completion depends on an available JSON Schema.
+Rooms contain a single document: there is no project workspace, automatic NuGet
+or npm dependency loading, or additional language server. JavaScript/TypeScript
+suggestions are limited to the code and type definitions available to Monaco.
+
+Accepted completions synchronize through Yjs like other Monaco edits. Concurrent
+inserts, replacements and deletions in the same prefix converge to the same model
+and rendered text for both participants. Concurrent insertions may appear in
+either order according to Yjs's ordering rules.
+
+**Undo limitation for overlapping deletions:** when a completion and another
+participant's edit both replace or delete the same prefix, Yjs undo can restore
+the original prefix even though the other participant also deleted it. Undoing
+both participants' replacements can restore that prefix twice. The clients remain
+synchronized, but undo does not necessarily return the document to its original
+text in this case. The browser tests explicitly cover this behavior, including
+redo and reconnect.
+
 ## Themes and presence
 
 ### Appearance
@@ -861,7 +896,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.14.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.15.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
