@@ -56,5 +56,3 @@ public interface IRoomManager
     /// <returns>The deletion result.</returns>
     Task<RoomDeletionResult> DeleteRoomAsync(RoomId roomId, AdminUser adminUser, CancellationToken cancellationToken);
 }
-
-
