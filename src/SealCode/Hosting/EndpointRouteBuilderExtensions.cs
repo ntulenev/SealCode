@@ -43,12 +43,12 @@ internal static class EndpointRouteBuilderExtensions
 
         _ = app.MapGet("/room/{roomId:ShortGuid}", (RoomId roomId, IRoomRegistry registry, IWebHostEnvironment env, HttpContext context) =>
         {
-            if (!registry.TryGetRoom(roomId, out _))
+            if (!registry.TryGetRoom(roomId, out var room))
             {
                 return Results.NotFound("Room not found");
             }
 
-            var path = Path.Combine(env.WebRootPath, "room.html");
+            var path = Path.Combine(env.WebRootPath, room.Kind == RoomKind.Whiteboard ? "whiteboard.html" : "room.html");
             StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
         });

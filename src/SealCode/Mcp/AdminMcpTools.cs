@@ -42,7 +42,7 @@ internal sealed class AdminMcpTools
         return [.. rooms.GetRoomsSnapshot(admin).Select(room => new McpRoomSummary(
             new RoomSummary(room.RoomId.Value, room.Name.Value,
                 room.Language.Value, room.UsersCount, room.LastUpdatedUtc,
-                room.CreatedBy.DisplayName, room.CanDelete),
+                room.CreatedBy.DisplayName, room.CanDelete) { Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code" },
             InvitationPath(room.RoomId), InvitationUrl(accessor, room.RoomId)))];
     }
 

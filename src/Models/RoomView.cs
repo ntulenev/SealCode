@@ -10,7 +10,8 @@ public sealed record RoomView(
     int UsersCount,
     DateTimeOffset LastUpdatedUtc,
     AdminUser CreatedBy,
-    bool CanDelete)
+    bool CanDelete,
+    RoomKind Kind = RoomKind.Code)
 {
     /// <summary>
     /// Creates a room view for the specified room and admin user.
@@ -30,6 +31,7 @@ public sealed record RoomView(
             room.ConnectedUserCount,
             room.LastUpdatedUtc,
             room.CreatedBy,
-            room.CanDelete(adminUser));
+            room.CanDelete(adminUser),
+            room.Kind);
     }
 }

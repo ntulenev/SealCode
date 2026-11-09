@@ -68,8 +68,9 @@ public sealed class RoomManager : IRoomManager
     public RoomState CreateRoom(
         RoomName name,
         RoomLanguage language,
-        AdminUser adminUser)
-        => _registry.CreateRoom(name, language, adminUser);
+        AdminUser adminUser,
+        RoomKind kind = RoomKind.Code)
+        => _registry.CreateRoom(name, language, adminUser, kind);
 
     /// <inheritdoc />
     public async Task<RoomDeletionResult> DeleteRoomAsync(

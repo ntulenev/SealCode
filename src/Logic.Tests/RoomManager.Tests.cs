@@ -143,11 +143,11 @@ public sealed class RoomManagerTests
         var name = new RoomName("Room");
         var language = new RoomLanguage("csharp");
         var created = CreateRoomState(RoomId.New(), "Room", "Admin");
-        registry.Setup(r => r.CreateRoom(name, language, admin))
+        registry.Setup(r => r.CreateRoom(name, language, admin, RoomKind.Code))
             .Returns(created);
         var manager = CreateManager(registry.Object, CreateSettings(3));
 
-        var result = manager.CreateRoom(name, language, admin);
+        var result = manager.CreateRoom(name, language, admin, RoomKind.Code);
 
         result.Should().BeSameAs(created);
         registry.VerifyAll();

@@ -35,6 +35,33 @@ public sealed class RoomRegistryTests
         registry.GetRoomsSnapshot().Should().HaveCount(2);
     }
 
+    [Fact]
+    public void WhiteboardsAndCodeRoomsShareCapacityAndMembershipRules()
+    {
+        var registry = new RoomRegistry(Mock.Of<ILogger<RoomRegistry>>(), Options.Create(new ApplicationConfiguration
+        {
+            AdminUsers = [],
+            Languages = [],
+            Limits = new RoomLimits { MaxRooms = 2 }
+        }));
+        var admin = new AdminUser("admin");
+        var code = registry.CreateRoom(new("Code"), new("csharp"), admin);
+        var board = registry.CreateRoom(new("Design"), new("plaintext"), admin, RoomKind.Whiteboard);
+        code.Kind.Should().Be(RoomKind.Code);
+        board.Kind.Should().Be(RoomKind.Whiteboard);
+        RoomView.From(board, admin).Kind.Should().Be(RoomKind.Whiteboard);
+        var create = () => registry.CreateRoom(new("Overflow"), new("plaintext"), admin, RoomKind.Whiteboard);
+        create.Should().Throw<RoomLimitException>();
+        board.AddUser(new("a"), new("Alice"), 1);
+        var join = () => board.AddUser(new("b"), new("Bob"), 1);
+        join.Should().Throw<AddRoomUserException>();
+        board.Leave(new("a"));
+        board.AddUser(new("b"), new("Bob"), 1);
+        board.ConnectedUserCount.Should().Be(1);
+        board.CanDelete(admin).Should().BeTrue();
+        board.CanDelete(new("other")).Should().BeFalse();
+    }
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1873", Justification = "The expression verifies a recorded log invocation.")]
     [Fact]
     public async Task DeletionLogsTheSuppliedReason()

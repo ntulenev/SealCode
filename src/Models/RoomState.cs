@@ -21,6 +21,7 @@ public sealed class RoomState
     /// <param name="yjsState">The serialized Yjs document state (full update).</param>
     /// <param name="limits">Resource budgets.</param>
     /// <param name="timeProvider">The clock used for activity timestamps.</param>
+    /// <param name="kind">The immutable workspace kind.</param>
     public RoomState(
         RoomId roomId,
         RoomName name,
@@ -31,11 +32,17 @@ public sealed class RoomState
         AdminUser createdBy,
         byte[]? yjsState = null,
         RoomLimits? limits = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        RoomKind kind = RoomKind.Code)
     {
         Limits = limits ?? new RoomLimits();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _lastActivityUtc = _timeProvider.GetUtcNow();
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind));
+        }
+        Kind = kind;
         RoomId = roomId;
         Name = name;
         Language = language;
@@ -50,6 +57,9 @@ public sealed class RoomState
     /// Gets the room identifier.
     /// </summary>
     public RoomId RoomId { get; }
+
+    /// <summary>Gets the immutable workspace kind.</summary>
+    public RoomKind Kind { get; }
 
     /// <summary>
     /// Gets the room name.
@@ -367,6 +377,10 @@ public sealed class RoomState
         lock (_versionGuard)
         {
             RequireParticipant(connection);
+            if (Kind == RoomKind.Whiteboard)
+            {
+                throw new ArgumentException("Whiteboard rooms do not have a code language", nameof(language));
+            }
             ArgumentNullException.ThrowIfNull(validator);
             if (!validator.IsValid(language))
             {

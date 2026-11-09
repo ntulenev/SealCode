@@ -44,7 +44,8 @@ public sealed class RoomRegistry : IRoomRegistry
     public RoomState CreateRoom(
         RoomName name,
         RoomLanguage language,
-        AdminUser createdBy)
+        AdminUser createdBy,
+        RoomKind kind = RoomKind.Code)
     {
         lock (_capacityGuard)
         {
@@ -60,7 +61,7 @@ public sealed class RoomRegistry : IRoomRegistry
                 new RoomText(string.Empty),
                 new RoomVersion(1),
                 _timeProvider.GetUtcNow(),
-                createdBy, limits: _limits, timeProvider: _timeProvider);
+                createdBy, limits: _limits, timeProvider: _timeProvider, kind: kind);
 
             _ = ImmutableInterlocked.TryAdd(ref _rooms, room.RoomId, room);
 

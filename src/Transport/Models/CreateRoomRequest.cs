@@ -10,9 +10,10 @@ public sealed class CreateRoomRequest
     /// </summary>
     /// <param name="name">The room name.</param>
     /// <param name="language">The optional language.</param>
+    /// <param name="kind">The optional workspace kind; defaults to code.</param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is empty or whitespace.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is null.</exception>
-    public CreateRoomRequest(string name, string? language)
+    public CreateRoomRequest(string name, string? language, string? kind = "code")
     {
         ArgumentNullException.ThrowIfNull(name);
         if (string.IsNullOrWhiteSpace(name))
@@ -22,6 +23,7 @@ public sealed class CreateRoomRequest
 
         Name = name;
         Language = language;
+        Kind = kind;
     }
 
     /// <summary>
@@ -33,4 +35,7 @@ public sealed class CreateRoomRequest
     /// Gets the optional room language.
     /// </summary>
     public string? Language { get; }
+
+    /// <summary>Gets the requested workspace kind (code or whiteboard).</summary>
+    public string? Kind { get; }
 }

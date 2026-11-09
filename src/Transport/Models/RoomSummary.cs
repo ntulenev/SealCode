@@ -61,4 +61,7 @@ public sealed class RoomSummary
     /// Gets whether the current admin can delete this room.
     /// </summary>
     public bool CanDelete { get; }
+
+    /// <summary>Gets the workspace kind.</summary>
+    public string Kind { get; init; } = "code";
 }

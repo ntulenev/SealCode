@@ -13,8 +13,9 @@ public interface IRoomRegistry
     /// <param name="name">The room name.</param>
     /// <param name="language">The room language.</param>
     /// <param name="createdBy">The admin that created the room.</param>
+    /// <param name="kind">The workspace kind.</param>
     /// <returns>The created room state.</returns>
-    RoomState CreateRoom(RoomName name, RoomLanguage language, AdminUser createdBy);
+    RoomState CreateRoom(RoomName name, RoomLanguage language, AdminUser createdBy, RoomKind kind = RoomKind.Code);
 
     /// <summary>
     /// Tries to get a room by its identifier.

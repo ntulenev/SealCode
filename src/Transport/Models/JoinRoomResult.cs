@@ -32,6 +32,9 @@ public sealed record JoinRoomResult(
     /// </summary>
     public long MetadataRevision { get; init; }
 
+    /// <summary>Gets the workspace kind.</summary>
+    public string Kind { get; init; } = "code";
+
     /// <summary>
     /// Gets the independent membership revision.
     /// </summary>
@@ -62,6 +65,7 @@ public sealed record JoinRoomResult(
                 update.Revision.Value,
                 Convert.ToBase64String(update.Payload)))])
         {
+            Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code",
             MetadataRevision = syncState.MetadataRevision,
             PresenceRevision = syncState.PresenceRevision
         };

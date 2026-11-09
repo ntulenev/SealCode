@@ -66,6 +66,32 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         joined.Users.Should().ContainSingle().Which.Should().Be("Bob");
     }
 
+    [Fact]
+    public async Task WhiteboardCreationListingAndJoinExposeTheWorkspaceKind()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        using var invalid = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Invalid", Kind = "unknown" });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Architecture", Kind = "whiteboard" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        created.GetProperty("Kind").GetString().Should().Be("whiteboard");
+        var id = created.GetProperty("RoomId").GetString()!;
+        var rooms = await client.GetFromJsonAsync<JsonElement[]>("/admin/rooms");
+        rooms.Should().ContainSingle().Which.GetProperty("Kind").GetString().Should().Be("whiteboard");
+        await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        var joined = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", id, "Alice");
+        joined.Kind.Should().Be("whiteboard");
+        await FluentActions.Awaiting(() => connection.InvokeAsync("SetLanguage", id, "sql"))
+            .Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>();
+        await connection.InvokeAsync("UpdateYjs", id, "AQ==");
+        (await connection.InvokeAsync<long>("GetDocumentRevision", id)).Should().Be(1);
+        using var deleted = await SecureDeleteAsync(client, $"/admin/rooms/{id}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
