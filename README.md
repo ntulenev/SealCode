@@ -996,13 +996,14 @@ Browser tests use an isolated temporary content root with disposable settings, n
 Coverage reports are separate:
 
 - **Server:** ReportGenerator merges source lines and branches across projects, rather than averaging project percentages.
-- **Client:** `c8 --all` covers root `wwwroot/*.js` modules, including the untested
+- **Client:** `c8 --all` covers root `wwwroot/*.js` modules, including
   `room-application.js`, `room-connection.js` and `monaco-adapter.js`. Tests, typedef-only
   `client-types.js`, `*-main.js`, `room.js` and `version.js` are excluded.
   The enforced floors are 68% lines, 87% branches and 90% functions; LCOV is written
   to `coverage/client/lcov.info`. c8 is the only coverage reporter.
-  The goal is to raise line coverage to at least 80% by covering the browser composition
-  and Monaco adapters.
+  The 80% overall line-coverage goal is now met by tests for room composition,
+  connection startup and Monaco adapters. These tests use real Yjs sessions with
+  deterministic DOM, editor and transport adapters; browser tests verify rendering.
 
 The [whiteboard verification report](docs/whiteboard-verification.md) records
 the feature's regression scenarios, measured coverage and remaining coverage gaps.

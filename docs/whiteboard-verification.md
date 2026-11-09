@@ -18,7 +18,7 @@ not relaxed. Local application settings were preserved.
 | Validation | Result |
 | --- | --- |
 | C# solution with XPlat Code Coverage | 645 passed, 9 skipped |
-| Client unit tests with c8 | 157 passed |
+| Client unit tests with c8 | 168 passed |
 | Affected Chromium regression suites | 18 passed |
 | Full screenshot generation through the real UI | Passed without browser runtime errors or page overflow |
 
@@ -35,23 +35,39 @@ RoomSummary and the public endpoint-routing module have **100% line coverage**.
 
 | Client scope | Lines | Branches | Functions |
 | --- | --- | --- | --- |
-| All modules counted by the existing c8 configuration | 74.44% | 91.46% | 93.92% |
+| All modules counted by the existing c8 configuration | 92.72% | 90.91% | 90.84% |
+| Room application composition | 81.74% | 81.19% | 74.71% |
+| Room connection | 100% | 100% | 80% |
+| Monaco adapter | 100% | 100% | 100% |
 | Whiteboard model | 100% | 100% | 100% |
 | Whiteboard view/controller | 100% | 98.22% | 93.1% |
 | Required CI floors | 68% | 87% | 90% |
 
-The current CI floors are satisfied. Overall client line coverage remains below
-the documented **80% improvement goal**. In particular, room-application,
-room-connection, monaco-adapter and the whiteboard entry point are exercised by
-browser scenarios, but have no Node unit coverage. Browser execution is not
-silently counted as coverage in the c8 figures above.
+The current CI floors and the **80% overall line-coverage goal** are satisfied.
+The JS coverage follow-up added 11 tests without changing production code,
+coverage exclusions or thresholds. It reran the complete client suite and
+`npm run typecheck`; the C# and Chromium results above are from the preceding
+review of the same production code.
+
+The composition tests execute real Yjs sessions, undo history and room
+controllers, with deterministic DOM, editor and network adapters at their
+boundaries. They verify join/retry controls, local delivery, reconnects, stale
+presence/metadata rejection, remote edits, language rollback, copy/selection
+rules, whiteboard undo/redo and snapshot-size warnings. Dedicated adapter tests
+cover pending connection starts, rejection/retry, connectivity-aware reconnect
+policy, collaborative undo delegation and theme subscription cleanup.
+
+Remaining gaps include the whiteboard entry point (browser-only coverage) and
+some room composition recovery/error paths. Actual Monaco rendering is covered
+by browser scenarios. Browser execution is not silently counted as coverage in
+the c8 figures above.
 
 Local artifacts from this verification:
 
 - `output/whiteboard-review/merged/index.html` and `Summary.txt`: merged server coverage.
 - `coverage/client/lcov.info`: client coverage under the existing npm command.
 - `output/whiteboard-review-server-final.log`: final successful C# solution run.
-- `output/whiteboard-review-client.log`: final successful client test run.
+- `output/js-80-coverage-final.log`: successful 168-test client coverage follow-up.
 - `output/whiteboard-review-screenshots-final.log`: screenshot build and UI checks.
 
 ## Regression cases and corrections
