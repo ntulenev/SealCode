@@ -4,6 +4,10 @@ Verified on 2026-11-09 against the repository's existing .NET 10, JavaScript,
 formatting and coverage configuration. Coverage thresholds and exclusions were
 not relaxed. Local application settings were preserved.
 
+The subsequent [full regression run](full-regression-2026-11-09.md) exercised all
+C#, JS, configured Chromium E2E and production HTTPS tests without skips,
+including PostgreSQL-backed cases and ordinary code-room regression scenarios.
+
 ## Standards and validation
 
 - `dotnet format src/SealCode.slnx --verify-no-changes --no-restore` passed for the
