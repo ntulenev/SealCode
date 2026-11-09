@@ -74,14 +74,14 @@ cursors and typing, selection and copy indicators.
 
 Whiteboard rooms replace the code editor with an infinite diagram canvas and a
 drawing toolbar. The room header, participants and connection status stay
-familiar. Labels, arrows, database and queue symbols cover the essentials for
-system design interviews; the bottom controls provide undo/redo, deletion, zoom,
+familiar. Labels, one-way and bidirectional arrows, database and queue symbols
+cover the essentials for system design interviews; the bottom controls provide undo/redo, deletion, zoom,
 Fit and a local JSON download. See [Whiteboard rooms](#whiteboard-rooms) for
 shortcuts, collaboration behavior and current limitations.
 
 | Whiteboard (dark) | Whiteboard (light) |
 | --- | --- |
-| ![Shared order-processing diagram with client, API, database, queue and workers in dark theme](docs/images/whiteboard-dark.png) | ![The same labeled system-design diagram in light theme](docs/images/whiteboard-light.png) |
+| ![Shared order-processing diagram with bidirectional arrows between client, API and database in dark theme](docs/images/whiteboard-dark.png) | ![The same labeled system-design diagram with bidirectional arrows in light theme](docs/images/whiteboard-light.png) |
 
 <details>
 <summary>Mobile home and room management</summary>
@@ -97,7 +97,7 @@ shortcuts, collaboration behavior and current limitations.
 
 | Code room | Whiteboard |
 | --- | --- |
-| <img src="docs/images/room-mobile.png" alt="Mobile code room with language selector, participant presence and shared editor" width="280" /> | <img src="docs/images/whiteboard-mobile.png" alt="Mobile whiteboard with a fitted system-design diagram and drawing controls" width="280" /> |
+| <img src="docs/images/room-mobile.png" alt="Mobile code room with language selector, participant presence and shared editor" width="280" /> | <img src="docs/images/whiteboard-mobile.png" alt="Mobile whiteboard with bidirectional arrows in the fitted system-design diagram and drawing controls" width="280" /> |
 
 </details>
 
