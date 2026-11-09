@@ -23,6 +23,7 @@ test('product homepage presents all four workflows in both themes and narrow lay
           return img.naturalWidth > 0;
         })).toBe(true);
         if (id === 'code' || id === 'whiteboard') await expect(image).toHaveAttribute('src', new RegExp(`-${theme}\\.png`));
+        if (id === 'snippets') await expect(image).toHaveAttribute('src', new RegExp(theme === 'light' ? 'snippets-tab-light\\.png' : 'snippets-tab\\.png'));
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`home-${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
@@ -54,6 +55,11 @@ test('screenshots enlarge with the keyboard, preserve focus and support native l
   // Modified clicks retain browser behavior rather than trapping the user in a modal.
   await preview.dispatchEvent('click', { ctrlKey: true });
   await expect(dialog).toBeHidden();
+  await page.locator('[data-theme-toggle]').click();
+  const lightSnippets = page.locator('#snippets a[data-screenshot]:visible');
+  await lightSnippets.click();
+  await expect(dialog.locator('img')).toHaveAttribute('src', /snippets-tab-light\.png/);
+  await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 390, height: 844 });
   await preview.click();
   await expect(dialog).toBeVisible();
