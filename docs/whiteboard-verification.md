@@ -20,6 +20,7 @@ not relaxed. Local application settings were preserved.
 | C# solution with XPlat Code Coverage | 645 passed, 9 skipped |
 | Client unit tests with c8 | 168 passed |
 | Affected Chromium regression suites | 18 passed |
+| Whiteboard collaboration follow-up (8 scenarios, 2 repetitions) | 16 passed |
 | Full screenshot generation through the real UI | Passed without browser runtime errors or page overflow |
 
 The Chromium suites cover appearance, admin rooms, local assets/CSP,
@@ -96,3 +97,46 @@ Local artifacts from this verification:
 Same-element CRDT updates still resolve as whole-element map writes; this review
 does not claim independent merging of every property or collaborative Y.Text
 labels. Room state remains in memory, as documented in README.
+
+## Additional whiteboard collaboration E2E scenarios
+
+The [collaboration suite](../tests/e2e/whiteboard-collaboration.spec.js) adds five
+browser scenarios using independent guest browser contexts and the real test
+server. All diagram changes are made through drawing, label, mouse and keyboard
+controls. Assertions compare element IDs, labels and complete SVG geometry;
+local viewport and selection state are excluded.
+
+- **Concurrent creation and separate-element edits:** outgoing updates from both
+  clients are held until both have committed locally against the same baseline.
+  Each initially sees only its own new figure or label change. Releasing the
+  messages must preserve both edits in both browsers and for a late participant.
+- **Concurrent edits of one element:** two different local labels exist before
+  either update is delivered. Both clients and a late participant must converge
+  to one complete proposal with unchanged geometry. The test does not assume
+  which random Yjs client ID wins or claim per-property conflict merging.
+- **Move, resize and delete:** exact position and dimension deltas are checked
+  across clients; labels and an unrelated figure must remain intact. A late
+  participant receives the resized geometry. Deletion propagates to all three
+  participants and remains effective after reloading.
+- **Disconnect before server acceptance:** the first in-flight UpdateYjs is
+  intercepted before forwarding, then both ends of its WebSocket are closed.
+- **Disconnect after acceptance, before acknowledgement:** the original update
+  reaches the real server, but its broadcast back to the sender and invocation
+  completion are withheld. Server acceptance is confirmed through the broadcast
+  and the other participant's rendered scene before cutting the connection.
+
+In both disconnect cases the sender has not acknowledged a document revision at
+the cut. Rejoin is held while the other participant creates another figure.
+After automatic reconnect, the pending update must be retried, both figures must
+converge without duplicates, and a late participant must receive the same scene.
+Undo/redo must still affect only the sender's figure and preserve the remote one.
+
+Repeat the existing three whiteboard tests and these five scenarios with:
+
+```bash
+npx playwright test tests/e2e/whiteboard.spec.js tests/e2e/whiteboard-collaboration.spec.js --repeat-each=2
+```
+
+The local execution log is `output/whiteboard-e2e-followup.log`. The fixture also
+fails on browser runtime errors and deletes its test room during teardown.
+All eight whiteboard scenarios passed both repetitions (16 successful executions).
