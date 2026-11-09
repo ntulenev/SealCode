@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="A small, shared workspace for writing code together." />
-  <title>SealCode — code together</title>
+  <meta name="description" content="Write code together, sketch system designs and run better technical interviews. One shared space, just a room link." />
+  <title>SealCode — code, sketch, think together</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.16.0" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=1.16.0" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=1.16.0" />
   <script src="/theme.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/site.css?v=1.16.0" />
   <link rel="stylesheet" href="/seal-mascot.css?v=1.16.0" />
+  <link rel="stylesheet" href="/home.css?v=1.17.0" />
   <script src="/version.js?v=1.16.0" defer></script>
 </head>
 <body class="home-page">
@@ -18,16 +19,17 @@
   <main class="home-main">
     <section class="hero" aria-labelledby="home-title">
       <div class="hero-content">
-        <p class="eyebrow">A shared coding space</p>
+        <p class="eyebrow">A shared space for code &amp; ideas</p>
         <h1 id="home-title" class="hero-title">Seal<span class="brand-code">Code</span><span class="pixel-period" aria-hidden="true">.</span></h1>
-        <p class="hero-description">Your code. On the same page.</p>
-        <p class="hero-detail">Open a room, share a link, and work things out together.</p>
+        <p class="hero-description">Code together. Think out loud.</p>
+        <p class="hero-detail">For pairing, technical interviews, and the ideas that need a diagram. Open a room. Share a link. Work it out together.</p>
         <form id="joinRoomForm" class="join-link-form">
           <label for="roomLink">Have an invitation?</label>
           <div class="input-action"><input id="roomLink" type="text" placeholder="Paste your room link" autocomplete="off" required aria-describedby="roomLinkError" /><button id="goBtn" type="submit">Join room <span aria-hidden="true">→</span></button></div>
           <p id="roomLinkError" class="error hidden" role="alert"></p>
         </form>
         <p class="hero-hint">Need a room? <a href="/admin/login">Open room management <span aria-hidden="true">↗</span></a></p>
+        <a class="explore-link" href="#explore">See what you can do <span aria-hidden="true">↓</span></a>
       </div>
       <div class="hero-art">
         <svg class="seal-mascot" viewBox="0 0 1355 1161" width="1355" height="1161" role="img" aria-label="A pixel-art seal typing on a laptop and occasionally looking up at you" focusable="false" xmlns="http://www.w3.org/2000/svg">
@@ -75,8 +77,121 @@
         </svg></div>
     </section>
     <div class="home-details"><span>01 <strong>Live editing</strong></span><span>02 <strong>Shared cursors</strong></span><span>03 <strong>Just send a link</strong></span></div>
+    <section id="explore" class="product-story" aria-labelledby="explore-title">
+      <div class="story-intro">
+        <div><p class="eyebrow">Less setup. More working together.</p><h2 id="explore-title">Code. Sketch.<br /><span>Figure it out.</span></h2></div>
+        <p>A focused place for the conversation.<br />From the first line of code to the big picture.</p>
+      </div>
+      <nav class="feature-index" aria-label="Explore SealCode">
+        <a href="#code">01 <span>Collaborative code</span></a>
+        <a href="#whiteboard">02 <span>Whiteboard</span></a>
+        <a href="#rooms">03 <span>Room management</span></a>
+        <a href="#snippets">04 <span>Question library</span></a>
+      </nav>
+      <section id="code" class="product-feature" aria-labelledby="code-title">
+        <div class="feature-copy">
+          <p class="eyebrow">01 / Collaborative code</p>
+          <h3 id="code-title">The same code.<br />Everyone in the loop.</h3>
+          <p class="feature-description">Pair on a tricky bug or work through an interview problem. Edit together and see where everyone is thinking.</p>
+          <ul class="feature-points">
+            <li>Live editing with shared cursors</li>
+            <li>Typing, selection, and copy indicators</li>
+            <li>Undo your changes while keeping theirs</li>
+          </ul>
+        </div>
+        <figure class="feature-visual">
+            <a class="product-preview preview-dark" href="/product/room-dark.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: code">
+              <img src="/product/room-dark.png?v=1.17.0" width="1440" height="905" alt="Collaborative JavaScript editor with four participants and live activity indicators" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+            <a class="product-preview preview-light" href="/product/room-light.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: code">
+              <img src="/product/room-light.png?v=1.17.0" width="1440" height="905" alt="Collaborative JavaScript editor with four participants and live activity indicators" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+          <figcaption>JavaScript, C#, SQL, and more. One shared document.</figcaption>
+        </figure>
+      </section>
+      <section id="whiteboard" class="product-feature feature-reverse" aria-labelledby="whiteboard-title">
+        <div class="feature-copy">
+          <p class="eyebrow">02 / Shared whiteboard</p>
+          <h3 id="whiteboard-title">Some ideas<br />need a bigger canvas.</h3>
+          <p class="feature-description">Go from a question to a system design. Sketch the services, connect the moving parts, and refine the diagram together.</p>
+          <ul class="feature-points">
+            <li>Infinite canvas with pan and zoom</li>
+            <li>Shapes, labels, databases, and queues</li>
+            <li>One-way and bidirectional arrows</li>
+          </ul>
+        </div>
+        <figure class="feature-visual">
+            <a class="product-preview preview-dark" href="/product/whiteboard-dark.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: whiteboard">
+              <img src="/product/whiteboard-dark.png?v=1.17.0" width="1440" height="900" alt="Shared order pipeline with bidirectional arrows, an API, a database, a queue and workers" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+            <a class="product-preview preview-light" href="/product/whiteboard-light.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: whiteboard">
+              <img src="/product/whiteboard-light.png?v=1.17.0" width="1440" height="900" alt="Shared order pipeline with bidirectional arrows, an API, a database, a queue and workers" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+          <figcaption>A system design conversation, on the same canvas.</figcaption>
+        </figure>
+      </section>
+      <section id="rooms" class="product-feature" aria-labelledby="rooms-title">
+        <div class="feature-copy">
+          <p class="eyebrow">03 / Room management</p>
+          <h3 id="rooms-title">A room for<br />every conversation.</h3>
+          <p class="feature-description">Create a code room or a whiteboard, copy the invitation, and bring people in. Keep the sessions you run in one place.</p>
+          <ul class="feature-points">
+            <li>Separate code and whiteboard rooms</li>
+            <li>Guests join with a name and a link</li>
+            <li>See participants and manage your rooms</li>
+          </ul>
+        </div>
+        <figure class="feature-visual">
+            <a class="product-preview preview-dark" href="/product/admin-rooms.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: rooms">
+              <img src="/product/admin-rooms.png?v=1.17.0" width="1440" height="1360" alt="Admin room management with separate code and whiteboard creation forms and a mixed room list" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+            <a class="product-preview preview-light" href="/product/admin-rooms-light.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: rooms">
+              <img src="/product/admin-rooms-light.png?v=1.17.0" width="1440" height="1360" alt="Admin room management with separate code and whiteboard creation forms and a mixed room list" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+          <figcaption>Create it. Share it. You’re ready.</figcaption>
+        </figure>
+      </section>
+      <section id="snippets" class="product-feature feature-reverse" aria-labelledby="snippets-title">
+        <div class="feature-copy">
+          <p class="eyebrow">04 / Interviewer’s companion</p>
+          <h3 id="snippets-title">Less searching.<br />Better questions.</h3>
+          <p class="feature-description">Keep your prompts and code examples close. Browse the question library, copy a snippet, and stay focused on the person in front of you.</p>
+          <ul class="feature-points">
+            <li>Search questions by topic or number</li>
+            <li>Syntax-highlighted examples, ready to copy</li>
+            <li>Private to admins, when enabled</li>
+          </ul>
+        </div>
+        <figure class="feature-visual">
+            <a class="product-preview" href="/product/snippets-tab.png?v=1.17.0" data-screenshot aria-label="Enlarge screenshot: snippets">
+              <img src="/product/snippets-tab.png?v=1.17.0" width="1440" height="1000" alt="Private question library showing SQL interview prompts and two syntax-highlighted code examples" loading="lazy" decoding="async" />
+              <span class="preview-action">View full screenshot <span aria-hidden="true">↗</span></span>
+            </a>
+          <figcaption>An optional question library for the person guiding the session.</figcaption>
+        </figure>
+      </section>
+      <section class="home-cta" aria-labelledby="start-title">
+        <p class="eyebrow">Your next good idea starts here</p>
+        <h2 id="start-title">Bring a question.<br />Work it out together.</h2>
+        <p>Create a room, invite your people, and get into it.</p>
+        <a class="button-link" href="/admin/login">Create a room <span aria-hidden="true">↗</span></a>
+        <p class="cta-note">Admin sign-in to create. Just a name and a link to join.</p>
+        <a class="cta-secondary" href="#roomLink">Already have an invitation? Join your room <span aria-hidden="true">↑</span></a>
+      </section>
+    </section>
   </main>
   <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a><a href="/about.html">Privacy Policy</a><span class="app-version" data-app-version>SealCode</span></footer>
+  <dialog class="screenshot-dialog" aria-label="Product screenshot">
+    <form method="dialog"><button class="ghost" aria-label="Close screenshot">Close <span aria-hidden="true">×</span></button></form>
+    <img alt="" />
+  </dialog>
   <script src="/home.js?v=1.16.0" defer></script>
+  <script src="/home-showcase.js?v=1.17.0" defer></script>
 </body>
 </html>

@@ -36,6 +36,9 @@ These screenshots show the running application with disposable demo accounts, sa
 ### Home page and themes
 
 Paste a link to join a room, open room management, or change the theme from the header.
+Below the introduction, explore collaborative code, whiteboards, room management
+and the optional question library through real product screenshots. Select a
+screenshot to enlarge it; Escape closes the preview and returns focus to the link.
 
 | Dark theme (default) | Light theme |
 | --- | --- |
