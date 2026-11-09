@@ -41,22 +41,47 @@ Paste a link to join a room, open room management, or change the theme from the 
 | --- | --- |
 | ![Home page in dark theme with the pixel seal and invitation form](docs/images/home-dark.png) | ![Home page in light theme with the same invitation form](docs/images/home-light.png) |
 
-### Room management and joining
+### Room management
 
-The admin view shows participant counts, room languages, owners and update times. Guests enter a display name before opening the shared editor.
+The admin panel has separate **Create room** and **Create whiteboard** forms.
+Code rooms require a language; whiteboards only require a name. Both share the
+same room and participant limits. The room list shows the language or Whiteboard
+workspace, participant count, owner, update time, invitation link and deletion
+action. **Only my rooms** filters the list to the signed-in admin's rooms.
 
-| Admin room management | Join a shared room |
+| Admin room management (dark) | Admin room management (light) |
 | --- | --- |
-| ![Admin panel with JavaScript, SQL and C# rooms, four connected users, and copy-link and delete actions](docs/images/admin-rooms.png) | ![Join dialog with a display-name field and a theme switch](docs/images/join-room.png) |
+| ![Admin panel with separate code-room and whiteboard creation forms and a mixed room list](docs/images/admin-rooms.png) | ![The same room-management controls and mixed room list in light theme](docs/images/admin-rooms-light.png) |
 
-<details>
-<summary>Shared editor in light theme</summary>
+### Joining a room
 
-The editor, participant bar and surrounding controls follow the same theme.
+Guests follow an invitation link and choose a display name before entering the
+shared workspace. They do not need an admin account.
 
-![Shared JavaScript editor in light theme with four participants](docs/images/room-light.png)
+![Room join dialog with a display-name field and theme switch](docs/images/join-room.png)
 
-</details>
+### Code rooms
+
+Monaco fills the workspace below the room name, connection status, shared language
+selector and participant bar. Participants can edit together and see remote
+cursors and typing, selection and copy indicators.
+
+| Code room (dark) | Code room (light) |
+| --- | --- |
+| ![Collaborative JavaScript room with four participants, syntax highlighting and presence indicators in dark theme](docs/images/room-dark.png) | ![The shared code editor and participant bar in light theme](docs/images/room-light.png) |
+
+### Whiteboard workspace
+
+Whiteboard rooms replace the code editor with an infinite diagram canvas and a
+drawing toolbar. The room header, participants and connection status stay
+familiar. Labels, arrows, database and queue symbols cover the essentials for
+system design interviews; the bottom controls provide undo/redo, deletion, zoom,
+Fit and a local JSON download. See [Whiteboard rooms](#whiteboard-rooms) for
+shortcuts, collaboration behavior and current limitations.
+
+| Whiteboard (dark) | Whiteboard (light) |
+| --- | --- |
+| ![Shared order-processing diagram with client, API, database, queue and workers in dark theme](docs/images/whiteboard-dark.png) | ![The same labeled system-design diagram in light theme](docs/images/whiteboard-light.png) |
 
 <details>
 <summary>Mobile home and room management</summary>
@@ -68,6 +93,15 @@ The editor, participant bar and surrounding controls follow the same theme.
 </details>
 
 <details>
+<summary>Mobile code and whiteboard rooms</summary>
+
+| Code room | Whiteboard |
+| --- | --- |
+| <img src="docs/images/room-mobile.png" alt="Mobile code room with language selector, participant presence and shared editor" width="280" /> | <img src="docs/images/whiteboard-mobile.png" alt="Mobile whiteboard with a fitted system-design diagram and drawing controls" width="280" /> |
+
+</details>
+
+<details>
 <summary>Admin sign-in</summary>
 
 ![Admin login screen with the pixel seal, username and password fields](docs/images/admin-login.png)
@@ -75,10 +109,6 @@ The editor, participant bar and surrounding controls follow the same theme.
 </details>
 
 ## Whiteboard rooms
-
-| Dark theme | Light theme |
-| --- | --- |
-| ![Collaborative whiteboard with system design primitives in dark theme](docs/images/whiteboard-dark.png) | ![The same shared diagram in light theme](docs/images/whiteboard-light.png) |
 
 In the admin panel, use **Create whiteboard** with a name. **Create room** continues
 creating code rooms with a language. Both appear in the same list and use the same
@@ -974,6 +1004,9 @@ Coverage reports are separate:
   The goal is to raise line coverage to at least 80% by covering the browser composition
   and Monaco adapters.
 
+The [whiteboard verification report](docs/whiteboard-verification.md) records
+the feature's regression scenarios, measured coverage and remaining coverage gaps.
+
 ### Refreshing the README screenshots
 
 With Node.js 20+, the .NET 10 SDK and the repository dependencies installed:
@@ -984,7 +1017,8 @@ node scripts/capture-readme.mjs
 ```
 
 The script builds the client and server, starts an isolated loopback instance
-with disposable demo settings, creates three rooms, and connects four participants.
+with disposable demo settings, creates three code rooms and one whiteboard, and connects four code-room
+participants plus two whiteboard participants.
 The demo enables the private question library and captures both its popup and a
 separate SQL tab. Typing, selection and copy indicators come from actual editor actions. It replaces
 `Room.png`, `UIColors.png` and the images in `docs/images/`, then closes its browser

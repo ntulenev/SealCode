@@ -24,6 +24,7 @@ async function run(command, args) {
 }
 
 async function screenshot(page, path) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.locator('img').evaluateAll((images) => Promise.all(images.map((image) => image.decode())));
   await page.screenshot({ path, fullPage: true, animations: 'disabled' });
   console.log(`Captured ${path.slice(root.length + 1)}`);
@@ -193,6 +194,7 @@ try {
   }
   await showActivity();
   await screenshot(owner, join(root, 'Room.png'));
+  await screenshot(owner, join(images, 'room-dark.png'));
   const bar = await owner.locator('.participants-bar').boundingBox();
   const lastParticipant = await owner.locator('#participantsList li').last().boundingBox();
   await owner.screenshot({ path: join(root, 'UIColors.png'), clip: {
@@ -201,11 +203,67 @@ try {
   await setTheme(owner, 'light');
   await showActivity();
   await screenshot(owner, join(images, 'room-light.png'));
+  await owner.setViewportSize(mobile);
+  await screenshot(owner, join(images, 'room-mobile.png'));
+  await owner.setViewportSize(desktop);
+
+  // Create and populate the whiteboard through its real admin and drawing UI.
+  await admin.locator('#whiteboardName').fill('System design — Order pipeline');
+  await admin.locator('#createWhiteboard').click();
+  const boardRow = admin.locator('.room-row').filter({ hasText: 'System design — Order pipeline' });
+  await expect(boardRow.locator('.badge')).toHaveText('Whiteboard');
+  const boardPath = await boardRow.locator('a').getAttribute('href');
+  const board = await newPage();
+  await board.context().addCookies(await admin.context().cookies());
+  const boardPeer = await newPage();
+  for (const [page, name] of [[board, 'Nikita'], [boardPeer, 'Maya']]) {
+    await page.goto(boardPath);
+    await page.locator('#displayNameInput').fill(name);
+    await page.locator('#joinBtn').click();
+    await expect(page.locator('#joinOverlay')).toBeHidden();
+  }
+  await expect(board.locator('#participantsList li')).toHaveCount(2);
+  async function draw(type, x, y, width, height, label) {
+    await board.bringToFront();
+    await board.locator(`button[data-tool="${type}"]`).click();
+    const canvas = await board.locator('.board-canvas').boundingBox();
+    await board.mouse.move(canvas.x + x, canvas.y + y);
+    await board.mouse.down();
+    await board.mouse.move(canvas.x + x + width, canvas.y + y + height, { steps: 3 });
+    await board.mouse.up();
+    if (label) {
+      await board.getByRole('button', { name: 'Edit label', exact: true }).click();
+      const input = board.getByRole('textbox', { name: 'Element label' });
+      await input.fill(label);
+      await input.press('Enter');
+    }
+  }
+  await draw('rectangle', 100, 150, 150, 90, 'Client');
+  await draw('rectangle', 380, 150, 190, 90, 'Order API');
+  await draw('database', 720, 135, 170, 120, 'Orders DB');
+  await draw('queue', 365, 350, 220, 80, 'Events');
+  await draw('rectangle', 720, 345, 170, 90, 'Workers');
+  await draw('arrow', 260, 195, 110, 0);
+  await draw('arrow', 580, 195, 130, 0);
+  await draw('arrow', 475, 250, 0, 90);
+  await draw('arrow', 595, 390, 115, 0);
+  await expect(boardPeer.locator('[data-shape-id]')).toHaveCount(9);
+  await expect(boardPeer.locator('[data-shape-type="database"]')).toHaveText('Orders DB');
+  await board.getByRole('button', { name: 'Fit diagram' }).click();
+  await setTheme(board, 'dark');
+  await screenshot(board, join(images, 'whiteboard-dark.png'));
+  await setTheme(board, 'light');
+  await screenshot(board, join(images, 'whiteboard-light.png'));
+  await board.setViewportSize(mobile);
+  await board.getByRole('button', { name: 'Fit diagram' }).click();
+  await screenshot(board, join(images, 'whiteboard-mobile.png'));
 
   await admin.reload();
   await expect(admin.locator('#rooms .room-row').filter({ hasText: 'Friday pairing' })).toContainText('4 users');
+  await expect(admin.locator('#rooms .room-row').filter({ hasText: 'System design — Order pipeline' })).toContainText('2 users');
   await screenshot(admin, join(images, 'admin-rooms.png'));
   await setTheme(admin, 'light');
+  await screenshot(admin, join(images, 'admin-rooms-light.png'));
   await admin.setViewportSize(mobile);
   await screenshot(admin, join(images, 'admin-mobile.png'));
   await admin.setViewportSize(desktop);
@@ -231,10 +289,8 @@ try {
   await screenshot(libraryTab, join(images, 'snippets-tab.png'));
   await libraryTab.close();
   await admin.getByRole('button', { name: 'Close' }).click();
-  // This command captures documentation, while the browser suite gates behavior.
-  // Keep runtime diagnostics visible even when all requested screenshots were captured.
-  for (const message of errors) console.warn(`Browser diagnostic during capture: ${message}`);
-  console.log('README screenshots refreshed using four connected participants.');
+  expect(errors, 'Screenshot scenarios must not hide browser runtime errors').toEqual([]);
+  console.log('README screenshots refreshed with three code rooms, one whiteboard and six participants.');
 } finally {
   await browser?.close();
   if (server && server.exitCode === null) {
