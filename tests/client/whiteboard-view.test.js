@@ -463,3 +463,113 @@ test('select all preserves native text editing and ignores unfinished drawing ge
     assert.equal(f.map.size, 0);
   } finally { f.binding.destroy(); f.doc.destroy(); }
 });
+
+test('selected groups move together at the current zoom and undo atomically while preserving remote edits', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    const first = f.draw('rectangle'), second = f.draw('database');
+    f.host.fire('keydown', { ctrlKey: true, key: 'ф', code: 'KeyA' });
+    f.svg.fire('wheel', { ctrlKey: true, deltaY: -Math.log(2) / 0.003, clientX: 0, clientY: 0 });
+    f.pointer('pointerdown', 240, 340, f.shapeElement(first.id));
+    f.pointer('pointermove', 320, 380);
+    assert.equal(f.map.get(first.id).x, first.x, 'group drafts stay local until pointerup');
+    f.map.set(second.id, { ...second, text: 'Remote label', width: 200 });
+    f.pointer('pointerup', 320, 380);
+    for (const original of [first, second]) {
+      const moved = f.map.get(original.id);
+      assert.equal(moved.x, original.x + 40);
+      assert.equal(moved.y, original.y + 20);
+    }
+    assert.equal(f.map.get(second.id).text, 'Remote label');
+    assert.equal(f.map.get(second.id).width, 200);
+    undo.undo();
+    assert.equal(f.map.get(first.id).x, first.x);
+    assert.equal(f.map.get(second.id).x, second.x);
+    assert.equal(f.map.get(second.id).text, 'Remote label');
+    undo.redo(); assert.equal(f.map.get(second.id).x, second.x + 40);
+    f.pointer('pointerdown', 320, 380, f.shapeElement(first.id));
+    f.pointer('pointermove', 400, 460);
+    f.map.delete(second.id);
+    f.pointer('pointerup', 400, 460);
+    assert.equal(f.map.has(second.id), false, 'group move cannot resurrect a remotely deleted shape');
+    assert.equal(f.map.get(first.id).x, first.x + 80);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('reverse marquee and additive Ctrl/Cmd clicks select subsets; canceled marquee restores selection', () => {
+  const f = fixture();
+  try {
+    const shapes = [100, 320, 600].map((x, i) => ({ id: `shape-${i}`, type: 'rectangle', x, y: 150, width: 100, height: 80, text: '' }));
+    for (const shape of shapes) f.map.set(shape.id, shape);
+    const count = () => {
+      const data = clipboard(); f.host.fire('copy', { clipboardData: data });
+      const content = data.getData('text/plain'); return content ? JSON.parse(content).shapes.length : 0;
+    };
+    f.pointer('pointerdown', 450, 250); f.pointer('pointermove', 80, 130); f.pointer('pointerup', 80, 130);
+    assert.equal(count(), 2);
+    f.pointer('pointerdown', 650, 180, f.shapeElement(shapes[2].id), { ctrlKey: true });
+    f.pointer('pointerup', 650, 180); assert.equal(count(), 3);
+    f.pointer('pointerdown', 150, 180, f.shapeElement(shapes[0].id), { metaKey: true });
+    f.pointer('pointerup', 150, 180); assert.equal(count(), 2);
+    f.pointer('pointerdown', 80, 130, f.svg, { ctrlKey: true });
+    f.pointer('pointermove', 210, 240); f.pointer('pointerup', 210, 240); assert.equal(count(), 3);
+    f.pointer('pointerdown', 800, 300); f.pointer('pointermove', 900, 400);
+    f.svg.fire('pointercancel'); assert.equal(count(), 3);
+    f.pointer('pointerdown', 800, 300); f.pointer('pointerup', 800, 300); assert.equal(count(), 0);
+    // A group drag canceled by Escape never changes the shared geometry.
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.pointer('pointerdown', 150, 180, f.shapeElement(shapes[0].id));
+    f.pointer('pointermove', 200, 230);
+    f.host.fire('keydown', { key: 'Escape' }); f.pointer('pointerup', 200, 230);
+    assert.deepEqual([...f.map.values()], shapes);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('non-Latin physical copy/paste uses the clipboard once and protects text fields, readonly and detached boards', async () => {
+  const f = fixture();
+  let content = '', writes = 0, reads = 0;
+  let detached = false;
+  f.win.navigator = { clipboard: {
+    async writeText(value) { content = value; writes++; },
+    async readText() { reads++; return content; }
+  } };
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+  try {
+    f.draw('rectangle'); f.draw('database');
+    f.host.fire('keydown', { ctrlKey: true, key: 'ф', code: 'KeyA' });
+    f.host.fire('keydown', { ctrlKey: true, key: 'с', code: 'KeyC' }); await settle();
+    assert.equal(JSON.parse(content).shapes.length, 2); assert.equal(writes, 1);
+    f.host.fire('keydown', { metaKey: true, key: 'м', code: 'KeyV' }); await settle();
+    assert.equal(f.map.size, 4); assert.equal(reads, 1);
+    for (const target of [new Input('input'), new TextArea('textarea'), { isContentEditable: true }]) {
+      f.host.fire('keydown', { ctrlKey: true, key: 'с', code: 'KeyC', target });
+      f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV', target });
+    }
+    f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV', repeat: true }); await settle();
+    assert.equal(reads, 1); assert.equal(writes, 1);
+    f.board.setReadOnly(true);
+    f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV' }); await settle();
+    assert.equal(f.map.size, 4); assert.equal(reads, 1);
+    f.board.setReadOnly(false);
+    f.win.navigator.clipboard.readText = () => new Promise(resolve => { f.finishPaste = resolve; });
+    f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV' });
+    f.binding.destroy(); detached = true; f.finishPaste(content); await settle();
+    assert.equal(f.map.size, 4);
+  } finally { if (!detached) f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('non-Latin clipboard access failures are reported without changing the document', async () => {
+  const f = fixture();
+  f.win.navigator = { clipboard: { async writeText() { throw Error('denied'); }, async readText() { throw Error('denied'); } } };
+  try {
+    f.draw('rectangle');
+    for (const [key, code] of [['с', 'KeyC'], ['м', 'KeyV']]) {
+      f.host.fire('keydown', { ctrlKey: true, key, code });
+      await Promise.resolve(); await Promise.resolve();
+      assert.match(f.find(el => el.attributes.role === 'status').textContent, /Clipboard unavailable/);
+      assert.equal(f.map.size, 1);
+    }
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});

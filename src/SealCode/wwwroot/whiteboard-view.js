@@ -1,3 +1,4 @@
+import { isCopyShortcut, isPasteShortcut } from './keyboard-shortcuts.js';
 import { createShapeElement } from './whiteboard-shape.js';
 import { parseWhiteboardClipboard } from './whiteboard-clipboard.js';
 import { bindWhiteboard, bounds, isShape, normalizeShape, shapeTypes } from './whiteboard-model.js';
@@ -36,7 +37,7 @@ export function createWhiteboardView(host) {
   let pointer = null;
   /** @type {Map<string, {point: {x: number, y: number}, element: SVGElement}>} */
   const remoteCursors = new Map();
-  /** @type {{start: {x: number, y: number}, original?: import('./whiteboard-model.js').Shape, draft?: import('./whiteboard-model.js').Shape, mode: string, pointerId: number, offset: {x: number, y: number}} | null} */
+  /** @type {{start: {x: number, y: number}, original?: import('./whiteboard-model.js').Shape, draft?: import('./whiteboard-model.js').Shape, originals?: import('./whiteboard-model.js').Shape[], drafts?: import('./whiteboard-model.js').Shape[], end?: {x: number, y: number}, selectionStart?: string[], mode: string, pointerId: number, offset: {x: number, y: number}} | null} */
   let gesture = null;
   /** @type {HTMLTextAreaElement | null} */
   let textEditor = null;
@@ -56,8 +57,12 @@ export function createWhiteboardView(host) {
   host.append(svg);
   const hint = document.createElement('p');
   hint.className = 'board-hint';
-  hint.textContent = 'Drag to draw · Double-click to label · Ctrl+A to select all · Ctrl+C / Ctrl+V to copy / paste · Space + drag to pan · Ctrl + wheel to zoom';
+  hint.textContent = 'Drag empty canvas to select · Ctrl+click to add/remove · Drag selection to move · Ctrl+A to select all · Ctrl+C / Ctrl+V to copy / paste · Space + drag to pan · Ctrl + wheel to zoom';
   host.append(hint);
+  const clipboardStatus = document.createElement('p');
+  clipboardStatus.className = 'board-clipboard-status';
+  clipboardStatus.setAttribute('role', 'status');
+  host.append(clipboardStatus);
   const controls = document.createElement('div');
   controls.className = 'board-controls';
   controls.setAttribute('aria-label', 'Whiteboard actions');
@@ -239,16 +244,28 @@ export function createWhiteboardView(host) {
     layer.setAttribute('transform', `translate(${offset.x} ${offset.y}) scale(${zoom})`);
     const all = shapes();
     const draft = gesture?.draft;
-    for (const shape of all) draw(draft?.id === shape.id ? draft : shape);
+    const drafts = new Map((gesture?.drafts ?? []).map(shape => [shape.id, shape]));
+    for (const shape of all) {
+      const moved = drafts.get(shape.id);
+      draw(moved ? { ...shape, x: moved.x, y: moved.y } : draft?.id === shape.id ? draft : shape);
+    }
     if (draft && !all.some((s) => s.id === draft.id)) draw(draft);
     const selection = selectedShapes();
-    const activeShapes = draft ? [draft] : selection;
+    const activeShapes = draft ? [draft] : selection.map(shape => {
+      const moved = drafts.get(shape.id);
+      return moved ? { ...shape, x: moved.x, y: moved.y } : shape;
+    });
     for (const active of api.readOnly ? [] : activeShapes) {
       const b = bounds(active);
       layer.append(node('rect', { x: b.x - 5 / zoom, y: b.y - 5 / zoom, width: Math.max(1, b.width) + 10 / zoom, height: Math.max(1, b.height) + 10 / zoom, class: 'board-selection' }));
       if (activeShapes.length !== 1) continue;
       const handle = node('rect', { x: active.x + active.width - 6 / zoom, y: active.y + active.height - 6 / zoom, width: 12 / zoom, height: 12 / zoom, class: 'board-resize', 'data-resize': active.id });
       layer.append(handle);
+    }
+    if (gesture?.mode === 'marquee') {
+      const start = world(gesture.start), end = world(gesture.end ?? gesture.start);
+      layer.append(node('rect', { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y),
+        width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y), class: 'board-marquee' }));
     }
     undoButton.disabled = redoButton.disabled = api.readOnly;
     deleteButton.disabled = api.readOnly || !selection.length;
@@ -318,9 +335,26 @@ export function createWhiteboardView(host) {
     gesture = { start, mode: pan ? 'pan' : tool, pointerId: event.pointerId, offset: { ...offset } };
     if (pan) return;
     if (tool === 'select' || resize) {
-      selectOne(resize || id);
-      const shape = getSelected();
-      if (shape) { gesture.original = shape; gesture.draft = { ...shape }; gesture.mode = resize ? 'resize' : 'move'; }
+      if (!resize && id && (event.ctrlKey || event.metaKey)) {
+        if (selected.has(id)) selected.delete(id); else selected.add(id);
+        gesture.mode = 'toggle';
+      } else if (!id && !resize) {
+        gesture.mode = 'marquee';
+        gesture.selectionStart = [...selected];
+        if (!event.ctrlKey && !event.metaKey) selected.clear();
+        gesture.originals = event.ctrlKey || event.metaKey ? selectedShapes() : [];
+      } else {
+        if (resize || !selected.has(id)) selectOne(resize || id);
+        const selection = selectedShapes();
+        if (!resize && selection.length > 1) {
+          gesture.originals = selection;
+          gesture.drafts = selection;
+          gesture.mode = 'move-group';
+        } else {
+          const shape = getSelected();
+          if (shape) { gesture.original = shape; gesture.draft = { ...shape }; gesture.mode = resize ? 'resize' : 'move'; }
+        }
+      }
     } else if (shapeTypes.includes(tool)) {
       const p = world(start);
       const type = tool;
@@ -342,6 +376,19 @@ export function createWhiteboardView(host) {
     const dx = (point.x - gesture.start.x) / zoom, dy = (point.y - gesture.start.y) / zoom;
     if (gesture.mode === 'pan') {
       offset = { x: gesture.offset.x + dx * zoom, y: gesture.offset.y + dy * zoom };
+    } else if (gesture.mode === 'marquee') {
+      gesture.end = point;
+      const start = world(gesture.start), end = world(point);
+      const left = Math.min(start.x, end.x), top = Math.min(start.y, end.y);
+      const right = Math.max(start.x, end.x), bottom = Math.max(start.y, end.y);
+      selected.clear();
+      for (const shape of gesture.originals) selected.add(shape.id);
+      for (const shape of shapes()) {
+        const b = bounds(shape);
+        if (b.x >= left && b.y >= top && b.x + b.width <= right && b.y + b.height <= bottom) selected.add(shape.id);
+      }
+    } else if (gesture.mode === 'move-group') {
+      gesture.drafts = gesture.originals.map(shape => ({ ...shape, x: shape.x + dx, y: shape.y + dy }));
     } else if (gesture.draft) {
       const s = gesture.original;
       if (gesture.mode === 'move') gesture.draft = { ...s, x: s.x + dx, y: s.y + dy };
@@ -351,7 +398,7 @@ export function createWhiteboardView(host) {
   });
   svg.addEventListener('pointerup', (event) => {
     if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const { draft, original, mode } = gesture;
+    const { draft, original, mode, drafts, originals } = gesture;
     const clicked = mode === 'move' && draft && original &&
       Math.hypot(draft.x - original.x, draft.y - original.y) < 3 / zoom;
     const now = Date.now();
@@ -359,7 +406,20 @@ export function createWhiteboardView(host) {
     lastClick = clicked && !doubleClick ? { id: original.id, time: now } : null;
     gesture = null;
     if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
-    if (draft && mode === 'create') {
+    if (mode === 'move-group' && binding && !api.readOnly) {
+      const moves = drafts.flatMap((shape, i) => {
+        const current = binding.scope.get(shape.id);
+        return isShape(current) && (shape.x !== originals[i].x || shape.y !== originals[i].y)
+          ? [{ ...current, x: shape.x, y: shape.y }] : [];
+      });
+      if (moves.length && moves.every(isShape)) {
+        api.beforeChange();
+        binding.scope.doc.transact(() => {
+          for (const shape of moves) binding.scope.set(shape.id, shape);
+        }, undoOrigin);
+        api.onChange();
+      }
+    } else if (draft && mode === 'create') {
       if (Math.abs(draft.width) + Math.abs(draft.height) < 8) Object.assign(draft, { width: draft.type === 'text' ? 160 : 150, height: draft.type === 'text' ? 40 : 90 });
       if (draft.type === 'text') draft.text = 'Text';
       commit(draft);
@@ -372,7 +432,13 @@ export function createWhiteboardView(host) {
     if (doubleClick) editLabel(getSelected());
     render();
   });
-  function cancelGesture() { gesture = null; render(); }
+  function cancelGesture() {
+    if (gesture?.selectionStart) {
+      selected.clear();
+      for (const id of gesture.selectionStart) selected.add(id);
+    }
+    gesture = null; render();
+  }
   /** @param {PointerEvent} event */
   function cancelPointer(event) {
     if (gesture?.pointerId === event.pointerId) cancelGesture();
@@ -384,7 +450,7 @@ export function createWhiteboardView(host) {
   win.addEventListener('blur', hidePointer);
   svg.addEventListener('lostpointercapture', cancelPointer);
   svg.addEventListener('dblclick', (event) => {
-    if (textEditor) return;
+    if (textEditor || event.ctrlKey || event.metaKey) return;
     const point = world(local(event));
     // A render can replace SVG children between the two clicks. Hit-test the
     // diagram as well as the event target so native double-clicks remain stable.
@@ -407,27 +473,27 @@ export function createWhiteboardView(host) {
     return target instanceof win.HTMLTextAreaElement || target instanceof win.HTMLInputElement ||
       !!/** @type {HTMLElement | null} */ (target)?.isContentEditable;
   }
-  // Native clipboard events also support platform shortcuts and keyboard layouts.
-  host.addEventListener('copy', (event) => {
-    if (isTextTarget(event.target) || gesture || !event.clipboardData) return;
+  function copyContent() {
+    if (gesture) return null;
     const shapes = selectedShapes();
-    if (!shapes.length) return;
-    const content = JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes });
-    event.clipboardData.setData('text/plain', content);
-    event.preventDefault();
+    if (!shapes.length) return null;
+    return JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes });
+  }
+  /** @param {string} content */
+  function copied(content) {
     pastedContent = content;
     pasteCount = 0;
-  });
-  host.addEventListener('paste', (event) => {
-    if (isTextTarget(event.target) || gesture || api.readOnly || !binding || !event.clipboardData) return;
-    const content = event.clipboardData.getData('text/plain');
+    clipboardStatus.textContent = '';
+  }
+  /** @param {string} content */
+  function pasteContent(content) {
+    if (gesture || api.readOnly || !binding) return false;
     const shapes = parseWhiteboardClipboard(content);
-    if (!shapes) return;
+    if (!shapes) return false;
     const count = content === pastedContent ? pasteCount + 1 : 1;
     const copies = shapes.map(shape => ({ ...shape, id: win.crypto.randomUUID(),
       x: shape.x + count * 24, y: shape.y + count * 24 }));
-    if (!copies.every(isShape)) return;
-    event.preventDefault();
+    if (!copies.every(isShape)) return false;
     pastedContent = content;
     pasteCount = count;
     selected.clear();
@@ -438,16 +504,57 @@ export function createWhiteboardView(host) {
       for (const shape of copies) binding.scope.set(shape.id, normalizeShape(shape));
     }, undoOrigin);
     api.onChange();
+    clipboardStatus.textContent = '';
     svg.focus();
+    return true;
+  }
+  // Keep native clipboard events for standard shortcuts, context menus and text editing.
+  host.addEventListener('copy', (event) => {
+    if (isTextTarget(event.target) || !event.clipboardData) return;
+    const content = copyContent();
+    if (!content) return;
+    event.clipboardData.setData('text/plain', content);
+    event.preventDefault();
+    copied(content);
+  });
+  host.addEventListener('paste', (event) => {
+    if (isTextTarget(event.target) || !event.clipboardData) return;
+    if (pasteContent(event.clipboardData.getData('text/plain'))) event.preventDefault();
   });
   host.addEventListener('keydown', (event) => {
     if (isTextTarget(event.target)) return;
     // Preserve native keyboard activation for the focused toolbar button.
     if (event.target instanceof win.HTMLButtonElement && ['Enter', ' '].includes(event.key)) return;
-    const modifier = event.ctrlKey || event.metaKey;
+    const modifier = (event.ctrlKey || event.metaKey) && !event.altKey;
+    const key = event.code?.startsWith('Key') ? event.code.slice(3).toLowerCase() : event.key.toLowerCase();
+    // Some browsers do not dispatch copy/paste for non-Latin shortcut characters.
+    // Handle those physical keys explicitly, without changing native text editing.
+    if ((isCopyShortcut(event) && event.key.toLowerCase() !== 'c') ||
+        (isPasteShortcut(event) && event.key.toLowerCase() !== 'v')) {
+      if (gesture || event.repeat) return;
+      const sourceBinding = binding;
+      if (isCopyShortcut(event)) {
+        const content = copyContent();
+        if (!content) return;
+        event.preventDefault();
+        void (async () => {
+          try { await win.navigator.clipboard.writeText(content); copied(content); }
+          catch { clipboardStatus.textContent = 'Clipboard unavailable. Allow clipboard access and try again.'; }
+        })();
+      } else if (!api.readOnly && binding) {
+        event.preventDefault();
+        void (async () => {
+          try {
+            const content = await win.navigator.clipboard.readText();
+            if (binding === sourceBinding) pasteContent(content);
+          } catch { clipboardStatus.textContent = 'Clipboard unavailable. Allow clipboard access and try again.'; }
+        })();
+      }
+      return;
+    }
     if (event.code === 'Space') { event.preventDefault(); space = true; }
     if (event.key === 'Escape') { cancelGesture(); selected.clear(); setTool('select'); render(); }
-    if (modifier && event.key.toLowerCase() === 'a') {
+    if (modifier && key === 'a') {
       event.preventDefault();
       if (gesture) return;
       selected.clear();
@@ -457,14 +564,14 @@ export function createWhiteboardView(host) {
       return;
     }
     if (api.readOnly) return;
-    if (modifier && ['z', 'y'].includes(event.key.toLowerCase())) {
+    if (modifier && ['z', 'y'].includes(key)) {
       event.preventDefault();
-      if (event.shiftKey || event.key.toLowerCase() === 'y') api.redo(); else api.undo();
+      if (event.shiftKey || key === 'y') api.redo(); else api.undo();
       return;
     }
     if (['Delete', 'Backspace'].includes(event.key)) { event.preventDefault(); removeSelected(); }
     if (event.key === 'Enter') { event.preventDefault(); editLabel(getSelected()); }
-    if (modifier && event.key.toLowerCase() === 'd') {
+    if (modifier && key === 'd') {
       event.preventDefault();
       if (!binding) return;
       const copies = selectedShapes().map(shape => ({ ...shape, id: win.crypto.randomUUID(),
@@ -479,7 +586,7 @@ export function createWhiteboardView(host) {
       api.onChange();
     }
     if (!modifier && !event.altKey) {
-      const match = tools.find(([, , key]) => key.toLowerCase() === event.key.toLowerCase());
+      const match = tools.find(([, , shortcut]) => shortcut.toLowerCase() === key);
       if (match) { event.preventDefault(); setTool(match[0]); }
     }
   });

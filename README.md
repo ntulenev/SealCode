@@ -135,6 +135,14 @@ Use Select to move an element and its corner handle to resize it. Double-click a
 element or choose **Label** to edit its text; Enter saves, Shift+Enter inserts a
 line break and Escape cancels. Text is plain text, including labels on shapes.
 
+In Select mode, drag on empty canvas to select all figures fully inside the
+selection rectangle. Ctrl/Cmd-click a figure to add or remove it from the
+selection; Ctrl/Cmd-drag on empty canvas adds enclosed figures. Drag any selected
+figure to move the entire selection, preserving its relative geometry. A group
+move is one undoable operation and is shared with other participants when the
+drag ends. Escape cancels a drag. Keyboard shortcuts use physical letter keys,
+including with non-Latin layouts; text fields retain native editing shortcuts.
+
 - Tools: **V** select, **H** pan, **R** rectangle, **A** arrow, **B** bidirectional arrow, **L** line,
   **T** text, **D** database, **Q** queue, **O** ellipse, **M** diamond.
 - Pan with Space+drag, middle-button drag, the Pan tool or wheel/trackpad scrolling.

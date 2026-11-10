@@ -304,6 +304,57 @@ test('concurrent Ctrl+C / Ctrl+V pastes converge through CRDT and undo preserves
   await expectScene([bob], edited);
 });
 
+test('group drag, marquee, Ctrl-click and Cyrillic clipboard shortcuts synchronize across participants', async ({ whiteboard }) => {
+  const { alice, bob } = whiteboard;
+  await alice.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await whiteboard.join();
+  for (const x of [100, 360, 620]) await draw(alice, 'rectangle', x, 170, 140, 90);
+  const baseline = await scene(alice);
+  await expectScene([bob], baseline);
+  const ids = await alice.locator('[data-shape-id]').evaluateAll(elements => elements.map(el => el.getAttribute('data-shape-id')));
+  const geometry = await Promise.all(ids.map(id => rectangle(alice, id)));
+  const session = await alice.context().newCDPSession(alice);
+  const shortcut = async (code, key, shift = false) => {
+    await alice.bringToFront();
+    await alice.locator('.board-canvas').focus();
+    const event = { code, key, modifiers: shift ? 10 : 2, windowsVirtualKeyCode: code.charCodeAt(3) };
+    await session.send('Input.dispatchKeyEvent', { ...event, type: 'keyDown' });
+    await session.send('Input.dispatchKeyEvent', { ...event, type: 'keyUp' });
+  };
+  await shortcut('KeyA', 'ф');
+  await expect(alice.locator('.board-selection')).toHaveCount(3);
+  await expect(bob.locator('.board-selection')).toHaveCount(0);
+  const box = await shape(alice, ids[0]).boundingBox();
+  await drag(alice, box.x + box.width / 2, box.y + box.height / 2, 80, 50);
+  for (const [i, id] of ids.entries()) expect(await rectangle(alice, id)).toEqual({ ...geometry[i], x: geometry[i].x + 80, y: geometry[i].y + 50 });
+  const moved = await scene(alice);
+  await expectScene([bob], moved);
+  await shortcut('KeyZ', 'я'); await expectScene([alice, bob], baseline);
+  await shortcut('KeyZ', 'Я', true); await expectScene([alice, bob], moved);
+  const canvas = await alice.locator('.board-canvas').boundingBox();
+  // Reverse drag on blank canvas encloses only the first two figures.
+  await drag(alice, canvas.x + 600, canvas.y + 340, -440, -140);
+  await expect(alice.locator('.board-selection')).toHaveCount(2);
+  await shape(alice, ids[2]).click({ modifiers: ['Control'] });
+  await expect(alice.locator('.board-selection')).toHaveCount(3);
+  await shape(alice, ids[0]).click({ modifiers: ['Control'] });
+  await expect(alice.locator('.board-selection')).toHaveCount(2);
+  const subset = await shape(alice, ids[1]).boundingBox();
+  await drag(alice, subset.x + subset.width / 2, subset.y + subset.height / 2, -30, 40);
+  expect(await rectangle(alice, ids[0])).toEqual({ ...geometry[0], x: geometry[0].x + 80, y: geometry[0].y + 50 });
+  for (const i of [1, 2]) expect(await rectangle(alice, ids[i])).toEqual({ ...geometry[i], x: geometry[i].x + 50, y: geometry[i].y + 90 });
+  await expectScene([bob], await scene(alice));
+  await shortcut('KeyC', 'с');
+  await expect.poll(async () => JSON.parse(await alice.evaluate(() => navigator.clipboard.readText())).shapes.length).toBe(2);
+  await shortcut('KeyV', 'м');
+  await expect(alice.locator('[data-shape-id]')).toHaveCount(5);
+  await expectScene([bob], await scene(alice));
+  await shortcut('KeyZ', 'я'); await expect(alice.locator('[data-shape-id]')).toHaveCount(3);
+  await expectScene([bob], await scene(alice));
+  const observer = await whiteboard.observe();
+  await expectScene([observer], await scene(alice));
+});
+
 test('concurrent creation and edits to different figures preserve both participants changes', async ({ whiteboard }) => {
   const { alice, bob } = whiteboard;
   const aliceGate = await updateGate(alice);

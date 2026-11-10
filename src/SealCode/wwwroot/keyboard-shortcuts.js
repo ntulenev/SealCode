@@ -3,7 +3,7 @@
 export function isCopyShortcut(event) {
   if (!event) return false;
   const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-  return key === 'c' && (event.ctrlKey || event.metaKey) && !event.altKey;
+  return (key === 'c' || event.code === 'KeyC') && (event.ctrlKey || event.metaKey) && !event.altKey;
 }
 
 /** Recognizes the shortcut without browser globals. */
@@ -40,5 +40,5 @@ export function isUndoRedoShortcut(event) {
 export function isPasteShortcut(event) {
   if (!event) return false;
   const key = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-  return key === 'v' && (event.ctrlKey || event.metaKey) && !event.altKey;
+  return (key === 'v' || event.code === 'KeyV') && (event.ctrlKey || event.metaKey) && !event.altKey;
 }

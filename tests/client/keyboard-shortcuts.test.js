@@ -13,6 +13,8 @@ test('Ctrl and Cmd shortcuts preserve shift, code and layout handling', () => {
     const event = { [modifier]: true };
     assert.equal(isCopyShortcut({ ...event, key: 'C' }), true);
     assert.equal(isPasteShortcut({ ...event, key: 'v' }), true);
+    assert.equal(isCopyShortcut({ ...event, key: 'с', code: 'KeyC' }), true);
+    assert.equal(isPasteShortcut({ ...event, key: 'м', code: 'KeyV' }), true);
     assert.equal(isUndoShortcut({ ...event, key: 'я', code: 'KeyZ' }), true);
     assert.equal(isUndoRedoShortcut({ ...event, key: 'z' }), true);
     assert.equal(isRedoShortcut({ ...event, key: 'z', shiftKey: true }), true);
