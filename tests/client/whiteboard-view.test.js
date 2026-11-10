@@ -405,3 +405,61 @@ test('diagram paste preserves geometry, regenerates IDs and is one collaborative
     undo.undo(); assert.equal(f.map.size, 3);
   } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
 });
+
+test('Ctrl/Cmd+A selects a snapshot for copying, duplication and atomic deletion without capturing later remote shapes', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    f.draw('rectangle'); f.draw('database');
+    let prevented = 0;
+    f.host.fire('keydown', { ctrlKey: true, key: 'a', preventDefault: () => prevented++ });
+    assert.equal(prevented, 1);
+    assert.equal(f.button('Delete selected').disabled, false);
+    assert.equal(f.button('Edit label').disabled, true);
+    const data = clipboard();
+    f.host.fire('copy', { clipboardData: data });
+    assert.equal(JSON.parse(data.getData('text/plain')).shapes.length, 2);
+    f.host.fire('keydown', { ctrlKey: true, key: 'd' });
+    assert.equal(f.map.size, 4);
+    undo.undo(); assert.equal(f.map.size, 2);
+    f.host.fire('keydown', { metaKey: true, key: 'A' });
+    const remote = { id: 'remote', type: 'ellipse', x: 400, y: 100, width: 100, height: 80, text: 'Remote' };
+    f.map.set(remote.id, remote);
+    f.host.fire('keydown', { key: 'Delete' });
+    assert.deepEqual([...f.map.values()], [remote]);
+    undo.undo(); assert.equal(f.map.size, 3);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.host.fire('keydown', { key: 'Escape' });
+    f.host.fire('keydown', { key: 'Backspace' });
+    assert.equal(f.map.size, 3);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.button('Delete selected').click(); assert.equal(f.map.size, 0);
+    undo.undo(); assert.equal(f.map.size, 3);
+    f.board.setReadOnly(true);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.host.fire('copy', { clipboardData: data });
+    assert.equal(JSON.parse(data.getData('text/plain')).shapes.length, 3);
+    f.host.fire('keydown', { key: 'Delete' }); assert.equal(f.map.size, 3);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('select all preserves native text editing and ignores unfinished drawing gestures', () => {
+  const f = fixture();
+  const preventDefault = () => assert.fail('Native text selection was prevented');
+  try {
+    const shape = f.draw('rectangle');
+    for (const target of [new Input('input'), new TextArea('textarea'), { isContentEditable: true }])
+      f.host.fire('keydown', { ctrlKey: true, key: 'a', target, preventDefault });
+    f.tool('rectangle'); f.pointer('pointerdown', 300, 300);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.svg.fire('pointercancel');
+    f.host.fire('keydown', { key: 'Delete' });
+    assert.ok(f.map.has(shape.id));
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.map.delete(shape.id);
+    f.host.fire('copy', { clipboardData: clipboard(), preventDefault });
+    f.host.fire('keydown', { key: 'Delete' });
+    assert.equal(f.map.size, 0);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});

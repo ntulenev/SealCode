@@ -6,6 +6,8 @@ test('whiteboard library previews and copies a diagram for native Ctrl+V, collab
   const context = await browser.newContext({ baseURL: host.baseURL,
     viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await context.newPage();
+  const guestContext = await browser.newContext({ baseURL: host.baseURL, viewport: { width: 1440, height: 1000 },
+    permissions: ['clipboard-read', 'clipboard-write'] });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
@@ -22,8 +24,15 @@ test('whiteboard library previews and copies a diagram for native Ctrl+V, collab
       await expect(tab.locator('#joinOverlay')).toBeHidden();
     };
     await join(page, 'Alice');
-    const bob = await context.newPage();
+    const bob = await guestContext.newPage();
+    bob.on('pageerror', error => errors.push(error.message));
     await join(bob, 'Bob');
+    const snapshot = tab => tab.locator('[data-shape-id]').evaluateAll(elements =>
+      elements.map(element => element.outerHTML).sort());
+    const expectSameDiagram = async (peer, source = page) => {
+      const expected = await snapshot(source);
+      await expect.poll(() => snapshot(peer)).toEqual(expected);
+    };
     await page.bringToFront();
     await page.getByRole('link', { name: 'Open question library' }).click();
     const library = page.frameLocator('iframe[title="Question library"]');
@@ -42,13 +51,59 @@ test('whiteboard library previews and copies a diagram for native Ctrl+V, collab
     await page.keyboard.press('Control+v');
     await expect(page.locator('[data-shape-id]')).toHaveCount(5);
     await expect(bob.locator('[data-shape-id]')).toHaveCount(5);
+    await expectSameDiagram(bob);
     await expect(page.locator('[data-shape-type="database"]')).toHaveText('Database');
     await page.keyboard.press('Control+z');
     await expect(bob.locator('[data-shape-id]')).toHaveCount(0);
     await page.keyboard.press('Control+Shift+z');
     await expect(bob.locator('[data-shape-id]')).toHaveCount(5);
+    await expectSameDiagram(bob);
     await page.keyboard.press('Control+v');
     await expect(bob.locator('[data-shape-id]')).toHaveCount(10);
+    await expectSameDiagram(bob);
+    const late = await guestContext.newPage();
+    late.on('pageerror', error => errors.push(error.message));
+    await join(late, 'Late participant');
+    await expectSameDiagram(late);
+
+    // A guest can select/copy the received diagram; selection stays local.
+    await bob.bringToFront();
+    await bob.locator('.board-canvas').focus();
+    await bob.keyboard.press('Control+a');
+    await expect(bob.locator('.board-selection')).toHaveCount(10);
+    await expect(page.locator('.board-selection')).toHaveCount(5);
+    await bob.keyboard.press('Control+c');
+    const copiedByGuest = JSON.parse(await bob.evaluate(() => navigator.clipboard.readText()));
+    expect(copiedByGuest.shapes).toHaveLength(10);
+    expect(new Set(copiedByGuest.shapes.map(shape => shape.id)).size).toBe(10);
+    await bob.keyboard.press('Delete');
+    for (const tab of [page, bob, late]) await expect(tab.locator('[data-shape-id]')).toHaveCount(0);
+    await bob.keyboard.press('Control+z');
+    await expect(bob.locator('[data-shape-id]')).toHaveCount(10);
+    await expectSameDiagram(page, bob);
+    await expectSameDiagram(late, bob);
+    await bob.keyboard.press('Control+Shift+z');
+    await expect(late.locator('[data-shape-id]')).toHaveCount(0);
+    await bob.keyboard.press('Control+z');
+    await expect(page.locator('[data-shape-id]')).toHaveCount(10);
+    // Native paste of the guest's full-board copy converges on all participants.
+    await bob.keyboard.press('Control+v');
+    await expect(page.locator('[data-shape-id]')).toHaveCount(20);
+    await expectSameDiagram(page, bob);
+    await expectSameDiagram(late, bob);
+    await bob.keyboard.press('Control+z');
+    await expect(page.locator('[data-shape-id]')).toHaveCount(10);
+    // A peer can edit the pasted shapes, with normal Ctrl+A inside its label.
+    await bob.locator('[data-shape-type="database"]').last().click();
+    await bob.getByRole('button', { name: 'Edit label', exact: true }).click();
+    const label = bob.getByRole('textbox', { name: 'Element label' });
+    await label.press('Control+a');
+    await label.press('Backspace');
+    await label.fill('Edited by Bob');
+    await label.press('Enter');
+    await expect(page.locator('[data-shape-type="database"]').filter({ hasText: 'Edited by Bob' })).toHaveCount(1);
+    await expectSameDiagram(page, bob);
+    await expectSameDiagram(late, bob);
     await page.goto('/admin/snippets?language=whiteboard');
     await expect(page.getByRole('img', { name: 'Whiteboard snippet preview' })).toBeVisible();
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
@@ -57,5 +112,5 @@ test('whiteboard library previews and copies a diagram for native Ctrl+V, collab
     await expect(page.getByRole('img', { name: 'Whiteboard snippet preview' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(errors).toEqual([]);
-  } finally { await context.close(); }
+  } finally { await Promise.all([context.close(), guestContext.close()]); }
 });

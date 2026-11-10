@@ -140,7 +140,10 @@ line break and Escape cancels. Text is plain text, including labels on shapes.
 - Pan with Space+drag, middle-button drag, the Pan tool or wheel/trackpad scrolling.
   Zoom with Ctrl/Cmd+wheel or the zoom buttons; **Fit** frames the diagram.
 - Delete/Backspace removes the selection; Ctrl/Cmd+D duplicates it.
-  Ctrl/Cmd+C copies the selected element; Ctrl/Cmd+V pastes a new copy with a
+  Ctrl/Cmd+A selects all current elements. Ctrl/Cmd+C copies the selection;
+  Delete/Backspace removes it as one undoable operation. Selection is local;
+  elements added by other participants after Select all remain unselected.
+  Ctrl/Cmd+V pastes new copies with a
   small offset, including its label and geometry. Repeated pastes use increasing
   offsets. The clipboard also works between whiteboards; label editing keeps
   the usual text copy/paste behavior.

@@ -23,7 +23,8 @@ export function createWhiteboardView(host) {
   /** @type {object | null} */
   let undoOrigin = null;
   let tool = 'select';
-  let selected = '';
+  /** @type {Set<string>} */
+  const selected = new Set();
   let pastedContent = '';
   let pasteCount = 0;
   /** @type {{id: string, time: number} | null} */
@@ -55,7 +56,7 @@ export function createWhiteboardView(host) {
   host.append(svg);
   const hint = document.createElement('p');
   hint.className = 'board-hint';
-  hint.textContent = 'Drag to draw · Double-click to label · Ctrl+C / Ctrl+V to copy / paste · Space + drag to pan · Ctrl + wheel to zoom';
+  hint.textContent = 'Drag to draw · Double-click to label · Ctrl+A to select all · Ctrl+C / Ctrl+V to copy / paste · Space + drag to pan · Ctrl + wheel to zoom';
   host.append(hint);
   const controls = document.createElement('div');
   controls.className = 'board-controls';
@@ -173,9 +174,15 @@ export function createWhiteboardView(host) {
   function shapes() {
     return binding ? [...binding.scope.values()].filter(isShape) : [];
   }
+  function selectedShapes() { return shapes().filter(shape => selected.has(shape.id)); }
   function getSelected() {
-    const shape = binding?.scope.get(selected);
-    return isShape(shape) ? shape : null;
+    const all = selectedShapes();
+    return all.length === 1 ? all[0] : null;
+  }
+  /** @param {string} id */
+  function selectOne(id) {
+    selected.clear();
+    if (id) selected.add(id);
   }
   /** @param {import('./whiteboard-model.js').Shape} shape */
   function commit(shape) {
@@ -185,10 +192,14 @@ export function createWhiteboardView(host) {
     api.onChange();
   }
   function removeSelected() {
-    if (api.readOnly || !binding || !selected) return;
+    if (api.readOnly || !binding) return;
+    const targets = selectedShapes();
+    if (!targets.length) return;
     api.beforeChange();
-    binding.scope.doc.transact(() => binding.scope.delete(selected), undoOrigin);
-    selected = '';
+    binding.scope.doc.transact(() => {
+      for (const shape of targets) binding.scope.delete(shape.id);
+    }, undoOrigin);
+    selected.clear();
     api.onChange();
     render();
   }
@@ -230,15 +241,18 @@ export function createWhiteboardView(host) {
     const draft = gesture?.draft;
     for (const shape of all) draw(draft?.id === shape.id ? draft : shape);
     if (draft && !all.some((s) => s.id === draft.id)) draw(draft);
-    const active = draft ?? getSelected();
-    if (active && !api.readOnly) {
+    const selection = selectedShapes();
+    const activeShapes = draft ? [draft] : selection;
+    for (const active of api.readOnly ? [] : activeShapes) {
       const b = bounds(active);
       layer.append(node('rect', { x: b.x - 5 / zoom, y: b.y - 5 / zoom, width: Math.max(1, b.width) + 10 / zoom, height: Math.max(1, b.height) + 10 / zoom, class: 'board-selection' }));
+      if (activeShapes.length !== 1) continue;
       const handle = node('rect', { x: active.x + active.width - 6 / zoom, y: active.y + active.height - 6 / zoom, width: 12 / zoom, height: 12 / zoom, class: 'board-resize', 'data-resize': active.id });
       layer.append(handle);
     }
     undoButton.disabled = redoButton.disabled = api.readOnly;
-    deleteButton.disabled = labelButton.disabled = api.readOnly || !getSelected();
+    deleteButton.disabled = api.readOnly || !selection.length;
+    labelButton.disabled = api.readOnly || !getSelected();
     for (const [name, button] of toolButtons) button.disabled = api.readOnly && !['select', 'pan'].includes(name);
     zoomButton.textContent = `${Math.round(zoom * 100)}%`;
     host.classList.toggle('board-readonly', api.readOnly);
@@ -304,7 +318,7 @@ export function createWhiteboardView(host) {
     gesture = { start, mode: pan ? 'pan' : tool, pointerId: event.pointerId, offset: { ...offset } };
     if (pan) return;
     if (tool === 'select' || resize) {
-      selected = resize || id;
+      selectOne(resize || id);
       const shape = getSelected();
       if (shape) { gesture.original = shape; gesture.draft = { ...shape }; gesture.mode = resize ? 'resize' : 'move'; }
     } else if (shapeTypes.includes(tool)) {
@@ -313,7 +327,7 @@ export function createWhiteboardView(host) {
       const shape = { id: win.crypto.randomUUID(), type, x: p.x, y: p.y, width: 0, height: 0, text: '' };
       gesture.draft = shape;
       gesture.mode = 'create';
-      selected = shape.id;
+      selectOne(shape.id);
     }
     render();
   });
@@ -381,7 +395,7 @@ export function createWhiteboardView(host) {
         point.y >= b.y - margin && point.y <= b.y + b.height + margin;
     });
     const id = /** @type {Element} */ (event.target).closest('[data-shape-id]')?.getAttribute('data-shape-id') || hit?.id;
-    if (id) { selected = id; editLabel(getSelected()); }
+    if (id) { selectOne(id); editLabel(getSelected()); }
   });
   svg.addEventListener('wheel', (event) => {
     event.preventDefault();
@@ -396,9 +410,9 @@ export function createWhiteboardView(host) {
   // Native clipboard events also support platform shortcuts and keyboard layouts.
   host.addEventListener('copy', (event) => {
     if (isTextTarget(event.target) || gesture || !event.clipboardData) return;
-    const shape = getSelected();
-    if (!shape) return;
-    const content = JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes: [shape] });
+    const shapes = selectedShapes();
+    if (!shapes.length) return;
+    const content = JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes });
     event.clipboardData.setData('text/plain', content);
     event.preventDefault();
     pastedContent = content;
@@ -416,7 +430,8 @@ export function createWhiteboardView(host) {
     event.preventDefault();
     pastedContent = content;
     pasteCount = count;
-    selected = copies[0].id;
+    selected.clear();
+    for (const shape of copies) selected.add(shape.id);
     setTool('select');
     api.beforeChange();
     binding.scope.doc.transact(() => {
@@ -431,7 +446,16 @@ export function createWhiteboardView(host) {
     if (event.target instanceof win.HTMLButtonElement && ['Enter', ' '].includes(event.key)) return;
     const modifier = event.ctrlKey || event.metaKey;
     if (event.code === 'Space') { event.preventDefault(); space = true; }
-    if (event.key === 'Escape') { cancelGesture(); selected = ''; setTool('select'); render(); }
+    if (event.key === 'Escape') { cancelGesture(); selected.clear(); setTool('select'); render(); }
+    if (modifier && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      if (gesture) return;
+      selected.clear();
+      for (const shape of shapes()) selected.add(shape.id);
+      setTool('select');
+      render();
+      return;
+    }
     if (api.readOnly) return;
     if (modifier && ['z', 'y'].includes(event.key.toLowerCase())) {
       event.preventDefault();
@@ -442,8 +466,17 @@ export function createWhiteboardView(host) {
     if (event.key === 'Enter') { event.preventDefault(); editLabel(getSelected()); }
     if (modifier && event.key.toLowerCase() === 'd') {
       event.preventDefault();
-      const shape = getSelected();
-      if (shape) { const copy = { ...shape, id: win.crypto.randomUUID(), x: shape.x + 24, y: shape.y + 24 }; selected = copy.id; commit(copy); }
+      if (!binding) return;
+      const copies = selectedShapes().map(shape => ({ ...shape, id: win.crypto.randomUUID(),
+        x: shape.x + 24, y: shape.y + 24 }));
+      if (!copies.length || !copies.every(isShape)) return;
+      selected.clear();
+      for (const shape of copies) selected.add(shape.id);
+      api.beforeChange();
+      binding.scope.doc.transact(() => {
+        for (const shape of copies) binding.scope.set(shape.id, normalizeShape(shape));
+      }, undoOrigin);
+      api.onChange();
     }
     if (!modifier && !event.altKey) {
       const match = tools.find(([, , key]) => key.toLowerCase() === event.key.toLowerCase());
