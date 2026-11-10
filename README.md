@@ -132,18 +132,41 @@ saved in the diagram, exported, or included in undo/redo.
 
 Choose a tool, then drag on the canvas (or click to insert a default-size element).
 Use Select to move an element and its corner handle to resize it. Double-click an
-element or choose **Label** to edit its text; Enter saves, Shift+Enter inserts a
-line break and Escape cancels. Text is plain text, including labels on shapes.
+element or choose **Label** to edit its text; Enter saves, Ctrl/Cmd+Enter or
+Shift+Enter inserts a line break at the caret, and Escape cancels. Text is plain
+text, including labels on shapes.
+
+Labels wrap automatically at word boundaries, splitting long unbroken words as
+needed. Explicit line breaks and blank lines are preserved. Resizing a figure
+reflows its label; editing text preserves the figure's width and height. The
+font shrinks when necessary to fit the height, down to 8px. If the box is still
+too small, visual overflow is clipped; the complete text remains stored and
+editable, and expanding the box reveals it.
+
+In Select mode, drag on empty canvas to select all figures fully inside the
+selection rectangle. Ctrl/Cmd-click a figure to add or remove it from the
+selection; Ctrl/Cmd-drag on empty canvas adds enclosed figures. Drag any selected
+figure to move the entire selection, preserving its relative geometry. A group
+move is one undoable operation and is shared with other participants when the
+drag ends. Escape cancels a drag. Keyboard shortcuts use physical letter keys,
+including with non-Latin layouts; text fields retain native editing shortcuts.
 
 - Tools: **V** select, **H** pan, **R** rectangle, **A** arrow, **B** bidirectional arrow, **L** line,
   **T** text, **D** database, **Q** queue, **O** ellipse, **M** diamond.
 - Pan with Space+drag, middle-button drag, the Pan tool or wheel/trackpad scrolling.
   Zoom with Ctrl/Cmd+wheel or the zoom buttons; **Fit** frames the diagram.
 - Delete/Backspace removes the selection; Ctrl/Cmd+D duplicates it.
-  Ctrl/Cmd+C copies the selected element; Ctrl/Cmd+V pastes a new copy with a
+  Ctrl/Cmd+A selects all current elements. Ctrl/Cmd+C copies the selection;
+  Delete/Backspace removes it as one undoable operation. Selection is local;
+  elements added by other participants after Select all remain unselected.
+  Ctrl/Cmd+V pastes new copies with a
   small offset, including its label and geometry. Repeated pastes use increasing
   offsets. The clipboard also works between whiteboards; label editing keeps
   the usual text copy/paste behavior.
+  Pasting ordinary clipboard text creates a text element in the center of the
+  current viewport, preserving line breaks and rendering HTML as literal text.
+  Up to 4,000 characters are supported per text element. Repeated pastes receive
+  a small offset. Text insertion is shared and undone/redone as one operation.
   Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) undo/redo your own changes.
 - **Download board** exports the current local diagram as JSON, including changes
   that could not be sent. Import is not currently supported.
@@ -155,7 +178,28 @@ resize or label edit is shared when the gesture is committed. Viewport, tool and
 selection remain local. Rooms are in memory and disappear on server restart.
 The MVP has no connector attachment/routing, freehand drawing or image uploads.
 
+Whiteboard interaction regression tests cover group movement, marquee and
+Ctrl/Cmd-click selection, physical shortcuts with Cyrillic key values, wrapped
+labels and resizing, Ctrl/Cmd+Enter, ordinary text paste, native label editing,
+multi-participant synchronization, undo/redo and reconnection. Run
+`npm run test:client` and
+`npx playwright test tests/e2e/whiteboard.spec.js tests/e2e/whiteboard-collaboration.spec.js tests/e2e/whiteboard-snippets.spec.js`.
+
 ## Private question library
+
+The **Whiteboard** category includes a Client → API ↔ Database example with an
+SVG preview. Choose **Copy snippet**, focus the whiteboard canvas and press
+Ctrl/Cmd+V. The complete diagram is inserted with new IDs as a single undoable
+operation. Opening the library from a whiteboard selects this category.
+
+Author diagrams in a fenced `whiteboard` block containing JSON with
+`format: "sealcode-whiteboard"`, `version: 1` and a `shapes` array, using the same
+shape fields as a downloaded board. Labels render as plain text. Clipboard
+diagrams support up to 100 shapes and 100,000 characters; every shape is validated
+before insertion. The file example is `Resources/Snippets/whiteboard-01.md`.
+For PostgreSQL, apply the optional, repeatable
+`src/Persistence/Snippets/Migrations/003_whiteboard_example.sql` after migrations
+001 and 002. It adds the same example while preserving existing entries.
 
 The optional library ships with three English questions each for General (architecture
 and computer science), C# and SQL. An authorized admin sees a book icon in the
@@ -978,9 +1022,9 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.19.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.20.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
-`Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
+`Resources/Snippets/library.html` and `Resources/Snippets/manage.html` pages. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
 Stable URLs (HTML, JavaScript entry points and workers) use `Cache-Control: no-cache`
 so browsers revalidate them using ETag/Last-Modified. Files with esbuild hashes in

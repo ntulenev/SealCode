@@ -33,7 +33,7 @@
           "language": {
             "type": "string",
             "minLength": 1,
-            "description": "general or a configured Monaco language identifier"
+            "description": "general, whiteboard or a configured Monaco language identifier"
           },
           "title": {
             "type": "string",

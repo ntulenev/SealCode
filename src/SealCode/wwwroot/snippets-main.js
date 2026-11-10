@@ -1,6 +1,7 @@
 import { createMarkdownRenderer } from './snippet-markdown.js';
 import * as monaco from 'monaco-editor';
 import { bindEditorTheme } from './editor-theme.js';
+import { parseWhiteboardClipboard } from './whiteboard-clipboard.js';
 
 if (window.self !== window.top) {
   const brand = document.querySelector('.site-header .brand');
@@ -95,7 +96,12 @@ async function renderQuestion(/** @type {Question} */ question, /** @type {strin
       stepCopy.disabled = false;
     }
   }
-  selectedText = texts.join('\n\n');
+  const diagrams = texts.map(parseWhiteboardClipboard);
+  selectedText = diagrams.every(Boolean)
+    ? JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes: diagrams.flat() })
+    : texts.join('\n\n');
+  if (diagrams.some(Boolean) && !parseWhiteboardClipboard(selectedText))
+    throw new Error('Combined whiteboard snippet exceeds clipboard limits. Copy one example.');
   copy.disabled = false;
 }
 

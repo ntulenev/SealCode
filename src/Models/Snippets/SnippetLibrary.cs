@@ -38,7 +38,7 @@ public sealed class SnippetLibrary
     public ReadOnlyCollection<SnippetCategory> Categories { get; }
 
     /// <summary>
-    /// Selects configured programming languages while always retaining general questions.
+    /// Selects configured programming languages while always retaining general and whiteboard questions.
     /// </summary>
     /// <param name="languages">The supported room languages.</param>
     /// <returns>A new immutable library containing eligible categories.</returns>
@@ -54,6 +54,7 @@ public sealed class SnippetLibrary
             ArgumentException.ThrowIfNullOrWhiteSpace(language.Value, nameof(languages));
             _ = supported.Add(new SnippetLanguage(language.Value));
         }
-        return new(Categories.Where(category => category.Language.IsGeneral || supported.Contains(category.Language)));
+        return new(Categories.Where(category => category.Language.IsGeneral
+            || category.Language.Value == "whiteboard" || supported.Contains(category.Language)));
     }
 }

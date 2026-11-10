@@ -31,6 +31,11 @@ class Element {
   releasePointerCapture() { this.pointer = null; }
   focus() { this.ownerDocument.activeElement = this; }
   select() {}
+  setRangeText(text, start, end) {
+    this.value = this.value.slice(0, start) + text + this.value.slice(end);
+    this.selectionStart = this.selectionEnd = start + text.length;
+  }
+  dispatchEvent(event) { this.fire(event.type); return true; }
   blur() { this.fire('blur'); }
   click() { this.fire('click'); }
   remove() { this.parent.children = this.parent.children.filter((e) => e !== this); }
@@ -42,6 +47,7 @@ function fixture() {
   const win = new Element('window');
   win.crypto = { randomUUID }; win.HTMLTextAreaElement = TextArea; win.HTMLInputElement = Input;
   win.HTMLButtonElement = Button;
+  win.Event = Event;
   const document = { defaultView: win };
   document.createElement = (tag) => new (tag === 'textarea' ? TextArea : tag === 'button' ? Button : Element)(tag, document);
   document.createElementNS = (_, tag) => new Element(tag, document);
@@ -363,11 +369,10 @@ test('clipboard transfers between boards and leaves text editing, readonly and i
     target.board.setReadOnly(true);
     target.host.fire('paste', { clipboardData, preventDefault });
     target.board.setReadOnly(false);
-    for (const content of ['', 'plain text', 'null', '{}', 'x'.repeat(100001),
+    for (const content of ['', 'x'.repeat(4001), 'x'.repeat(100001),
       ...[
-        { format: 'other', version: 1, shapes: [shape] },
         { format: 'sealcode-whiteboard', version: 2, shapes: [shape] },
-        ...[null, [], [shape, shape], [{ ...shape, type: 'unknown' }], [{ ...shape, x: 1e7 }]].map((shapes) =>
+        ...[null, [], Array(101).fill(shape), [shape, { ...shape, type: 'unknown' }], [{ ...shape, x: 1e7 }]].map((shapes) =>
           ({ format: 'sealcode-whiteboard', version: 1, shapes }))
       ].map(JSON.stringify)]) {
       clipboardData.setData('text/plain', content);
@@ -379,4 +384,250 @@ test('clipboard transfers between boards and leaves text editing, readonly and i
   } finally {
     source.binding.destroy(); source.doc.destroy(); target.doc.destroy();
   }
+});
+
+test('diagram paste preserves geometry, regenerates IDs and is one collaborative undo operation', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    const shapes = ['rectangle', 'arrow', 'database'].map((type, i) =>
+      ({ id: String(i), type, x: 50 + i * 180, y: 100, width: 140, height: 80, text: type }));
+    const data = clipboard();
+    data.setData('text/plain', JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes }));
+    f.host.fire('paste', { clipboardData: data });
+    const pasted = [...f.map.values()];
+    assert.equal(pasted.length, 3);
+    assert.equal(new Set(pasted.map(s => s.id)).size, 3);
+    pasted.forEach((s, i) => {
+      assert.notEqual(s.id, shapes[i].id);
+      assert.deepEqual(s, { ...shapes[i], id: s.id, x: shapes[i].x + 24, y: 124 });
+    });
+    undo.undo(); assert.equal(f.map.size, 0);
+    undo.redo(); assert.equal(f.map.size, 3);
+    f.host.fire('paste', { clipboardData: data });
+    assert.equal(f.map.size, 6);
+    undo.undo(); assert.equal(f.map.size, 3);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('Ctrl/Cmd+A selects a snapshot for copying, duplication and atomic deletion without capturing later remote shapes', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    f.draw('rectangle'); f.draw('database');
+    let prevented = 0;
+    f.host.fire('keydown', { ctrlKey: true, key: 'a', preventDefault: () => prevented++ });
+    assert.equal(prevented, 1);
+    assert.equal(f.button('Delete selected').disabled, false);
+    assert.equal(f.button('Edit label').disabled, true);
+    const data = clipboard();
+    f.host.fire('copy', { clipboardData: data });
+    assert.equal(JSON.parse(data.getData('text/plain')).shapes.length, 2);
+    f.host.fire('keydown', { ctrlKey: true, key: 'd' });
+    assert.equal(f.map.size, 4);
+    undo.undo(); assert.equal(f.map.size, 2);
+    f.host.fire('keydown', { metaKey: true, key: 'A' });
+    const remote = { id: 'remote', type: 'ellipse', x: 400, y: 100, width: 100, height: 80, text: 'Remote' };
+    f.map.set(remote.id, remote);
+    f.host.fire('keydown', { key: 'Delete' });
+    assert.deepEqual([...f.map.values()], [remote]);
+    undo.undo(); assert.equal(f.map.size, 3);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.host.fire('keydown', { key: 'Escape' });
+    f.host.fire('keydown', { key: 'Backspace' });
+    assert.equal(f.map.size, 3);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.button('Delete selected').click(); assert.equal(f.map.size, 0);
+    undo.undo(); assert.equal(f.map.size, 3);
+    f.board.setReadOnly(true);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.host.fire('copy', { clipboardData: data });
+    assert.equal(JSON.parse(data.getData('text/plain')).shapes.length, 3);
+    f.host.fire('keydown', { key: 'Delete' }); assert.equal(f.map.size, 3);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('select all preserves native text editing and ignores unfinished drawing gestures', () => {
+  const f = fixture();
+  const preventDefault = () => assert.fail('Native text selection was prevented');
+  try {
+    const shape = f.draw('rectangle');
+    for (const target of [new Input('input'), new TextArea('textarea'), { isContentEditable: true }])
+      f.host.fire('keydown', { ctrlKey: true, key: 'a', target, preventDefault });
+    f.tool('rectangle'); f.pointer('pointerdown', 300, 300);
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.svg.fire('pointercancel');
+    f.host.fire('keydown', { key: 'Delete' });
+    assert.ok(f.map.has(shape.id));
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.map.delete(shape.id);
+    f.host.fire('copy', { clipboardData: clipboard(), preventDefault });
+    f.host.fire('keydown', { key: 'Delete' });
+    assert.equal(f.map.size, 0);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('selected groups move together at the current zoom and undo atomically while preserving remote edits', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    const first = f.draw('rectangle'), second = f.draw('database');
+    f.host.fire('keydown', { ctrlKey: true, key: 'ф', code: 'KeyA' });
+    f.svg.fire('wheel', { ctrlKey: true, deltaY: -Math.log(2) / 0.003, clientX: 0, clientY: 0 });
+    f.pointer('pointerdown', 240, 340, f.shapeElement(first.id));
+    f.pointer('pointermove', 320, 380);
+    assert.equal(f.map.get(first.id).x, first.x, 'group drafts stay local until pointerup');
+    f.map.set(second.id, { ...second, text: 'Remote label', width: 200 });
+    f.pointer('pointerup', 320, 380);
+    for (const original of [first, second]) {
+      const moved = f.map.get(original.id);
+      assert.equal(moved.x, original.x + 40);
+      assert.equal(moved.y, original.y + 20);
+    }
+    assert.equal(f.map.get(second.id).text, 'Remote label');
+    assert.equal(f.map.get(second.id).width, 200);
+    undo.undo();
+    assert.equal(f.map.get(first.id).x, first.x);
+    assert.equal(f.map.get(second.id).x, second.x);
+    assert.equal(f.map.get(second.id).text, 'Remote label');
+    undo.redo(); assert.equal(f.map.get(second.id).x, second.x + 40);
+    f.pointer('pointerdown', 320, 380, f.shapeElement(first.id));
+    f.pointer('pointermove', 400, 460);
+    f.map.delete(second.id);
+    f.pointer('pointerup', 400, 460);
+    assert.equal(f.map.has(second.id), false, 'group move cannot resurrect a remotely deleted shape');
+    assert.equal(f.map.get(first.id).x, first.x + 80);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('reverse marquee and additive Ctrl/Cmd clicks select subsets; canceled marquee restores selection', () => {
+  const f = fixture();
+  try {
+    const shapes = [100, 320, 600].map((x, i) => ({ id: `shape-${i}`, type: 'rectangle', x, y: 150, width: 100, height: 80, text: '' }));
+    for (const shape of shapes) f.map.set(shape.id, shape);
+    const count = () => {
+      const data = clipboard(); f.host.fire('copy', { clipboardData: data });
+      const content = data.getData('text/plain'); return content ? JSON.parse(content).shapes.length : 0;
+    };
+    f.pointer('pointerdown', 450, 250); f.pointer('pointermove', 80, 130); f.pointer('pointerup', 80, 130);
+    assert.equal(count(), 2);
+    f.pointer('pointerdown', 650, 180, f.shapeElement(shapes[2].id), { ctrlKey: true });
+    f.pointer('pointerup', 650, 180); assert.equal(count(), 3);
+    f.pointer('pointerdown', 150, 180, f.shapeElement(shapes[0].id), { metaKey: true });
+    f.pointer('pointerup', 150, 180); assert.equal(count(), 2);
+    f.pointer('pointerdown', 80, 130, f.svg, { ctrlKey: true });
+    f.pointer('pointermove', 210, 240); f.pointer('pointerup', 210, 240); assert.equal(count(), 3);
+    f.pointer('pointerdown', 800, 300); f.pointer('pointermove', 900, 400);
+    f.svg.fire('pointercancel'); assert.equal(count(), 3);
+    f.pointer('pointerdown', 800, 300); f.pointer('pointerup', 800, 300); assert.equal(count(), 0);
+    // A group drag canceled by Escape never changes the shared geometry.
+    f.host.fire('keydown', { ctrlKey: true, key: 'a' });
+    f.pointer('pointerdown', 150, 180, f.shapeElement(shapes[0].id));
+    f.pointer('pointermove', 200, 230);
+    f.host.fire('keydown', { key: 'Escape' }); f.pointer('pointerup', 200, 230);
+    assert.deepEqual([...f.map.values()], shapes);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('non-Latin physical copy/paste uses the clipboard once and protects text fields, readonly and detached boards', async () => {
+  const f = fixture();
+  let content = '', writes = 0, reads = 0;
+  let detached = false;
+  f.win.navigator = { clipboard: {
+    async writeText(value) { content = value; writes++; },
+    async readText() { reads++; return content; }
+  } };
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+  try {
+    f.draw('rectangle'); f.draw('database');
+    f.host.fire('keydown', { ctrlKey: true, key: 'ф', code: 'KeyA' });
+    f.host.fire('keydown', { ctrlKey: true, key: 'с', code: 'KeyC' }); await settle();
+    assert.equal(JSON.parse(content).shapes.length, 2); assert.equal(writes, 1);
+    f.host.fire('keydown', { metaKey: true, key: 'м', code: 'KeyV' }); await settle();
+    assert.equal(f.map.size, 4); assert.equal(reads, 1);
+    for (const target of [new Input('input'), new TextArea('textarea'), { isContentEditable: true }]) {
+      f.host.fire('keydown', { ctrlKey: true, key: 'с', code: 'KeyC', target });
+      f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV', target });
+    }
+    f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV', repeat: true }); await settle();
+    assert.equal(reads, 1); assert.equal(writes, 1);
+    f.board.setReadOnly(true);
+    f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV' }); await settle();
+    assert.equal(f.map.size, 4); assert.equal(reads, 1);
+    f.board.setReadOnly(false);
+    f.win.navigator.clipboard.readText = () => new Promise(resolve => { f.finishPaste = resolve; });
+    f.host.fire('keydown', { ctrlKey: true, key: 'м', code: 'KeyV' });
+    f.binding.destroy(); detached = true; f.finishPaste(content); await settle();
+    assert.equal(f.map.size, 4);
+  } finally { if (!detached) f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('non-Latin clipboard access failures are reported without changing the document', async () => {
+  const f = fixture();
+  f.win.navigator = { clipboard: { async writeText() { throw Error('denied'); }, async readText() { throw Error('denied'); } } };
+  try {
+    f.draw('rectangle');
+    for (const [key, code] of [['с', 'KeyC'], ['м', 'KeyV']]) {
+      f.host.fire('keydown', { ctrlKey: true, key, code });
+      await Promise.resolve(); await Promise.resolve();
+      assert.match(f.find(el => el.attributes.role === 'status').textContent, /Clipboard unavailable/);
+      assert.equal(f.map.size, 1);
+    }
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('Ctrl/Cmd+Enter inserts a newline at the caret and saving keeps user-defined text geometry', () => {
+  const f = fixture();
+  try {
+    const shape = f.draw('text', 110, 170);
+    const input = f.editor();
+    input.value = 'First selected last'; input.selectionStart = 6; input.selectionEnd = 14;
+    input.fire('keydown', { key: 'Enter', ctrlKey: true });
+    assert.equal(input.value, 'First \n last');
+    assert.equal(input.selectionStart, 7);
+    assert.ok(f.editor(), 'Ctrl+Enter must not save or close the editor');
+    input.fire('keydown', { key: 'Enter', metaKey: true });
+    assert.equal(input.value, 'First \n\n last');
+    input.value = 'x'.repeat(4000); input.selectionStart = input.selectionEnd = 4000;
+    input.fire('keydown', { key: 'Enter', ctrlKey: true });
+    assert.equal(input.value.length, 4000);
+    input.value = 'A very long unbroken label that must keep its drawn width';
+    input.fire('keydown', { key: 'Enter', ctrlKey: true, isComposing: true });
+    assert.ok(f.editor());
+    input.fire('keydown', { key: 'Enter' });
+    assert.equal(f.map.get(shape.id).width, 110);
+    assert.equal(f.map.get(shape.id).height, 170);
+    assert.equal(f.map.get(shape.id).text, input.value);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('plain clipboard text becomes a literal text shape at the current viewport with offset pastes and atomic undo', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  const data = clipboard();
+  try {
+    data.setData('text/plain', '<script>alert(1)</script>\r\nSecond line');
+    f.host.fire('paste', { clipboardData: data });
+    const first = [...f.map.values()][0];
+    assert.equal(first.type, 'text');
+    assert.equal(first.text, '<script>alert(1)</script>\nSecond line');
+    assert.equal(first.x + first.width / 2, 500);
+    assert.equal(first.y + first.height / 2, 300);
+    f.host.fire('paste', { clipboardData: data });
+    const second = [...f.map.values()][1];
+    assert.equal(second.x, first.x + 24); assert.equal(second.y, first.y + 24);
+    undo.undo(); assert.equal(f.map.size, 1);
+    undo.redo(); assert.equal(f.map.size, 2);
+    for (const value of ['{}', 'null', 'привет 😀', 'x'.repeat(4000)]) {
+      data.setData('text/plain', value); f.host.fire('paste', { clipboardData: data });
+      assert.equal([...f.map.values()].at(-1).text, value);
+    }
+    const size = f.map.size;
+    f.board.setReadOnly(true); f.host.fire('paste', { clipboardData: data });
+    assert.equal(f.map.size, size);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
 });

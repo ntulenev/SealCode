@@ -122,4 +122,12 @@ public sealed class SnippetLibraryTests
 
     private static SnippetCategory Category(string language)
         => new(new(language), language, [new(1, "Topic", "Coverage", "Question")]);
+
+    [Fact]
+    public void WhiteboardCategoryRemainsAvailableWithoutAProgrammingLanguage()
+    {
+        var whiteboard = Category("whiteboard");
+        var library = new SnippetLibrary([whiteboard, Category("csharp")]);
+        Assert.Equal([whiteboard], library.ForLanguages([]).Categories);
+    }
 }

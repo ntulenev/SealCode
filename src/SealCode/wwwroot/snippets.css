@@ -1,6 +1,6 @@
 .snippet-workspace { width: min(1320px, 100%); margin: 40px auto; padding: 0 32px; }
 .snippet-sync { margin: 12px 0 0; font-size: 12px; line-height: 1.6; }
-.snippet-tabs { display: flex; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+.snippet-tabs { display: flex; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
 .snippet-tabs button { background: transparent; color: var(--muted); }
 .snippet-tabs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .snippet-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 430px; }
@@ -49,3 +49,5 @@ button.snippet-launcher:disabled { color: var(--error); border-color: var(--erro
   .snippet-detail { padding: 24px 0; }
   .snippet-detail-heading { align-items: flex-start; flex-direction: column; }
 }
+
+.snippet-whiteboard { display: block; width: 100%; height: clamp(200px, 35vw, 360px); border: 1px solid var(--border); border-radius: 8px; background: var(--editor-bg); }

@@ -29,3 +29,6 @@
   .board-hint { max-width: 260px; margin-inline: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .whiteboard button, .board-remote-cursor { transition: none; } }
+
+.board-marquee { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 4; pointer-events: none; vector-effect: non-scaling-stroke; }
+.board-clipboard-status { position: absolute; bottom: 60px; left: 12px; right: 12px; color: var(--error); pointer-events: none; font-size: 13px; }

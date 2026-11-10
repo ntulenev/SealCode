@@ -31,6 +31,7 @@ if (actions) {
       const language = /** @type {HTMLSelectElement | null} */ (document.getElementById('languageSelect'));
       const url = new URL('/admin/snippets', window.location.origin);
       if (language?.value) url.searchParams.set('language', language.value);
+      else if (document.getElementById('whiteboard')) url.searchParams.set('language', 'whiteboard');
       link.href = url.href;
     };
     updateDestination();
