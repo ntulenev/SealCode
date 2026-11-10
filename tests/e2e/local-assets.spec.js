@@ -28,7 +28,13 @@ test('every page versions its assets, including images, icons and admin imports'
       version ??= assetVersion;
       expect(assetVersion, url).toBe(version);
     }
-    expect(await page.locator('img').evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
+    // Audit assigned sources, including lazy/hidden previews; the closed dialog has no source yet.
+    await page.locator('img[src]').evaluateAll((images) => {
+      for (const image of images) image.loading = 'eager';
+    });
+    await expect.poll(() => page.locator('img[src]').evaluateAll((images) =>
+      images.filter((image) => !image.complete || image.naturalWidth === 0).map((image) => image.src)
+    )).toEqual([]);
   }
   for (const url of assetRequests) {
     const asset = new URL(url);
