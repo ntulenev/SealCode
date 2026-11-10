@@ -206,6 +206,10 @@ export async function roomFixture(context, options = {}) {
   f.view.confirm = () => false;
   const board = options.board ? {
     readOnly: true, downloads: 0,
+    cursors: new Map(),
+    setRemoteCursor(name, point) { this.cursors.set(name, point); },
+    removeRemoteCursor(name) { this.cursors.delete(name); },
+    clearRemoteCursors() { this.cursors.clear(); },
     setReadOnly(value) { this.readOnly = value; },
     bind(doc) { const scope = doc.getMap('whiteboard'); this.scope = scope; return this.binding = { scope, destroy() {} }; },
     download() { this.downloads++; }

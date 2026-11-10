@@ -115,6 +115,101 @@ async function expectScene(pages, expected) {
   for (const page of pages) await expect.poll(() => scene(page)).toEqual(expected);
 }
 
+test('participant cursors show names and stable colors in board coordinates across zoom and pan', async ({ whiteboard }, testInfo) => {
+  const { alice, bob } = whiteboard;
+  await whiteboard.join();
+  const before = await alice.evaluate(() => window.__debugUndoState());
+  await alice.bringToFront();
+  const box = await alice.locator('.board-canvas').boundingBox();
+  await alice.mouse.move(box.x + 220, box.y + 180);
+  const cursor = bob.locator('[data-cursor-name="Alice"]');
+  await expect(cursor).toBeVisible();
+  await expect(cursor.locator('text')).toHaveText('Alice');
+  await expect(alice.locator('[data-cursor-name="Alice"]')).toHaveCount(0);
+  await expect.poll(() => cursor.evaluate((el) => el.style.transform)).toBe('translate(220px, 180px)');
+  const color = await cursor.locator('path').getAttribute('fill');
+
+  // DOM activation preserves the sender's focus and stationary pointer.
+  await bob.getByRole('button', { name: 'Zoom in', exact: true }).evaluate((el) => el.click());
+  const size = await bob.locator('.board-canvas').boundingBox();
+  const expectedX = 220 * 1.2 - size.width * 0.1;
+  const expectedY = 180 * 1.2 - size.height * 0.1;
+  await expect.poll(() => cursor.evaluate((el) => {
+    const matrix = new DOMMatrix(getComputedStyle(el).transform);
+    return { x: Math.round(matrix.e), y: Math.round(matrix.f) };
+  })).toEqual({ x: Math.round(expectedX), y: Math.round(expectedY) });
+  await bob.locator('.board-canvas').dispatchEvent('wheel', { deltaX: 30, deltaY: 40 });
+  await expect.poll(() => cursor.evaluate((el) => {
+    const matrix = new DOMMatrix(getComputedStyle(el).transform);
+    return { x: Math.round(matrix.e), y: Math.round(matrix.f) };
+  })).toEqual({ x: Math.round(expectedX - 30), y: Math.round(expectedY - 40) });
+  await expect(cursor.locator('path')).toHaveAttribute('fill', color);
+  await bob.screenshot({ path: testInfo.outputPath('participant-cursor.png') });
+
+  await alice.locator('.board-canvas').dispatchEvent('wheel', { deltaX: 20, deltaY: 10 });
+  await expect.poll(() => cursor.evaluate((el) => {
+    const matrix = new DOMMatrix(getComputedStyle(el).transform);
+    return { x: Math.round(matrix.e), y: Math.round(matrix.f) };
+  })).toEqual({ x: Math.round(240 * 1.2 - size.width * 0.1 - 30), y: Math.round(190 * 1.2 - size.height * 0.1 - 40) });
+  expect(await alice.evaluate(() => window.__debugUndoState())).toEqual(before);
+  await expectScene([alice, bob], []);
+
+  await alice.mouse.move(0, 0);
+  await expect(cursor).toHaveCount(0);
+  await alice.mouse.move(box.x + 220, box.y + 180);
+  await expect(cursor).toBeVisible();
+  await alice.close();
+  await expect(bob.locator('#participantsList li')).toHaveCount(1);
+  await expect(cursor).toHaveCount(0);
+});
+
+test('participant cursors clear on connection loss and resume after rejoining', async ({ whiteboard }) => {
+  const { alice, bob } = whiteboard;
+  await whiteboard.join();
+  await alice.bringToFront();
+  const box = await alice.locator('.board-canvas').boundingBox();
+  await alice.mouse.move(box.x + 200, box.y + 200);
+  await expect(bob.locator('[data-cursor-name="Alice"]')).toBeVisible();
+  await bob.context().setOffline(true);
+  await expect(bob.locator('#connectionStatus')).not.toHaveText('connected');
+  await expect(bob.locator('[data-cursor-name]')).toHaveCount(0);
+  await bob.context().setOffline(false);
+  await expect(bob.locator('#connectionStatus')).toHaveText('connected');
+  await alice.mouse.move(box.x + 250, box.y + 240);
+  await expect(bob.locator('[data-cursor-name="Alice"]')).toBeVisible();
+  await expect.poll(() => bob.locator('[data-cursor-name="Alice"]').evaluate((el) => el.style.transform)).toBe('translate(250px, 240px)');
+});
+
+test('participant cursors share colors across three clients and allow drawing beneath them', async ({ whiteboard }) => {
+  const { alice, bob } = whiteboard;
+  await whiteboard.join();
+  const observer = await whiteboard.observe();
+  await alice.bringToFront();
+  const aliceBox = await alice.locator('.board-canvas').boundingBox();
+  const bobBox = await bob.locator('.board-canvas').boundingBox();
+  await alice.mouse.move(aliceBox.x + 180, aliceBox.y + 180);
+  await bob.mouse.move(bobBox.x + 260, bobBox.y + 210);
+  const cursors = (page, name) => page.locator(`[data-cursor-name="${name}"]`);
+  await expect(observer.locator('[data-cursor-name]')).toHaveCount(2);
+  await expect(cursors(observer, 'Alice')).toBeVisible();
+  await expect(cursors(observer, 'Bob')).toBeVisible();
+  const aliceColor = await cursors(bob, 'Alice').locator('path').getAttribute('fill');
+  const bobColor = await cursors(alice, 'Bob').locator('path').getAttribute('fill');
+  await expect(cursors(observer, 'Alice').locator('path')).toHaveAttribute('fill', aliceColor);
+  await expect(cursors(observer, 'Bob').locator('path')).toHaveAttribute('fill', bobColor);
+  expect(aliceColor).not.toBe(bobColor);
+  const cursor = cursors(observer, 'Bob');
+  const height = (await cursor.locator('text').boundingBox()).height;
+  await observer.getByRole('button', { name: 'Zoom in', exact: true }).evaluate((el) => el.click());
+  expect((await cursor.locator('text').boundingBox()).height).toBeCloseTo(height, 1);
+  expect(await cursor.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
+  // Begin a drawing exactly where Bob's remote cursor is displayed.
+  await draw(alice, 'rectangle', 260, 210, 140, 80);
+  for (const page of [alice, bob, observer]) await expect(page.locator('[data-shape-type="rectangle"]')).toHaveCount(1);
+  await expect(cursors(alice, 'Bob')).toBeVisible();
+  await observer.close();
+});
+
 function records(message) {
   return typeof message === 'string'
     ? message.split('\x1e').filter(Boolean).map((data) => ({ frame: JSON.parse(data), data: data + '\x1e' }))

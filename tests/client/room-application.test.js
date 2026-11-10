@@ -175,6 +175,26 @@ test('whiteboard composition shares transport and history without loading code-l
   assert.equal(f.board.readOnly, false);
 });
 
+test('whiteboard presence wires cursor transport, ignores self and removes departed or disconnected peers', async (context) => {
+  const f = await roomFixture(context, { board: true });
+  await f.join();
+  f.board.onPointer({ x: -25, y: 45 });
+  await f.tick(60);
+  assert.ok(f.calls.some((call) => call.method === 'UpdateBoardCursor' && call.args[1] === -25 && call.args[2] === 45));
+  f.hub.emit('UserJoined', 'Bob', ['Alice', 'Bob'], 2);
+  f.hub.emit('BoardCursorUpdated', 'Bob', 12, 34);
+  f.hub.emit('BoardCursorUpdated', 'Alice', 56, 78);
+  assert.deepEqual([...f.board.cursors], [['Bob', { x: 12, y: 34 }]]);
+  f.hub.emit('UserLeft', 'Bob', ['Alice'], 3);
+  assert.equal(f.board.cursors.size, 0);
+  f.hub.emit('UserJoined', 'Bob', ['Alice', 'Bob'], 4);
+  f.hub.emit('BoardCursorUpdated', 'Bob', 12, 34);
+  await f.view.fire('offline');
+  assert.equal(f.board.cursors.size, 0);
+  f.hub.emit('BoardCursorUpdated', 'Bob', 12, 34);
+  assert.equal(f.board.cursors.size, 0);
+});
+
 test('configured snapshot warnings appear and clear when the user reduces the document', async (context) => {
   const f = await roomFixture(context, { text: '', features: { Limits: { MaxSnapshotCharacters: 5 } } });
   await f.join();

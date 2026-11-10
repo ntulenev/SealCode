@@ -243,6 +243,26 @@ public sealed class RoomHub : SignalRHub
     }
 
     /// <summary>
+    /// Broadcasts a transient whiteboard cursor in board coordinates; null hides it.
+    /// </summary>
+    /// <param name="roomId">The room identifier.</param>
+    /// <param name="x">The horizontal board coordinate.</param>
+    /// <param name="y">The vertical board coordinate.</param>
+    [HubMethodName(HubContract.Methods.UpdateBoardCursor)]
+    public async Task UpdateBoardCursorAsync(string roomId, double? x, double? y)
+    {
+        var parsedRoomId = ParseRoomIdOrThrow(roomId);
+        if (x.HasValue != y.HasValue ||
+            (x is double horizontal && !double.IsFinite(horizontal)) ||
+            (y is double vertical && !double.IsFinite(vertical)))
+        {
+            throw HubErrors.Create(HubErrorCode.InvalidInput, "Invalid board cursor position");
+        }
+        await BroadcastPresenceAsync(parsedRoomId, (id, user) => Clients.GroupExcept(id, Context.ConnectionId)
+            .SendAsync(HubContract.Events.BoardCursorUpdated, user.Value, x, y, Context.ConnectionAborted)).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Updates the selection state for the current user.
     /// </summary>
     /// <param name="roomId">The room identifier.</param>

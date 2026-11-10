@@ -65,6 +65,54 @@ function fixture() {
   return { board, doc, binding, map, host, svg, win, button, tool, pointer, draw, find, shapeElement, editor };
 }
 
+test('remote cursors retain board coordinates and constant size across viewport changes', () => {
+  const f = fixture();
+  const points = [];
+  f.board.onPointer = (point) => points.push(point);
+  f.pointer('pointermove', 100, 150);
+  assert.deepEqual(points.at(-1), { x: 100, y: 150 });
+  const name = '<script>Alice</script>';
+  f.board.setRemoteCursor(name, { x: 100, y: 150 });
+  const cursor = f.find((el) => el.attributes['data-cursor-name'] === name);
+  assert.equal(cursor.style.transform, 'translate(100px, 150px)');
+  assert.equal(cursor.children[0].textContent, name);
+  f.svg.fire('wheel', { deltaX: 20, deltaY: 30, ctrlKey: false });
+  assert.equal(cursor.style.transform, 'translate(80px, 120px)');
+  assert.deepEqual(points.at(-1), { x: 120, y: 180 });
+  f.button('Zoom in').click();
+  assert.equal(cursor.style.transform, 'translate(-4px, 84px)');
+  assert.equal(cursor.attributes.transform, undefined);
+  f.pointer('pointerleave', 0, 0);
+  assert.equal(points.at(-1), null);
+  f.board.setRemoteCursor(name, { x: -10, y: 20 });
+  f.board.removeRemoteCursor(name);
+  assert.equal(f.find((el) => el.attributes['data-cursor-name'] === name), undefined);
+  f.board.setRemoteCursor('Bob', { x: 0, y: 0 });
+  f.board.clearRemoteCursors();
+  assert.equal(f.find((el) => el.attributes['data-cursor-name']), undefined);
+  assert.equal(f.map.size, 0);
+  f.binding.destroy(); f.doc.destroy();
+});
+
+test('cursor colors are stable across peers, arrival order and removal; labels remain plain text', () => {
+  const a = fixture(), b = fixture();
+  const names = ['Maya', 'Leo', '<img onerror=alert(1)>'];
+  for (const name of names) a.board.setRemoteCursor(name, { x: 0, y: 0 });
+  for (const name of [...names].reverse()) b.board.setRemoteCursor(name, { x: 0, y: 0 });
+  const cursor = (f, name) => f.find((el) => el.attributes['data-cursor-name'] === name);
+  for (const name of names) {
+    assert.equal(cursor(a, name).children[1].attributes.fill, cursor(b, name).children[1].attributes.fill);
+    assert.equal(cursor(a, name).children[0].textContent, name);
+    assert.ok(cursor(a, name).children[3].textContent.length <= 22);
+  }
+  const color = cursor(a, 'Maya').children[1].attributes.fill;
+  a.board.removeRemoteCursor('Maya');
+  a.board.setRemoteCursor('Maya', { x: 10, y: 20 });
+  assert.equal(cursor(a, 'Maya').children[1].attributes.fill, color);
+  assert.notEqual(color, cursor(a, 'Leo').children[1].attributes.fill);
+  for (const f of [a, b]) { f.binding.destroy(); f.doc.destroy(); }
+});
+
 test('drawing tools render all primitives, labels safely and normalize reverse drags', () => {
   const f = fixture();
   try {

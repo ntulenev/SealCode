@@ -86,6 +86,13 @@ shortcuts, collaboration behavior and current limitations.
 | --- | --- |
 | ![Shared order-processing diagram with bidirectional arrows between client, API and database in dark theme](docs/images/whiteboard-dark.png) | ![The same labeled system-design diagram with bidirectional arrows in light theme](docs/images/whiteboard-light.png) |
 
+Live cursors show each participant's name and color while discussing the diagram.
+These screenshots show Maya and Leo pointing at different parts of the same board.
+
+| Participant cursors (dark) | Participant cursors (light) |
+| --- | --- |
+| ![Order pipeline with Maya's blue cursor beside the API and Leo's pink cursor beside the workers in dark theme](docs/images/whiteboard-cursors-dark.png) | ![The same two named participant cursors and diagram in light theme](docs/images/whiteboard-cursors-light.png) |
+
 <details>
 <summary>Mobile home and room management</summary>
 
@@ -117,6 +124,11 @@ In the admin panel, use **Create whiteboard** with a name. **Create room** conti
 creating code rooms with a language. Both appear in the same list and use the same
 invitation links, ownership/deletion rules, `MaxRooms`, `MaxUsersPerRoom`, idle
 expiration and transport resource budgets. The room kind is fixed at creation.
+
+Other participants' cursors appear with their names and stable colors. They stay
+aligned with the diagram when you pan or zoom and disappear when the participant
+leaves the canvas or disconnects. Cursor positions are transient: they are not
+saved in the diagram, exported, or included in undo/redo.
 
 Choose a tool, then drag on the canvas (or click to insert a default-size element).
 Use Select to move an element and its corner handle to resize it. Double-click an
@@ -966,7 +978,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.18.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.19.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
@@ -1014,6 +1026,8 @@ Coverage reports are separate:
 
 The [whiteboard verification report](docs/whiteboard-verification.md) records
 the feature's regression scenarios, measured coverage and remaining coverage gaps.
+The [cursor review](docs/whiteboard-cursors-verification.md) covers server style,
+cursor-specific unit, SignalR integration and browser tests, and measured coverage.
 
 ### Refreshing the README screenshots
 
@@ -1022,6 +1036,12 @@ With Node.js 20+, the .NET 10 SDK and the repository dependencies installed:
 ```bash
 npx playwright install chromium
 node scripts/capture-readme.mjs
+```
+
+To refresh only the dark and light examples with two named remote cursors:
+
+```bash
+node scripts/capture-readme.mjs --cursors-only
 ```
 
 The script builds the client and server, starts an isolated loopback instance
