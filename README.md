@@ -1022,9 +1022,9 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.19.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.20.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
-`Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
+`Resources/Snippets/library.html` and `Resources/Snippets/manage.html` pages. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
 Stable URLs (HTML, JavaScript entry points and workers) use `Cache-Control: no-cache`
 so browsers revalidate them using ETag/Last-Modified. Files with esbuild hashes in
