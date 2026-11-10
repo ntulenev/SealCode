@@ -144,6 +144,71 @@ async function updateGate(page) {
   };
 }
 
+test('concurrent Ctrl+C / Ctrl+V pastes converge through CRDT and undo preserves another participant copy', async ({ whiteboard }) => {
+  const { alice, bob } = whiteboard;
+  const aliceGate = await updateGate(alice);
+  const bobGate = await updateGate(bob);
+  await whiteboard.join();
+  await draw(alice, 'rectangle', 100, 160);
+  const originalId = await alice.locator('[data-shape-id]').getAttribute('data-shape-id');
+  await label(alice, originalId, 'API gateway');
+  const baseline = await scene(alice);
+  await expectScene([bob], baseline);
+  const originalGeometry = await rectangle(alice, originalId);
+
+  // Hold real Yjs updates until both participants paste against the same state.
+  aliceGate.hold();
+  bobGate.hold();
+  await alice.keyboard.press('Control+c');
+  await alice.keyboard.press('Control+v');
+  await expect(alice.locator('[data-shape-id]')).toHaveCount(2);
+  await expect(bob.locator('[data-shape-id]')).toHaveCount(1);
+  const aliceCopyId = await alice.locator(`[data-shape-id]:not([data-shape-id="${originalId}"])`).getAttribute('data-shape-id');
+  await select(bob, originalId);
+  await bob.keyboard.press('Control+c');
+  await bob.keyboard.press('Control+v');
+  await expect(bob.locator('[data-shape-id]')).toHaveCount(2);
+  await expect(alice.locator('[data-shape-id]')).toHaveCount(2);
+  const bobCopyId = await bob.locator(`[data-shape-id]:not([data-shape-id="${originalId}"])`).getAttribute('data-shape-id');
+  expect(new Set([originalId, aliceCopyId, bobCopyId]).size).toBe(3);
+  for (const [page, id] of [[alice, aliceCopyId], [bob, bobCopyId]]) {
+    await expect(shape(page, id)).toHaveText('API gateway');
+    expect(await rectangle(page, id)).toEqual({
+      ...originalGeometry, x: originalGeometry.x + 24, y: originalGeometry.y + 24
+    });
+  }
+  await expect.poll(() => aliceGate.count).toBe(1);
+  await expect.poll(() => bobGate.count).toBe(1);
+  const merged = [...await scene(alice), ...(await scene(bob)).filter((item) => item.id === bobCopyId)]
+    .sort((a, b) => a.id.localeCompare(b.id));
+  bobGate.release();
+  aliceGate.release();
+  await expectScene([alice, bob], merged);
+  const observer = await whiteboard.observe();
+  await expectScene([observer], merged);
+
+  // Local undo must retain the other participant's pasted element and later edits.
+  await bob.bringToFront();
+  await bob.locator('.board-canvas').focus();
+  await bob.keyboard.press('Enter');
+  const editor = bob.getByRole('textbox', { name: 'Element label' });
+  await editor.fill('Edited by Bob');
+  await editor.press('Enter');
+  await expect(shape(bob, bobCopyId)).toHaveText('Edited by Bob');
+  const edited = await scene(bob);
+  await expectScene([alice, observer], edited);
+  await alice.bringToFront();
+  await alice.locator('.board-canvas').focus();
+  await alice.keyboard.press('Control+z');
+  await expectScene([alice, bob, observer], edited.filter((item) => item.id !== aliceCopyId));
+  await alice.keyboard.press('Control+Shift+z');
+  await expectScene([alice, bob, observer], edited);
+
+  // A fresh Yjs session must restore the same IDs, labels and full SVG geometry.
+  await join(bob, bob.url(), 'Bob after reload');
+  await expectScene([bob], edited);
+});
+
 test('concurrent creation and edits to different figures preserve both participants changes', async ({ whiteboard }) => {
   const { alice, bob } = whiteboard;
   const aliceGate = await updateGate(alice);

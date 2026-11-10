@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { randomUUID } from 'node:crypto';
 import { createWhiteboardView } from '../../src/SealCode/wwwroot/whiteboard-view.js';
 import { shapeTypes } from '../../src/SealCode/wwwroot/whiteboard-model.js';
+import { BoundedUndoManager } from '../../src/SealCode/wwwroot/bounded-undo-manager.js';
 
 // A small DOM event adapter keeps geometry/gesture tests deterministic.
 class Element {
@@ -249,4 +250,85 @@ test('toolbar Enter and Space retain native activation without editing labels or
     f.pointer('pointerup', 180, 210);
     assert.deepEqual([f.map.get(shape.id).x, f.map.get(shape.id).y], [140, 180]);
   } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+function clipboard() {
+  const data = new Map();
+  return { setData: (type, value) => data.set(type, value), getData: (type) => data.get(type) ?? '' };
+}
+
+test('clipboard copies every shape as a snapshot, pastes unique offset elements and supports selective undo', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    for (const type of shapeTypes) {
+      const shape = f.draw(type, -130, -70);
+      if (f.editor()) f.editor().fire('keydown', { key: 'Enter' });
+      f.map.set(shape.id, { ...f.map.get(shape.id), text: 'Service\n<Label>' });
+      const source = f.map.get(shape.id);
+      const clipboardData = clipboard();
+      let copies = 0, pastes = 0;
+      f.host.fire('copy', { clipboardData, preventDefault: () => copies++ });
+      f.map.delete(source.id);
+      f.host.fire('paste', { clipboardData, preventDefault: () => pastes++ });
+      const first = [...f.map.values()].at(-1);
+      assert.notEqual(first.id, source.id);
+      assert.deepEqual(first, { ...source, id: first.id, x: source.x + 24, y: source.y + 24 });
+      f.host.fire('paste', { clipboardData, preventDefault: () => pastes++ });
+      const second = [...f.map.values()].at(-1);
+      assert.notEqual(second.id, first.id);
+      assert.deepEqual(second, { ...source, id: second.id, x: source.x + 48, y: source.y + 48 });
+      assert.equal(copies, 1); assert.equal(pastes, 2);
+      undo.undo();
+      assert.ok(f.map.has(first.id)); assert.equal(f.map.has(second.id), false);
+      undo.redo(); assert.ok(f.map.has(second.id));
+      f.host.fire('keydown', { key: 'Delete' });
+      assert.equal(f.map.has(second.id), false);
+    }
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('clipboard transfers between boards and leaves text editing, readonly and invalid data untouched', () => {
+  const source = fixture(), target = fixture();
+  const clipboardData = clipboard();
+  const preventDefault = () => assert.fail('Native clipboard action was prevented');
+  try {
+    source.host.fire('copy', { clipboardData, preventDefault });
+    const shape = source.draw('database');
+    source.host.fire('copy', { clipboardData });
+    target.host.fire('paste', { clipboardData });
+    assert.equal(target.map.size, 1);
+    const pasted = [...target.map.values()][0];
+    assert.deepEqual(pasted, { ...shape, id: pasted.id, x: shape.x + 24, y: shape.y + 24 });
+    for (const event of ['copy', 'paste']) {
+      target.host.fire(event, { preventDefault });
+      target.host.fire(event, { clipboardData, target: new Input('input'), preventDefault });
+      target.host.fire(event, { clipboardData, target: { isContentEditable: true }, preventDefault });
+      target.button('Edit label').click();
+      target.host.fire(event, { clipboardData, target: target.editor(), preventDefault });
+      target.editor().fire('keydown', { key: 'Escape' });
+    }
+    target.tool('rectangle'); target.pointer('pointerdown', 300, 300);
+    for (const event of ['copy', 'paste']) target.host.fire(event, { clipboardData, preventDefault });
+    target.svg.fire('pointercancel');
+    target.board.setReadOnly(true);
+    target.host.fire('paste', { clipboardData, preventDefault });
+    target.board.setReadOnly(false);
+    for (const content of ['', 'plain text', 'null', '{}', 'x'.repeat(100001),
+      ...[
+        { format: 'other', version: 1, shapes: [shape] },
+        { format: 'sealcode-whiteboard', version: 2, shapes: [shape] },
+        ...[null, [], [shape, shape], [{ ...shape, type: 'unknown' }], [{ ...shape, x: 1e7 }]].map((shapes) =>
+          ({ format: 'sealcode-whiteboard', version: 1, shapes }))
+      ].map(JSON.stringify)]) {
+      clipboardData.setData('text/plain', content);
+      target.host.fire('paste', { clipboardData, preventDefault });
+    }
+    assert.equal(target.map.size, 1);
+    target.binding.destroy();
+    target.host.fire('paste', { clipboardData, preventDefault });
+  } finally {
+    source.binding.destroy(); source.doc.destroy(); target.doc.destroy();
+  }
 });

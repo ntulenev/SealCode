@@ -20,6 +20,63 @@ async function draw(page, tool, x, y, width = 150, height = 90) {
   await page.mouse.up();
 }
 
+test('whiteboard Ctrl+C / Ctrl+V uses the clipboard, synchronizes copies and preserves label editing', async ({ page, context }) => {
+  const response = await page.request.post('/admin/rooms', {
+    headers: await csrf(page.request), data: { name: 'Clipboard diagram', kind: 'whiteboard' }
+  });
+  expect(response.ok()).toBe(true);
+  const { RoomId: id } = await response.json();
+  const bob = await context.newPage();
+  const shapes = (p) => p.locator('[data-shape-id]');
+  try {
+    await join(page, `/room/${id}`, 'Alice');
+    await join(bob, `/room/${id}`, 'Bob');
+    await draw(page, 'rectangle', 100, 180);
+    await page.keyboard.press('Enter');
+    const editor = page.getByRole('textbox', { name: 'Element label' });
+    await editor.fill('API gateway');
+    await editor.press('Enter');
+    const originalId = await shapes(page).first().getAttribute('data-shape-id');
+    const originalX = Number(await shapes(page).first().locator('rect').getAttribute('x'));
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Control+v');
+    await expect(shapes(page)).toHaveCount(2);
+    await expect(shapes(bob)).toHaveCount(2);
+    const firstCopyId = await shapes(page).nth(1).getAttribute('data-shape-id');
+    expect(firstCopyId).not.toBe(originalId);
+    await expect(shapes(page).nth(1)).toHaveText('API gateway');
+    await expect(shapes(page).nth(1).locator('rect')).toHaveAttribute('x', String(originalX + 24));
+    await page.keyboard.press('Control+v');
+    await expect(shapes(bob)).toHaveCount(3);
+    await expect(shapes(page).nth(2).locator('rect')).toHaveAttribute('x', String(originalX + 48));
+    await page.keyboard.press('Control+z');
+    await expect(shapes(bob)).toHaveCount(2);
+    await page.keyboard.press('Control+Shift+z');
+    await expect(shapes(bob)).toHaveCount(3);
+    // The OS clipboard is available in another participant's tab as well.
+    await bob.bringToFront();
+    await bob.locator('.board-canvas').focus();
+    await bob.keyboard.press('Control+v');
+    await expect(shapes(page)).toHaveCount(4);
+    await bob.keyboard.press('Enter');
+    const label = bob.getByRole('textbox', { name: 'Element label' });
+    await label.press('Control+a');
+    await label.press('Control+c');
+    await label.press('End');
+    await label.press('Control+v');
+    await expect(label).toHaveValue('API gatewayAPI gateway');
+    await label.press('Enter');
+    await expect(shapes(page)).toHaveCount(4);
+    await expect(shapes(page).last()).toHaveText('API gatewayAPI gateway');
+    await bob.keyboard.press('Delete');
+    await expect(shapes(page)).toHaveCount(3);
+    await expect(page.locator(`[data-shape-id="${originalId}"]`)).toHaveText('API gateway');
+  } finally {
+    await bob.close();
+    await page.request.delete(`/admin/rooms/${id}`, { headers: await csrf(page.request) });
+  }
+});
+
 test('whiteboard creation, collaborative diagrams, selective undo and reconnect @smoke', async ({ page, context }, testInfo) => {
   await page.goto('/admin');
   await page.locator('#whiteboardName').fill('Design interview');

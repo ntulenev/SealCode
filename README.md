@@ -128,6 +128,10 @@ line break and Escape cancels. Text is plain text, including labels on shapes.
 - Pan with Space+drag, middle-button drag, the Pan tool or wheel/trackpad scrolling.
   Zoom with Ctrl/Cmd+wheel or the zoom buttons; **Fit** frames the diagram.
 - Delete/Backspace removes the selection; Ctrl/Cmd+D duplicates it.
+  Ctrl/Cmd+C copies the selected element; Ctrl/Cmd+V pastes a new copy with a
+  small offset, including its label and geometry. Repeated pastes use increasing
+  offsets. The clipboard also works between whiteboards; label editing keeps
+  the usual text copy/paste behavior.
   Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) undo/redo your own changes.
 - **Download board** exports the current local diagram as JSON, including changes
   that could not be sent. Import is not currently supported.
@@ -962,7 +966,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.17.0`, so releases bypass previously cached resource URLs.
+query string `?v=1.18.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` page. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
