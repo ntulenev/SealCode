@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
@@ -484,6 +485,102 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         result.YjsUpdates.Should().BeEmpty();
 
         await connection.DisposeAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task WhiteboardCursorsShouldRoundTripHideAndRemainIsolatedAndTransient()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie, "whiteboard");
+        var otherRoomId = await CreateRoomAsync(client, cookie, "whiteboard");
+        await using var alice = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        await using var bob = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        await using var outsider = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await alice.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+        _ = await bob.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Bob");
+        _ = await outsider.InvokeAsync<JoinRoomResult>("JoinRoom", otherRoomId, "Outsider");
+        var before = await alice.InvokeAsync<JoinRoomResult>("SyncYjs", roomId);
+        var selfEvents = new ConcurrentQueue<string>();
+        var otherRoomEvents = new ConcurrentQueue<string>();
+        using var selfSubscription = alice.On<string, double?, double?>("BoardCursorUpdated", (name, _, _) => selfEvents.Enqueue(name));
+        using var otherSubscription = outsider.On<string, double?, double?>("BoardCursorUpdated", (name, _, _) => otherRoomEvents.Enqueue(name));
+        var position = new TaskCompletionSource<(string name, double? x, double? y)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hidden = new TaskCompletionSource<(string name, double? x, double? y)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = bob.On<string, double?, double?>("BoardCursorUpdated", (name, x, y) =>
+        {
+            if (x is null)
+            {
+                hidden.TrySetResult((name, x, y));
+            }
+            else
+            {
+                position.TrySetResult((name, x, y));
+            }
+        });
+
+        await alice.InvokeAsync("UpdateBoardCursor", roomId, -120.5, 42.25);
+        (await position.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(("Alice", -120.5, 42.25));
+        await alice.InvokeAsync("UpdateBoardCursor", roomId, null, null);
+        (await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(("Alice", null, null));
+        // A reply on each connection fences previously queued events without sleeping.
+        _ = await outsider.InvokeAsync<RoomRevisions>("GetRoomRevisions", otherRoomId);
+        selfEvents.Should().BeEmpty();
+        otherRoomEvents.Should().BeEmpty();
+        (await alice.InvokeAsync<JoinRoomResult>("SyncYjs", roomId)).Should().BeEquivalentTo(before);
+    }
+
+    [Theory]
+    [InlineData("before-join")]
+    [InlineData("after-leave")]
+    [InlineData("other-room")]
+    [Trait("Category", "Integration")]
+    public async Task WhiteboardCursorsFromNonParticipantsShouldNotBeBroadcast(string scenario)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie, "whiteboard");
+        await using var bob = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await bob.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Bob");
+        if (scenario == "after-leave")
+        {
+            _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+            await connection.InvokeAsync("LeaveRoom", roomId);
+        }
+        else if (scenario == "other-room")
+        {
+            var otherRoom = await CreateRoomAsync(client, cookie, "whiteboard");
+            _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", otherRoom, "Alice");
+        }
+        var events = new ConcurrentQueue<string>();
+        using var subscription = bob.On<string, double?, double?>("BoardCursorUpdated", (name, _, _) => events.Enqueue(name));
+
+        await connection.InvokeAsync("UpdateBoardCursor", roomId, 100d, 200d);
+        await connection.InvokeAsync("UpdateBoardCursor", roomId, null, null);
+        _ = await bob.InvokeAsync<RoomRevisions>("GetRoomRevisions", roomId);
+
+        events.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null, 5d)]
+    [InlineData(5d, null)]
+    [Trait("Category", "Integration")]
+    public async Task WhiteboardCursorsShouldRejectPartialCoordinatesOverSignalR(double? x, double? y)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var roomId = await CreateRoomAsync(client, cookie, "whiteboard");
+        await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+        _ = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", roomId, "Alice");
+
+        await FluentActions.Awaiting(() => connection.InvokeAsync("UpdateBoardCursor", roomId, x, y))
+            .Should().ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>().WithMessage("*InvalidInput*");
     }
 
     [Theory]
@@ -1236,7 +1333,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         return new Cookie(parts[0], parts.Length > 1 ? parts[1] : string.Empty);
     }
 
-    private static async Task<string> CreateRoomAsync(HttpClient client, Cookie cookie)
+    private static async Task<string> CreateRoomAsync(HttpClient client, Cookie cookie, string kind = "code")
     {
         client.DefaultRequestHeaders.Remove("Cookie");
         client.DefaultRequestHeaders.Add("Cookie", $"{cookie.Name}={cookie.Value}");
@@ -1244,7 +1341,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         var response = await SecureJsonAsync(client, "/admin/rooms", new
         {
             Name = "Room",
-            Language = "sql"
+            Language = kind == "whiteboard" ? null : "sql",
+            Kind = kind
         });
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 

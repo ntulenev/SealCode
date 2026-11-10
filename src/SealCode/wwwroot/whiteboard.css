@@ -19,10 +19,13 @@
 .board-label-editor { position: absolute; z-index: 3; min-height: 84px; max-height: 220px; resize: vertical; border-color: var(--accent); font-size: 18px; }
 .board-hint { position: absolute; inset: 48% 16px auto; text-align: center; pointer-events: none; color: var(--muted); font-size: 13px; }
 .board-readonly .board-canvas { cursor: default; }
+.board-cursors { pointer-events: none; }
+.board-remote-cursor { transition: transform 60ms linear; }
+.board-cursor-name { fill: white; stroke: none; font: 12px var(--sans); font-weight: 600; user-select: none; }
 @media (max-width: 600px) {
   .whiteboard { height: max(560px, calc(100svh - 330px)); }
   .board-toolbar { width: 240px; }
   .board-controls { right: 12px; }
   .board-hint { max-width: 260px; margin-inline: auto; }
 }
-@media (prefers-reduced-motion: reduce) { .whiteboard button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .whiteboard button, .board-remote-cursor { transition: none; } }

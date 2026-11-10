@@ -11,12 +11,14 @@ import { chromium, expect } from '@playwright/test';
 // Never reads or changes the developer's appsettings.json or running server.
 // --whiteboard-only refreshes just the three board images; --skip-build uses
 // existing server/client builds when a local app has locked the server executable.
+// --cursors-only captures two extra board images with live participant cursors.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const images = join(root, 'docs', 'images');
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'sealcode-readme-'));
 const desktop = { width: 1440, height: 900 };
 const mobile = { width: 390, height: 844 };
-const whiteboardOnly = process.argv.includes('--whiteboard-only');
+const cursorsOnly = process.argv.includes('--cursors-only');
+const whiteboardOnly = cursorsOnly || process.argv.includes('--whiteboard-only');
 const skipBuild = process.argv.includes('--skip-build');
 let server;
 let browser;
@@ -225,6 +227,7 @@ try {
   const board = await newPage();
   await board.context().addCookies(await admin.context().cookies());
   const boardPeer = await newPage();
+  const cursorPeer = cursorsOnly ? await newPage() : null;
   for (const [page, name] of [[board, 'Nikita'], [boardPeer, 'Maya']]) {
     await page.goto(boardPath);
     await page.locator('#displayNameInput').fill(name);
@@ -263,15 +266,35 @@ try {
     await expect(arrows).toHaveCount(2);
     await expect(arrows.locator('path')).toHaveCount(4);
   }
+  if (cursorPeer) {
+    await cursorPeer.goto(boardPath);
+    await cursorPeer.locator('#displayNameInput').fill('Leo');
+    await cursorPeer.locator('#joinBtn').click();
+    await expect(cursorPeer.locator('#joinOverlay')).toBeHidden();
+    await expect(board.locator('#participantsList li')).toHaveCount(3);
+  }
   await board.locator('.board-canvas').press('Escape');
   await board.getByRole('button', { name: 'Fit diagram' }).click();
   await setTheme(board, 'dark');
-  await screenshot(board, join(images, 'whiteboard-dark.png'));
+  async function showBoardCursors() {
+    // Drive real participant pages; the viewer receives positions through SignalR.
+    for (const [peer, x, y] of [[boardPeer, 560, 230], [cursorPeer, 700, 360]]) {
+      const canvas = await peer.locator('.board-canvas').boundingBox();
+      await peer.mouse.move(canvas.x + x, canvas.y + y);
+    }
+    await expect(board.locator('[data-cursor-name]')).toHaveCount(2);
+    for (const name of ['Maya', 'Leo']) await expect(board.locator(`[data-cursor-name="${name}"]`)).toBeVisible();
+  }
+  if (cursorsOnly) await showBoardCursors();
+  await screenshot(board, join(images, cursorsOnly ? 'whiteboard-cursors-dark.png' : 'whiteboard-dark.png'));
   await setTheme(board, 'light');
-  await screenshot(board, join(images, 'whiteboard-light.png'));
-  await board.setViewportSize(mobile);
-  await board.getByRole('button', { name: 'Fit diagram' }).click();
-  await screenshot(board, join(images, 'whiteboard-mobile.png'));
+  if (cursorsOnly) await showBoardCursors();
+  await screenshot(board, join(images, cursorsOnly ? 'whiteboard-cursors-light.png' : 'whiteboard-light.png'));
+  if (!cursorsOnly) {
+    await board.setViewportSize(mobile);
+    await board.getByRole('button', { name: 'Fit diagram' }).click();
+    await screenshot(board, join(images, 'whiteboard-mobile.png'));
+  }
 
   if (!whiteboardOnly) {
     await admin.reload();
@@ -312,7 +335,7 @@ try {
     await admin.getByRole('button', { name: 'Close' }).click();
   }
   expect(errors, 'Screenshot scenarios must not hide browser runtime errors').toEqual([]);
-  console.log(whiteboardOnly ? 'README whiteboard screenshots refreshed with bidirectional arrows.' : 'README screenshots refreshed with three code rooms, one whiteboard and six participants.');
+  console.log(cursorsOnly ? 'README cursor screenshots refreshed from three live participants.' : whiteboardOnly ? 'README whiteboard screenshots refreshed with bidirectional arrows.' : 'README screenshots refreshed with three code rooms, one whiteboard and six participants.');
 } finally {
   await browser?.close();
   if (server && server.exitCode === null) {

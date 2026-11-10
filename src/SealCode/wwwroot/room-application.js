@@ -35,6 +35,7 @@ import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
 import { createRoomDeletion } from './room-deletion.js';
 import { generateDisplayName } from './display-name.js';
+import { WhiteboardPresence } from './whiteboard-presence.js';
 
 /** Creates the room controllers and wires their UI and transport callbacks. */
 export function createRoomApplication({
@@ -98,6 +99,12 @@ export function createRoomApplication({
 
   const connectionLifecycle = createRoomConnection(signalR, '/roomHub');
   const connection = connectionLifecycle.connection;
+  const boardPresence = board ? new WhiteboardPresence({
+    board,
+    document,
+    ready: () => lifecycle?.participating && connection.state === signalR.HubConnectionState.Connected,
+    send: (point) => connection.invoke(HubMethods.UpdateBoardCursor, roomId, point?.x ?? null, point?.y ?? null)
+  }) : null;
   const roomView = new RevisionedRoomView({
     language: (language) => {
       if (board) return;
@@ -109,6 +116,7 @@ export function createRoomApplication({
       presence.retainUsers(users);
       presence.renderUsers(users);
       presence.renderRemoteCarets();
+      boardPresence?.retainUsers(users);
     }
   });
 
@@ -176,6 +184,7 @@ export function createRoomApplication({
       versionNumberEl.textContent = currentVersion;
     },
     onJoinSuccess: () => {
+      boardPresence?.start();
       void roomDeletion.refresh();
       setStatus('connected');
       setEditorReadOnly(false);
@@ -199,6 +208,7 @@ export function createRoomApplication({
       checkpointWriter.schedule();
     },
     onClose: (reason) => {
+      boardPresence?.reset();
       roomDeletion.hide();
       lastSentSelectionMultiLine = undefined;
       yjs.disposeYjs();
@@ -212,6 +222,7 @@ export function createRoomApplication({
       setLanguageReadOnly(readOnly);
     },
     resetTransport: () => {
+      boardPresence?.reset();
       recoveryController.reset();
       checkpointWriter.reset({ keepSkipped: true });
       syncScheduler.reset();
@@ -758,6 +769,9 @@ export function createRoomApplication({
       presence.cursorPositions[name] = position;
       presence.renderUsers(presence.currentUsers);
       presence.renderRemoteCarets();
+    },
+    BoardCursorUpdated: (name, x, y) => {
+      if (name !== displayName) boardPresence?.receive(name, x, y);
     },
     UserSelection: (name, isMultiLine) => {
       presence.markSelecting(name, isMultiLine);

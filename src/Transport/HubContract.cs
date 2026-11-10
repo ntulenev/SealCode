@@ -53,6 +53,11 @@ public static class HubContract
         public const string UpdateCursor = "UpdateCursor";
 
         /// <summary>
+        /// The UpdateBoardCursor wire name.
+        /// </summary>
+        public const string UpdateBoardCursor = "UpdateBoardCursor";
+
+        /// <summary>
         /// The UpdateSelection wire name.
         /// </summary>
         public const string UpdateSelection = "UpdateSelection";
@@ -98,6 +103,11 @@ public static class HubContract
         /// The CursorUpdated wire name.
         /// </summary>
         public const string CursorUpdated = "CursorUpdated";
+
+        /// <summary>
+        /// The BoardCursorUpdated wire name.
+        /// </summary>
+        public const string BoardCursorUpdated = "BoardCursorUpdated";
 
         /// <summary>
         /// The UserSelection wire name.

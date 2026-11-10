@@ -8,6 +8,7 @@ export const HubMethods = Object.freeze({
   CheckpointYjs: 'CheckpointYjs',
   SetLanguage: 'SetLanguage',
   UpdateCursor: 'UpdateCursor',
+  UpdateBoardCursor: 'UpdateBoardCursor',
   UpdateSelection: 'UpdateSelection',
   UpdateCopy: 'UpdateCopy',
   LeaveRoom: 'LeaveRoom'
@@ -20,6 +21,7 @@ export const HubEvents = Object.freeze({
   YjsCheckpointed: 'YjsCheckpointed',
   LanguageUpdated: 'LanguageUpdated',
   CursorUpdated: 'CursorUpdated',
+  BoardCursorUpdated: 'BoardCursorUpdated',
   UserSelection: 'UserSelection',
   UserCopy: 'UserCopy',
   UserLeft: 'UserLeft',

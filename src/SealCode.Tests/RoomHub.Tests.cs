@@ -27,6 +27,7 @@ public sealed class RoomHubTests
     [InlineData("GetRoomRevisions")]
     [InlineData("SetLanguage")]
     [InlineData("UpdateCursor")]
+    [InlineData("UpdateBoardCursor")]
     [InlineData("UpdateSelection")]
     [InlineData("UpdateCopy")]
     [InlineData("LeaveRoom")]
@@ -60,6 +61,9 @@ public sealed class RoomHubTests
                     break;
                 case "UpdateCursor":
                     await hub.UpdateCursorAsync("invalid", 0);
+                    break;
+                case "UpdateBoardCursor":
+                    await hub.UpdateBoardCursorAsync("invalid", 0, 0);
                     break;
                 case "UpdateSelection":
                     await hub.UpdateSelectionAsync("invalid", false);
@@ -588,6 +592,63 @@ public sealed class RoomHubTests
                 "CursorUpdated",
                 It.Is<object?[]>(args => MatchCursorUpdatedArgs(args, "Alice", 3)),
                 It.Is<CancellationToken>(token => token == cts.Token)), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(120.5, -50.25)]
+    [InlineData(null, null)]
+    [Trait("Category", "Unit")]
+    public async Task UpdateBoardCursorAsyncShouldBroadcastOnlyToOtherParticipants(double? x, double? y)
+    {
+        using var cts = new CancellationTokenSource();
+        var room = CreateRoomState(DefaultRoomId);
+        room.AddUser(new ConnectionId("conn-1"), new RoomUser("Alice"), 5);
+        SetupTryGetRoom(DefaultRoomId, room, out var roomManager);
+        var proxy = new Mock<IClientProxy>(MockBehavior.Strict);
+        proxy.Setup(p => p.SendCoreAsync("BoardCursorUpdated",
+            It.Is<object?[]>(args => args.Length == 3 && Equals(args[0], "Alice") && Equals(args[1], x) && Equals(args[2], y)),
+            It.Is<CancellationToken>(token => token == cts.Token))).Returns(Task.CompletedTask);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        clients.Setup(c => c.GroupExcept(DefaultRoomId,
+            It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1"))).Returns(proxy.Object);
+        using var hub = CreateHub(roomManager.Object, clients: clients.Object, cancellationToken: cts.Token);
+
+        await hub.UpdateBoardCursorAsync(DefaultRoomId, x, y);
+
+        proxy.Verify(p => p.SendCoreAsync("BoardCursorUpdated",
+            It.Is<object?[]>(args => args.Length == 3 && Equals(args[0], "Alice") && Equals(args[1], x) && Equals(args[2], y)),
+            It.Is<CancellationToken>(token => token == cts.Token)), Times.Once);
+        clients.Verify(c => c.GroupExcept(DefaultRoomId,
+            It.Is<IReadOnlyList<string>>(ids => ids.Count == 1 && ids[0] == "conn-1")), Times.Once);
+        room.DocumentRevision.Value.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 0d)]
+    [InlineData(0d, double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity, 0d)]
+    [InlineData(null, 0d)]
+    [InlineData(0d, null)]
+    [Trait("Category", "Unit")]
+    public async Task UpdateBoardCursorAsyncShouldRejectInvalidCoordinates(double? x, double? y)
+    {
+        var manager = new Mock<IRoomManager>(MockBehavior.Strict);
+        using var hub = CreateHub(manager.Object);
+        var error = await Assert.ThrowsAsync<HubException>(() => hub.UpdateBoardCursorAsync(DefaultRoomId, x, y));
+        HubErrorAssertions.AssertHubError(error, HubErrorCode.InvalidInput);
+        manager.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task UpdateBoardCursorAsyncShouldIgnoreNonParticipants()
+    {
+        var room = CreateRoomState(DefaultRoomId);
+        SetupTryGetRoom(DefaultRoomId, room, out var manager);
+        var clients = new Mock<IHubCallerClients>(MockBehavior.Strict);
+        using var hub = CreateHub(manager.Object, clients: clients.Object);
+        await hub.UpdateBoardCursorAsync(DefaultRoomId, 10, 20);
+        clients.VerifyNoOtherCalls();
     }
 
     [Fact(DisplayName = "UpdateSelectionAsyncShouldBroadcastWhenUserFound")]

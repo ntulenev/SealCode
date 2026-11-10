@@ -1,4 +1,5 @@
 import { bindWhiteboard, bounds, isShape, normalizeShape, shapeTypes } from './whiteboard-model.js';
+import { truncateName } from './presence-ui.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const tools = [
@@ -28,6 +29,10 @@ export function createWhiteboardView(host) {
   let space = false;
   let zoom = 1;
   let offset = { x: 0, y: 0 };
+  /** @type {{x: number, y: number} | null} */
+  let pointer = null;
+  /** @type {Map<string, {point: {x: number, y: number}, element: SVGElement}>} */
+  const remoteCursors = new Map();
   /** @type {{start: {x: number, y: number}, original?: import('./whiteboard-model.js').Shape, draft?: import('./whiteboard-model.js').Shape, mode: string, pointerId: number, offset: {x: number, y: number}} | null} */
   let gesture = null;
   /** @type {HTMLTextAreaElement | null} */
@@ -43,6 +48,8 @@ export function createWhiteboardView(host) {
   svg.classList.add('board-canvas');
   const layer = node('g');
   svg.append(layer);
+  const cursorLayer = node('g', { class: 'board-cursors', 'aria-hidden': 'true' });
+  svg.append(cursorLayer);
   host.append(svg);
   const hint = document.createElement('p');
   hint.className = 'board-hint';
@@ -75,10 +82,47 @@ export function createWhiteboardView(host) {
     redo: () => false,
     beforeChange: () => {},
     onChange: () => {},
+    /** @param {{x: number, y: number} | null} point */
+    onPointer: (point) => {},
+    /** @param {string} name @param {{x: number, y: number}} point */
+    setRemoteCursor(name, point) {
+      let cursor = remoteCursors.get(name);
+      if (!cursor) {
+        // Names determine colors identically on every client, regardless of arrival order.
+        let hash = 0;
+        for (const char of name) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) | 0;
+        const color = `hsl(${(hash >>> 0) % 360} 65% 40%)`;
+        const element = node('g', { class: 'board-remote-cursor', 'data-cursor-name': name });
+        const title = node('title');
+        title.textContent = name;
+        const label = truncateName(name);
+        const text = node('text', { x: 14, y: 33, class: 'board-cursor-name' });
+        text.textContent = label;
+        element.append(title,
+          node('path', { d: 'M0 0 L5 19 L9 12 L17 10 Z', fill: color, stroke: 'white', 'stroke-width': 1.5 }),
+          node('rect', { x: 9, y: 20, width: label.length * 8 + 10, height: 20, rx: 4, fill: color }), text);
+        cursor = { point, element };
+        remoteCursors.set(name, cursor);
+        positionCursor(cursor);
+        cursorLayer.append(element);
+      } else {
+        cursor.point = point;
+        positionCursor(cursor);
+      }
+    },
+    /** @param {string} name */
+    removeRemoteCursor(name) {
+      remoteCursors.get(name)?.element.remove();
+      remoteCursors.delete(name);
+    },
+    clearRemoteCursors() {
+      remoteCursors.clear();
+      cursorLayer.replaceChildren();
+    },
     /** @param {boolean} value */
     setReadOnly(value) {
       api.readOnly = value;
-      if (value) { gesture = null; cancelText(); }
+      if (value) { pointer = null; gesture = null; cancelText(); }
       render();
     },
     /** @param {import('yjs').Doc} doc */
@@ -153,6 +197,10 @@ export function createWhiteboardView(host) {
   }
   /** @param {{x: number, y: number}} point */
   function world(point) { return { x: (point.x - offset.x) / zoom, y: (point.y - offset.y) / zoom }; }
+  /** @param {{point: {x: number, y: number}, element: SVGElement}} cursor */
+  function positionCursor(cursor) {
+    cursor.element.style.transform = `translate(${cursor.point.x * zoom + offset.x}px, ${cursor.point.y * zoom + offset.y}px)`;
+  }
   /** @param {number} value @param {{x: number, y: number}} [point] */
   function zoomAt(value, point = { x: svg.clientWidth / 2, y: svg.clientHeight / 2 }) {
     cancelText();
@@ -193,6 +241,8 @@ export function createWhiteboardView(host) {
     zoomButton.textContent = `${Math.round(zoom * 100)}%`;
     host.classList.toggle('board-readonly', api.readOnly);
     hint.hidden = all.length > 0;
+    for (const cursor of remoteCursors.values()) positionCursor(cursor);
+    if (pointer) api.onPointer(world(pointer));
   }
   /** @param {import('./whiteboard-model.js').Shape} s */
   function draw(s) {
@@ -305,7 +355,12 @@ export function createWhiteboardView(host) {
     render();
   });
   svg.addEventListener('pointermove', (event) => {
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.isPrimary === false) return;
+    pointer = local(event);
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      api.onPointer(world(pointer));
+      return;
+    }
     const point = local(event);
     const dx = (point.x - gesture.start.x) / zoom, dy = (point.y - gesture.start.y) / zoom;
     if (gesture.mode === 'pan') {
@@ -346,6 +401,10 @@ export function createWhiteboardView(host) {
     if (gesture?.pointerId === event.pointerId) cancelGesture();
   }
   svg.addEventListener('pointercancel', cancelPointer);
+  const hidePointer = () => { pointer = null; api.onPointer(null); };
+  svg.addEventListener('pointerleave', hidePointer);
+  svg.addEventListener('pointercancel', hidePointer);
+  win.addEventListener('blur', hidePointer);
   svg.addEventListener('lostpointercapture', cancelPointer);
   svg.addEventListener('dblclick', (event) => {
     if (textEditor) return;
