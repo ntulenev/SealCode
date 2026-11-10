@@ -21,6 +21,8 @@ export function createWhiteboardView(host) {
   let undoOrigin = null;
   let tool = 'select';
   let selected = '';
+  let pastedContent = '';
+  let pasteCount = 0;
   /** @type {{id: string, time: number} | null} */
   let lastClick = null;
   let space = false;
@@ -44,7 +46,7 @@ export function createWhiteboardView(host) {
   host.append(svg);
   const hint = document.createElement('p');
   hint.className = 'board-hint';
-  hint.textContent = 'Drag to draw · Double-click to label · Space + drag to pan · Ctrl + wheel to zoom';
+  hint.textContent = 'Drag to draw · Double-click to label · Ctrl+C / Ctrl+V to copy / paste · Space + drag to pan · Ctrl + wheel to zoom';
   host.append(hint);
   const controls = document.createElement('div');
   controls.className = 'board-controls';
@@ -364,8 +366,45 @@ export function createWhiteboardView(host) {
     if (event.ctrlKey || event.metaKey) zoomAt(zoom * Math.exp(-event.deltaY * 0.003), local(event));
     else { offset.x -= event.deltaX; offset.y -= event.deltaY; render(); }
   }, { passive: false });
+  /** @param {EventTarget | null} target */
+  function isTextTarget(target) {
+    return target instanceof win.HTMLTextAreaElement || target instanceof win.HTMLInputElement ||
+      !!/** @type {HTMLElement | null} */ (target)?.isContentEditable;
+  }
+  // Native clipboard events also support platform shortcuts and keyboard layouts.
+  host.addEventListener('copy', (event) => {
+    if (isTextTarget(event.target) || gesture || !event.clipboardData) return;
+    const shape = getSelected();
+    if (!shape) return;
+    const content = JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes: [shape] });
+    event.clipboardData.setData('text/plain', content);
+    event.preventDefault();
+    pastedContent = content;
+    pasteCount = 0;
+  });
+  host.addEventListener('paste', (event) => {
+    if (isTextTarget(event.target) || gesture || api.readOnly || !binding || !event.clipboardData) return;
+    const content = event.clipboardData.getData('text/plain');
+    // A single element cannot exceed this size under the shared shape limits.
+    if (content.length > 100000) return;
+    let payload;
+    try { payload = JSON.parse(content); } catch { return; }
+    if (!payload || payload.format !== 'sealcode-whiteboard' || payload.version !== 1 ||
+      !Array.isArray(payload.shapes) || payload.shapes.length !== 1 || !isShape(payload.shapes[0])) return;
+    const shape = payload.shapes[0];
+    const count = content === pastedContent ? pasteCount + 1 : 1;
+    const copy = { ...shape, id: win.crypto.randomUUID(), x: shape.x + count * 24, y: shape.y + count * 24 };
+    if (!isShape(copy)) return;
+    event.preventDefault();
+    pastedContent = content;
+    pasteCount = count;
+    selected = copy.id;
+    setTool('select');
+    commit(copy);
+    svg.focus();
+  });
   host.addEventListener('keydown', (event) => {
-    if (event.target instanceof win.HTMLTextAreaElement || event.target instanceof win.HTMLInputElement) return;
+    if (isTextTarget(event.target)) return;
     // Preserve native keyboard activation for the focused toolbar button.
     if (event.target instanceof win.HTMLButtonElement && ['Enter', ' '].includes(event.key)) return;
     const modifier = event.ctrlKey || event.metaKey;
