@@ -355,6 +355,68 @@ test('group drag, marquee, Ctrl-click and Cyrillic clipboard shortcuts synchroni
   await expectScene([observer], await scene(alice));
 });
 
+test('wrapped labels, Ctrl+Enter and plain text paste preserve geometry and synchronize with undo', async ({ whiteboard }, testInfo) => {
+  const { alice, bob } = whiteboard;
+  await alice.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await whiteboard.join();
+  await draw(alice, 'text', 100, 160, 110, 170);
+  const id = await alice.locator('[data-shape-id]').getAttribute('data-shape-id');
+  const editor = alice.getByRole('textbox', { name: 'Element label' });
+  const unbroken = 'B'.repeat(45);
+  await editor.fill(unbroken);
+  await editor.press('End');
+  await editor.press('Control+Enter');
+  await editor.pressSequentially('Second line');
+  await expect(editor).toHaveValue(`${unbroken}\nSecond line`);
+  await editor.press('Enter');
+  await expect(editor).toHaveCount(0);
+  const rect = shape(alice, id).locator('rect.board-text-hit');
+  await expect(rect).toHaveAttribute('width', '110');
+  await expect(rect).toHaveAttribute('height', '170');
+  const originalLines = await shape(alice, id).locator('tspan').count();
+  expect(originalLines).toBeGreaterThan(2);
+  const fits = async () => {
+    const box = await rect.boundingBox();
+    const label = await shape(alice, id).locator('.board-label').boundingBox();
+    expect(label.x).toBeGreaterThanOrEqual(box.x - 1);
+    expect(label.x + label.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    expect(label.y).toBeGreaterThanOrEqual(box.y - 1);
+    expect(label.y + label.height).toBeLessThanOrEqual(box.y + box.height + 1);
+  };
+  await fits();
+  await expectScene([bob], await scene(alice));
+  await resize(alice, id, 110, 0);
+  await expect(rect).toHaveAttribute('width', '220');
+  expect(await shape(alice, id).locator('tspan').count()).toBeLessThan(originalLines);
+  await fits();
+  await expectScene([bob], await scene(alice));
+  const baseline = await scene(alice);
+  const plain = '<script>window.injected = 1</script>\nOrdinary clipboard text';
+  await alice.evaluate(text => navigator.clipboard.writeText(text), plain);
+  await alice.locator('.board-canvas').focus();
+  await alice.keyboard.press('Control+v');
+  await expect(alice.locator('[data-shape-type="text"]')).toHaveCount(2);
+  const pasted = alice.locator(`[data-shape-type="text"]:not([data-shape-id="${id}"])`);
+  const pastedId = await pasted.getAttribute('data-shape-id');
+  await expect(pasted.locator('script')).toHaveCount(0);
+  expect(await alice.evaluate(() => window.injected)).toBeUndefined();
+  await alice.keyboard.press('Enter');
+  await expect(editor).toHaveValue(plain);
+  // Pasting while editing remains native text paste and creates no new shapes.
+  await editor.press('End');
+  await editor.press('Control+v');
+  await expect(editor).toHaveValue(plain + plain);
+  await editor.press('Escape');
+  await expect(alice.locator('[data-shape-type="text"]')).toHaveCount(2);
+  await expectScene([bob], await scene(alice));
+  await alice.keyboard.press('Control+z');
+  await expectScene([alice, bob], baseline);
+  await alice.keyboard.press('Control+Shift+z');
+  await expect(shape(alice, pastedId)).toHaveCount(1);
+  await expectScene([bob], await scene(alice));
+  await alice.screenshot({ path: testInfo.outputPath('wrapped-text-and-plain-paste.png') });
+});
+
 test('concurrent creation and edits to different figures preserve both participants changes', async ({ whiteboard }) => {
   const { alice, bob } = whiteboard;
   const aliceGate = await updateGate(alice);

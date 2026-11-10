@@ -1,4 +1,8 @@
 import { bounds } from './whiteboard-model.js';
+import { layoutText } from './whiteboard-text.js';
+
+/** @type {WeakMap<Document, CanvasRenderingContext2D | null>} */
+const contexts = new WeakMap();
 
 /** @param {import('./whiteboard-model.js').Shape} s
  * @param {Document} document */
@@ -38,13 +42,31 @@ export function createShapeElement(s, document) {
       for (const fraction of [0.15, 0.3, 0.7, 0.85]) group.append(node('line', { x1: x + w * fraction, y1: y + 8, x2: x + w * fraction, y2: y + h - 8 }));
     }
   }
-  const lines = s.text.split('\n');
-  const text = node('text', { x: x + w / 2, y: cy - (lines.length - 1) * 11 + 6, 'text-anchor': 'middle', class: 'board-label' });
+  if (!contexts.has(document)) contexts.set(document, document.createElement('canvas').getContext?.('2d') ?? null);
+  const context = contexts.get(document);
+  const family = document.defaultView?.getComputedStyle?.(document.documentElement).getPropertyValue('--sans') || 'sans-serif';
+  const connector = ['arrow', 'bidirectional-arrow', 'line'].includes(s.type);
+  const width = connector ? Math.max(160, w) : Math.max(1, w - 24);
+  const height = connector ? Math.max(60, h) : Math.max(1, h - 16);
+  const measure = context ? (/** @type {string} */ value, /** @type {number} */ size) => {
+    context.font = `${size}px ${family}`;
+    return context.measureText(value).width;
+  } : undefined;
+  const { lines, fontSize, lineHeight } = layoutText(s.text, width, height, measure);
+  const text = node('text', { x: x + w / 2, y: cy - (lines.length - 1) * lineHeight / 2 + fontSize / 3, 'text-anchor': 'middle', class: 'board-label' });
+  text.setAttribute('style', `font-size: ${fontSize}px`);
   for (let i = 0; i < lines.length; i++) {
-    const span = node('tspan', { x: x + w / 2, dy: i ? 22 : 0 });
+    const span = node('tspan', { x: x + w / 2, dy: i ? lineHeight : 0 });
     span.textContent = lines[i];
     text.append(span);
   }
-  group.append(text);
+  if (lines.length * lineHeight > height || width < fontSize) {
+    // Very small boxes keep their full stored text while clipping visual overflow.
+    const left = x + (w - width) / 2, top = cy - height / 2;
+    const clip = node('svg', { x: left, y: top, width, height, overflow: 'hidden', 'aria-label': s.text });
+    text.setAttribute('transform', `translate(${-left} ${-top})`);
+    clip.append(text);
+    group.append(clip);
+  } else group.append(text);
   return group;
 }

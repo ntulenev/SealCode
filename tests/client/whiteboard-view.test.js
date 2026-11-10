@@ -31,6 +31,11 @@ class Element {
   releasePointerCapture() { this.pointer = null; }
   focus() { this.ownerDocument.activeElement = this; }
   select() {}
+  setRangeText(text, start, end) {
+    this.value = this.value.slice(0, start) + text + this.value.slice(end);
+    this.selectionStart = this.selectionEnd = start + text.length;
+  }
+  dispatchEvent(event) { this.fire(event.type); return true; }
   blur() { this.fire('blur'); }
   click() { this.fire('click'); }
   remove() { this.parent.children = this.parent.children.filter((e) => e !== this); }
@@ -42,6 +47,7 @@ function fixture() {
   const win = new Element('window');
   win.crypto = { randomUUID }; win.HTMLTextAreaElement = TextArea; win.HTMLInputElement = Input;
   win.HTMLButtonElement = Button;
+  win.Event = Event;
   const document = { defaultView: win };
   document.createElement = (tag) => new (tag === 'textarea' ? TextArea : tag === 'button' ? Button : Element)(tag, document);
   document.createElementNS = (_, tag) => new Element(tag, document);
@@ -363,9 +369,8 @@ test('clipboard transfers between boards and leaves text editing, readonly and i
     target.board.setReadOnly(true);
     target.host.fire('paste', { clipboardData, preventDefault });
     target.board.setReadOnly(false);
-    for (const content of ['', 'plain text', 'null', '{}', 'x'.repeat(100001),
+    for (const content of ['', 'x'.repeat(4001), 'x'.repeat(100001),
       ...[
-        { format: 'other', version: 1, shapes: [shape] },
         { format: 'sealcode-whiteboard', version: 2, shapes: [shape] },
         ...[null, [], Array(101).fill(shape), [shape, { ...shape, type: 'unknown' }], [{ ...shape, x: 1e7 }]].map((shapes) =>
           ({ format: 'sealcode-whiteboard', version: 1, shapes }))
@@ -572,4 +577,57 @@ test('non-Latin clipboard access failures are reported without changing the docu
       assert.equal(f.map.size, 1);
     }
   } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('Ctrl/Cmd+Enter inserts a newline at the caret and saving keeps user-defined text geometry', () => {
+  const f = fixture();
+  try {
+    const shape = f.draw('text', 110, 170);
+    const input = f.editor();
+    input.value = 'First selected last'; input.selectionStart = 6; input.selectionEnd = 14;
+    input.fire('keydown', { key: 'Enter', ctrlKey: true });
+    assert.equal(input.value, 'First \n last');
+    assert.equal(input.selectionStart, 7);
+    assert.ok(f.editor(), 'Ctrl+Enter must not save or close the editor');
+    input.fire('keydown', { key: 'Enter', metaKey: true });
+    assert.equal(input.value, 'First \n\n last');
+    input.value = 'x'.repeat(4000); input.selectionStart = input.selectionEnd = 4000;
+    input.fire('keydown', { key: 'Enter', ctrlKey: true });
+    assert.equal(input.value.length, 4000);
+    input.value = 'A very long unbroken label that must keep its drawn width';
+    input.fire('keydown', { key: 'Enter', ctrlKey: true, isComposing: true });
+    assert.ok(f.editor());
+    input.fire('keydown', { key: 'Enter' });
+    assert.equal(f.map.get(shape.id).width, 110);
+    assert.equal(f.map.get(shape.id).height, 170);
+    assert.equal(f.map.get(shape.id).text, input.value);
+  } finally { f.binding.destroy(); f.doc.destroy(); }
+});
+
+test('plain clipboard text becomes a literal text shape at the current viewport with offset pastes and atomic undo', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  const data = clipboard();
+  try {
+    data.setData('text/plain', '<script>alert(1)</script>\r\nSecond line');
+    f.host.fire('paste', { clipboardData: data });
+    const first = [...f.map.values()][0];
+    assert.equal(first.type, 'text');
+    assert.equal(first.text, '<script>alert(1)</script>\nSecond line');
+    assert.equal(first.x + first.width / 2, 500);
+    assert.equal(first.y + first.height / 2, 300);
+    f.host.fire('paste', { clipboardData: data });
+    const second = [...f.map.values()][1];
+    assert.equal(second.x, first.x + 24); assert.equal(second.y, first.y + 24);
+    undo.undo(); assert.equal(f.map.size, 1);
+    undo.redo(); assert.equal(f.map.size, 2);
+    for (const value of ['{}', 'null', 'привет 😀', 'x'.repeat(4000)]) {
+      data.setData('text/plain', value); f.host.fire('paste', { clipboardData: data });
+      assert.equal([...f.map.values()].at(-1).text, value);
+    }
+    const size = f.map.size;
+    f.board.setReadOnly(true); f.host.fire('paste', { clipboardData: data });
+    assert.equal(f.map.size, size);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
 });

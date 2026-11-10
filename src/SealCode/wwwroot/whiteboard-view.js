@@ -1,4 +1,5 @@
 import { isCopyShortcut, isPasteShortcut } from './keyboard-shortcuts.js';
+import { layoutText } from './whiteboard-text.js';
 import { createShapeElement } from './whiteboard-shape.js';
 import { parseWhiteboardClipboard } from './whiteboard-clipboard.js';
 import { bindWhiteboard, bounds, isShape, normalizeShape, shapeTypes } from './whiteboard-model.js';
@@ -287,6 +288,7 @@ export function createWhiteboardView(host) {
     textEditor = input;
     input.className = 'board-label-editor';
     input.setAttribute('aria-label', 'Element label');
+    input.title = 'Enter to save · Ctrl/Cmd+Enter or Shift+Enter for a new line · Escape to cancel';
     input.maxLength = 4000;
     input.value = shape.text;
     const b = bounds(shape);
@@ -302,8 +304,7 @@ export function createWhiteboardView(host) {
       const current = binding?.scope.get(shape.id);
       if (save && isShape(current) && input.value !== current.text) {
         const text = input.value;
-        const size = current.type === 'text' ? { width: Math.max(80, ...text.split('\n').map((line) => line.length * 11)), height: Math.max(40, text.split('\n').length * 24) } : {};
-        commit({ ...current, ...size, text });
+        commit({ ...current, text });
       }
       input.remove();
       textEditor = null;
@@ -313,7 +314,16 @@ export function createWhiteboardView(host) {
     input.addEventListener('blur', () => finish(true));
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { event.preventDefault(); finish(false); svg.focus(); }
-      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); finish(true); svg.focus(); }
+      if (event.key === 'Enter' && !event.isComposing) {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          const start = input.selectionStart, end = input.selectionEnd;
+          if (input.value.length - (end - start) < input.maxLength) {
+            input.setRangeText('\n', start, end, 'end');
+            input.dispatchEvent(new win.Event('input', { bubbles: true }));
+          }
+        } else if (!event.shiftKey) { event.preventDefault(); finish(true); svg.focus(); }
+      }
     });
     input.focus();
     input.select();
@@ -488,11 +498,23 @@ export function createWhiteboardView(host) {
   /** @param {string} content */
   function pasteContent(content) {
     if (gesture || api.readOnly || !binding) return false;
-    const shapes = parseWhiteboardClipboard(content);
-    if (!shapes) return false;
+    let shapes = parseWhiteboardClipboard(content);
+    let plainText = false;
+    if (!shapes) {
+      if (!content.trim() || content.length > 4000) return false;
+      let payload;
+      try { payload = JSON.parse(content); } catch { /* Ordinary clipboard text. */ }
+      if (payload?.format === 'sealcode-whiteboard') return false;
+      const text = content.replace(/\r\n?/g, '\n');
+      const width = 320;
+      const height = Math.max(80, Math.min(480, layoutText(text, width - 24, Infinity).lines.length * 22 + 24));
+      const center = world({ x: svg.clientWidth / 2, y: svg.clientHeight / 2 });
+      shapes = [{ id: '', type: 'text', x: center.x - width / 2, y: center.y - height / 2, width, height, text }];
+      plainText = true;
+    }
     const count = content === pastedContent ? pasteCount + 1 : 1;
     const copies = shapes.map(shape => ({ ...shape, id: win.crypto.randomUUID(),
-      x: shape.x + count * 24, y: shape.y + count * 24 }));
+      x: shape.x + (plainText ? count - 1 : count) * 24, y: shape.y + (plainText ? count - 1 : count) * 24 }));
     if (!copies.every(isShape)) return false;
     pastedContent = content;
     pasteCount = count;

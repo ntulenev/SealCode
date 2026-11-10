@@ -132,8 +132,16 @@ saved in the diagram, exported, or included in undo/redo.
 
 Choose a tool, then drag on the canvas (or click to insert a default-size element).
 Use Select to move an element and its corner handle to resize it. Double-click an
-element or choose **Label** to edit its text; Enter saves, Shift+Enter inserts a
-line break and Escape cancels. Text is plain text, including labels on shapes.
+element or choose **Label** to edit its text; Enter saves, Ctrl/Cmd+Enter or
+Shift+Enter inserts a line break at the caret, and Escape cancels. Text is plain
+text, including labels on shapes.
+
+Labels wrap automatically at word boundaries, splitting long unbroken words as
+needed. Explicit line breaks and blank lines are preserved. Resizing a figure
+reflows its label; editing text preserves the figure's width and height. The
+font shrinks when necessary to fit the height, down to 8px. If the box is still
+too small, visual overflow is clipped; the complete text remains stored and
+editable, and expanding the box reveals it.
 
 In Select mode, drag on empty canvas to select all figures fully inside the
 selection rectangle. Ctrl/Cmd-click a figure to add or remove it from the
@@ -155,6 +163,10 @@ including with non-Latin layouts; text fields retain native editing shortcuts.
   small offset, including its label and geometry. Repeated pastes use increasing
   offsets. The clipboard also works between whiteboards; label editing keeps
   the usual text copy/paste behavior.
+  Pasting ordinary clipboard text creates a text element in the center of the
+  current viewport, preserving line breaks and rendering HTML as literal text.
+  Up to 4,000 characters are supported per text element. Repeated pastes receive
+  a small offset. Text insertion is shared and undone/redone as one operation.
   Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl/Cmd+Y) undo/redo your own changes.
 - **Download board** exports the current local diagram as JSON, including changes
   that could not be sent. Import is not currently supported.
@@ -165,6 +177,13 @@ one element resolve through Yjs's map conflict rules. A completed drawing, move,
 resize or label edit is shared when the gesture is committed. Viewport, tool and
 selection remain local. Rooms are in memory and disappear on server restart.
 The MVP has no connector attachment/routing, freehand drawing or image uploads.
+
+Whiteboard interaction regression tests cover group movement, marquee and
+Ctrl/Cmd-click selection, physical shortcuts with Cyrillic key values, wrapped
+labels and resizing, Ctrl/Cmd+Enter, ordinary text paste, native label editing,
+multi-participant synchronization, undo/redo and reconnection. Run
+`npm run test:client` and
+`npx playwright test tests/e2e/whiteboard.spec.js tests/e2e/whiteboard-collaboration.spec.js tests/e2e/whiteboard-snippets.spec.js`.
 
 ## Private question library
 
