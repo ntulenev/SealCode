@@ -367,7 +367,7 @@ test('clipboard transfers between boards and leaves text editing, readonly and i
       ...[
         { format: 'other', version: 1, shapes: [shape] },
         { format: 'sealcode-whiteboard', version: 2, shapes: [shape] },
-        ...[null, [], [shape, shape], [{ ...shape, type: 'unknown' }], [{ ...shape, x: 1e7 }]].map((shapes) =>
+        ...[null, [], Array(101).fill(shape), [shape, { ...shape, type: 'unknown' }], [{ ...shape, x: 1e7 }]].map((shapes) =>
           ({ format: 'sealcode-whiteboard', version: 1, shapes }))
       ].map(JSON.stringify)]) {
       clipboardData.setData('text/plain', content);
@@ -379,4 +379,29 @@ test('clipboard transfers between boards and leaves text editing, readonly and i
   } finally {
     source.binding.destroy(); source.doc.destroy(); target.doc.destroy();
   }
+});
+
+test('diagram paste preserves geometry, regenerates IDs and is one collaborative undo operation', () => {
+  const f = fixture();
+  const undo = new BoundedUndoManager(Y, f.binding.scope, { trackedOrigin: f.binding });
+  f.board.beforeChange = () => undo.stopCapturing();
+  try {
+    const shapes = ['rectangle', 'arrow', 'database'].map((type, i) =>
+      ({ id: String(i), type, x: 50 + i * 180, y: 100, width: 140, height: 80, text: type }));
+    const data = clipboard();
+    data.setData('text/plain', JSON.stringify({ format: 'sealcode-whiteboard', version: 1, shapes }));
+    f.host.fire('paste', { clipboardData: data });
+    const pasted = [...f.map.values()];
+    assert.equal(pasted.length, 3);
+    assert.equal(new Set(pasted.map(s => s.id)).size, 3);
+    pasted.forEach((s, i) => {
+      assert.notEqual(s.id, shapes[i].id);
+      assert.deepEqual(s, { ...shapes[i], id: s.id, x: shapes[i].x + 24, y: 124 });
+    });
+    undo.undo(); assert.equal(f.map.size, 0);
+    undo.redo(); assert.equal(f.map.size, 3);
+    f.host.fire('paste', { clipboardData: data });
+    assert.equal(f.map.size, 6);
+    undo.undo(); assert.equal(f.map.size, 3);
+  } finally { undo.destroy(); f.binding.destroy(); f.doc.destroy(); }
 });

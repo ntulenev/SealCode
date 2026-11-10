@@ -95,6 +95,18 @@
           "file": "sql-03.md"
         }
       ]
+    },
+    {
+      "language": "whiteboard",
+      "title": "Whiteboard",
+      "questions": [
+        {
+          "number": 1,
+          "topic": "Client, API and database",
+          "description": "A three-tier diagram with request flow and database communication.",
+          "file": "whiteboard-01.md"
+        }
+      ]
     }
   ]
 }

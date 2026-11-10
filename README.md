@@ -157,6 +157,20 @@ The MVP has no connector attachment/routing, freehand drawing or image uploads.
 
 ## Private question library
 
+The **Whiteboard** category includes a Client → API ↔ Database example with an
+SVG preview. Choose **Copy snippet**, focus the whiteboard canvas and press
+Ctrl/Cmd+V. The complete diagram is inserted with new IDs as a single undoable
+operation. Opening the library from a whiteboard selects this category.
+
+Author diagrams in a fenced `whiteboard` block containing JSON with
+`format: "sealcode-whiteboard"`, `version: 1` and a `shapes` array, using the same
+shape fields as a downloaded board. Labels render as plain text. Clipboard
+diagrams support up to 100 shapes and 100,000 characters; every shape is validated
+before insertion. The file example is `Resources/Snippets/whiteboard-01.md`.
+For PostgreSQL, apply the optional, repeatable
+`src/Persistence/Snippets/Migrations/003_whiteboard_example.sql` after migrations
+001 and 002. It adds the same example while preserving existing entries.
+
 The optional library ships with three English questions each for General (architecture
 and computer science), C# and SQL. An authorized admin sees a book icon in the
 admin header and in a room header. Click it for a popup, choose **Open in new tab**
