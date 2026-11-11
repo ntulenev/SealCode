@@ -2,6 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { roomFixture, flush } from './helpers/room-fixture.js';
 
+for (const board of [false, true]) {
+  test(`creator visibility follows server permissions on join and reconnect (board=${board})`, async (context) => {
+    const options = { board, createdBy: null };
+    const f = await roomFixture(context, options);
+    await f.join();
+    assert.equal(f.elements.createdByEl.textContent, '');
+    assert.equal(f.elements.roomCreator.classList.contains('hidden'), true);
+    options.createdBy = 'Admin';
+    await f.view.__debugReconnect();
+    assert.equal(f.elements.createdByEl.textContent, 'Admin');
+    assert.equal(f.elements.roomCreator.classList.contains('hidden'), false);
+    options.createdBy = null;
+    await f.view.__debugReconnect();
+    assert.equal(f.elements.createdByEl.textContent, '');
+    assert.equal(f.elements.roomCreator.classList.contains('hidden'), true);
+  });
+}
+
 test('joining wires room metadata, participants, shared text, local delivery and collaborative undo', async (context) => {
   const f = await roomFixture(context);
   assert.equal(f.elements.joinBtn.disabled, false);

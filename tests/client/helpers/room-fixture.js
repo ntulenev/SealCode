@@ -121,7 +121,7 @@ export async function roomFixture(context, options = {}) {
   const nodes = f.nodes;
   const ids = ['connectionStatusEl', 'roomNameEl', 'createdByEl', 'participantsList',
     'languageSelect', 'versionNumberEl', 'joinOverlay', 'joinBtn', 'displayNameInput',
-    'joinError', 'syncError', 'deleteRoomBtn', 'deleteRoomError', 'downloadLocalText', 'generateDisplayName'];
+    'joinError', 'syncError', 'deleteRoomBtn', 'deleteRoomError', 'downloadLocalText', 'generateDisplayName', 'roomCreator'];
   for (const id of ids) nodes.set(id, new Element());
   const elements = Object.fromEntries(nodes);
   elements.editorHost = f.host;
@@ -137,7 +137,7 @@ export async function roomFixture(context, options = {}) {
   const handlers = new Map();
   const failures = new Map();
   const snapshot = () => ({
-    Name: 'Interview', CreatedBy: 'Admin', Language: language, Text: '',
+    Name: 'Interview', CreatedBy: options.createdBy === undefined ? 'Admin' : options.createdBy, Language: language, Text: '',
     Version: revision + metadata + 1, Users: ['Alice'], DocumentRevision: revision,
     MetadataRevision: metadata, PresenceRevision: 1, CheckpointRevision: revision,
     YjsState: Buffer.from(Y.encodeStateAsUpdate(server)).toString('base64'), YjsUpdates: []
