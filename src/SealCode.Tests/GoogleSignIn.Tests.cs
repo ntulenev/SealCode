@@ -12,12 +12,39 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using Models;
 
+using SealCode.Hosting;
 using SealCode.Security;
 
 namespace SealCode.Tests;
 
 public sealed class GoogleSignInTests
 {
+    [Fact]
+    public async Task VerifiedGoogleAccountCanSignInWithoutAStatisticsDatabase()
+    {
+        using var source = new SealCodeApiTests.SealCodeAppFactory();
+        using var configured = Configure(source, new("google-without-database", "person@example.org", "example.org", true));
+        using var factory = configured.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["ConnectionStrings:Statistics"] = "" }));
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IUsageStatisticsRepository>();
+                services.AddSealCodeStatistics();
+            });
+        });
+        using var client = factory.CreateClient();
+        await SetAntiforgeryAsync(client);
+        using var login = await client.PostAsJsonAsync("/admin/google-login", new { Credential = "valid" });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        AddResponseCookie(client, login, "admin_auth");
+        var user = await client.GetFromJsonAsync<JsonElement>("/admin/me");
+        Assert.Equal("person@example.org", user.GetProperty("DisplayName").GetString());
+        Assert.False(user.GetProperty("StatisticsEnabled").GetBoolean());
+        Assert.IsType<DisabledUsageStatisticsRepository>(factory.Services.GetRequiredService<IUsageStatisticsRepository>());
+    }
+
     private const string ClientId = "example-client.apps.googleusercontent.com";
 
     [Fact]
@@ -58,6 +85,9 @@ public sealed class GoogleSignInTests
         await SetAntiforgeryAsync(client);
         using var login = await client.PostAsJsonAsync("/admin/google-login", new { Credential = "valid" });
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var statistics = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        Assert.Equal("google", Assert.Single(statistics.Logins).Provider);
+        Assert.Equal("google:google-subject-1", statistics.Logins[0].User.Name);
         AddResponseCookie(client, login, "admin_auth");
         await SetAntiforgeryAsync(client);
 

@@ -12,6 +12,7 @@ using Models;
 using Models.Configuration;
 using Models.Exceptions;
 
+using SealCode.Hosting;
 using SealCode.Security;
 
 using Transport.Models;
@@ -59,23 +60,25 @@ internal sealed class AdminMcpTools
     /// <summary>
     /// Creates a room using the admin panel's validation and ownership rules.
     /// </summary>
-    /// <param name="rooms">The shared room manager.</param>
     /// <param name="admins">The current admin identity provider.</param>
     /// <param name="languages">The configured language validator.</param>
     /// <param name="accessor">The current MCP request used to construct the absolute invitation URL.</param>
+    /// <param name="creator">Durable room creation accounting.</param>
+    /// <param name="cancellationToken">Request cancellation.</param>
     /// <param name="name">The requested room name.</param>
     /// <param name="language">The optional room language; null defaults to csharp.</param>
     /// <returns>The created room with its invitation path and absolute URL.</returns>
     /// <exception cref="McpException">Thrown when authentication, validation or capacity checks fail.</exception>
     [McpServerTool(Name = "create_room", Destructive = false, UseStructuredContent = true),
      Description("Create a room as the authenticated admin. Share invitationUrl as the complete room link, including the site's domain.")]
-    public static McpCreatedRoom CreateRoom(
-        IRoomManager rooms,
+    public static async Task<McpCreatedRoom> CreateRoomAsync(
         IAdminUserManager admins,
         ILanguageValidator languages,
         IHttpContextAccessor accessor,
+        TrackedRoomCreator creator,
         [Description("Room name, required. Up to 160 characters after trimming; saved in full.")] string name,
-        [Description("Language from list_languages; defaults to csharp.")] string? language = "csharp")
+        [Description("Language from list_languages; defaults to csharp.")] string? language = "csharp",
+        CancellationToken cancellationToken = default)
     {
         var admin = GetAdmin(admins);
         try
@@ -86,7 +89,7 @@ internal sealed class AdminMcpTools
                 throw new McpException("Invalid language. Use list_languages for allowed values.");
             }
 
-            var room = rooms.CreateRoom(new RoomName(name), roomLanguage, admin);
+            var room = await creator.CreateAsync(new RoomName(name), roomLanguage, admin, RoomKind.Code, cancellationToken).ConfigureAwait(false);
             return new McpCreatedRoom(room.RoomId.Value, room.Name.Value,
                 room.Language.Value, room.CreatedBy.DisplayName,
                 InvitationPath(room.RoomId), InvitationUrl(accessor, room.RoomId));

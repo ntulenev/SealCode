@@ -16,6 +16,7 @@ using Models.Configuration;
 using Npgsql;
 
 using Persistence.Snippets;
+using Persistence.Statistics;
 
 using SealCode.Mcp;
 using SealCode.Routing;
@@ -109,6 +110,21 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Registers the dedicated statistics pool, repository and tracked room creator.</summary>
+    /// <param name="services">The application service collection.</param>
+    /// <returns>The service collection for further registration.</returns>
+    public static IServiceCollection AddSealCodeStatistics(this IServiceCollection services)
+    {
+        _ = services.AddSingleton<TrackedRoomCreator>();
+        _ = services.AddSingleton<IUsageStatisticsRepository>(provider =>
+            string.IsNullOrWhiteSpace(provider.GetRequiredService<IConfiguration>().GetConnectionString("Statistics"))
+                ? new DisabledUsageStatisticsRepository()
+                : new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<UsageStatisticsDataSource>().Value));
+        _ = services.AddSingleton(provider => new UsageStatisticsDataSource(
+            provider.GetRequiredService<IConfiguration>()));
+        return services;
+    }
+
     /// <summary>
     /// Registers the stateless admin MCP transport and its explicit tool collection.
     /// </summary>
@@ -119,6 +135,7 @@ internal static class ServiceCollectionExtensions
         _ = services.AddMcpServer()
             .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
             .WithTools<AdminMcpTools>()
+            .WithTools<StatisticsMcpTools>()
             .WithTools<SnippetMcpTools>();
         return services;
     }

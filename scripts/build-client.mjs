@@ -10,6 +10,7 @@ await build({
     room: 'src/SealCode/wwwroot/room.js',
     whiteboard: 'src/SealCode/wwwroot/whiteboard.js',
     'admin-main': 'src/SealCode/wwwroot/admin-main.js',
+    'admin-statistics-main': 'src/SealCode/wwwroot/admin-statistics-main.js',
     'admin-limits-main': 'src/SealCode/wwwroot/admin-limits-main.js',
     'admin-login-main': 'src/SealCode/wwwroot/admin-login-main.js',
     'admin-token-main': 'src/SealCode/wwwroot/admin-token-main.js',

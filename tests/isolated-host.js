@@ -40,6 +40,7 @@ export async function startIsolatedHost(settings, prepareContentRoot) {
   const port = reservation.address().port;
   await new Promise((done) => reservation.close(done));
   const root = await mkdtemp(join(tmpdir(), 'sealcode-isolated-'));
+  await cp(resolve('src/SealCode/Resources/Statistics'), join(root, 'Resources', 'Statistics'), { recursive: true });
   if (settings.Snippets?.Enabled)
     await cp(resolve('src/SealCode/Resources/Snippets'), join(root, 'Resources', 'Snippets'), { recursive: true });
   await writeFile(
@@ -64,6 +65,11 @@ export async function startIsolatedHost(settings, prepareContentRoot) {
   );
   if (prepareContentRoot) await prepareContentRoot(root);
   const baseURL = `http://127.0.0.1:${port}`;
+  const environment = { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' };
+  // Explicit per-test connections override inherited connections from the full test runner.
+  for (const [name, value] of Object.entries(settings.ConnectionStrings ?? {})) {
+    environment[`ConnectionStrings__${name}`] = value ?? '';
+  }
   const child = spawn(
     'dotnet',
     [
@@ -75,7 +81,7 @@ export async function startIsolatedHost(settings, prepareContentRoot) {
       '--urls',
       baseURL
     ],
-    { env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }, windowsHide: true }
+    { env: environment, windowsHide: true }
   );
   children.add(child);
   let spawnError;

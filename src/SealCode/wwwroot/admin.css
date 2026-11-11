@@ -38,7 +38,7 @@
 .admin-greeting:empty { display: none; }
 .room-filter { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
 .room-filter input { width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); }
-.admin-nav { display: flex; gap: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
+.admin-nav { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
 .admin-nav a { padding: 10px 0; color: var(--muted); }
 .admin-nav a[aria-current="page"] { color: var(--text); border-bottom: 2px solid var(--accent); }
 .limits-list { margin: 0; }

@@ -622,7 +622,8 @@ under organization policy.
 
 ## Admin MCP
 
-The same server exposes admin room management at `/mcp` over Streamable HTTP
+The same server exposes admin room management and bounded usage statistics at
+`/mcp` over Streamable HTTP
 using the [official MCP C# SDK](https://csharp.sdk.modelcontextprotocol.io/v2/concepts/transports/transports.html).
 Configure a separate `McpToken` next to `PasswordHash` in each `AdminUsers` record:
 
@@ -664,6 +665,7 @@ server-side MCP sessions. Cross-origin browser requests are rejected; configure
 | `list_languages` | Allowed languages for room creation |
 | `create_room` | Create a room with `name` and optional `language` (default `csharp`); return its ID and complete invitation URL |
 | `delete_room` | Delete `roomId` and notify connected participants |
+| `get_usage_statistics` | Super admins only: filtered usage totals and a bounded page of users/events; at most 31 days and 100 rows. See [limits and examples](#bounded-statistics-api-and-mcp). |
 
 Use `invitationUrl` as the ready-to-share room link, for example
 `https://seal-code.com/room/<id>`. It uses the MCP request's scheme, host, port
@@ -703,6 +705,10 @@ The expandable **Technical limits** section shows synchronization and request bu
 This page is read-only and available to every signed-in administrator. Values come
 from the server; changing configuration requires restarting the application.
 
+When statistics are configured, super admins can also open **Statistics** for
+[Today/week reports, filters, sortable tables, user history and retention](#administrator-usage-statistics).
+The link is hidden for ordinary admins and when statistics are disabled.
+
 ## Join a Room
 
 Open an invitation directly, or paste a room link from the same SealCode instance
@@ -733,6 +739,7 @@ away to leave. No participant account or installation is required.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 - `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
+- `ConnectionStrings:Statistics`: optional dedicated PostgreSQL connection for usage statistics. Omit/empty disables statistics while sign-in and rooms continue to work. It never falls back to `ConnectionStrings:Snippets`; see [setup and access](#administrator-usage-statistics).
 
 The checked-in `appsettings.json` contains empty `PasswordHash` placeholders. Before starting the app, generate a hash for each admin with `dotnet run --project tools/password-hash` and set its `PasswordHash` locally or through environment variables (for example, `AdminUsers__0__PasswordHash`). Paste the generated hash, not the plain-text password. Empty hashes fail configuration validation. Do not commit your credentials.
 
@@ -915,8 +922,8 @@ Unlisted proxies cannot supply trusted forwarded headers. The browser WebSocket 
 ### Deployment and trust boundaries
 
 The application supports **one process only**. Optional PostgreSQL storage persists
-the snippet library only; it adds no multi-instance coordination or durable room
-storage. Room data disappears when the process stops, even if Data Protection keys are persisted.
+the snippet library and administrator usage statistics through independent connection
+strings; it adds no multi-instance coordination or durable room storage. Room data disappears when the process stops, even if Data Protection keys are persisted.
 
 Anyone knowing a room link is a trusted participant under [ADR 0003](docs/adr/0003-crdt-recovery-lifecycle.md). The server validates membership, revisions, encoding and resource limits, but does not interpret Yjs updates to verify their document semantics.
 
@@ -1039,7 +1046,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.21.1`, so releases bypass previously cached resource URLs.
+query string `?v=1.22.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` and `Resources/Snippets/manage.html` pages. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
@@ -1131,3 +1138,203 @@ The browser test client ignores certificate trust only for that local test certi
 - [Backend architecture](docs/backend.md) — backend mechanisms and real-time collaboration.
 - [ADR 0004: Resource and security boundaries](docs/adr/0004-resource-and-security-boundaries.md) — contracts and constraints.
 - [Implementation audit](docs/audit-implementation.md) — validation evidence.
+
+
+## Administrator usage statistics
+
+Statistics are optional. Omit `ConnectionStrings:Statistics` (or leave it empty)
+to run without a statistics database. Password, Google and MCP authentication,
+code/whiteboard rooms and file-backed snippets continue to work; no usage events
+are stored, the Statistics navigation link is hidden, and its page/read/delete
+endpoints return 404 to super admins.
+
+When a nonempty `ConnectionStrings:Statistics` is configured, successful password
+and Google sign-ins are written to PostgreSQL before a session is issued. An
+account row is created automatically on first activity and its display name is refreshed on subsequent activity. Configured account names
+are case-insensitive; Google subject identifiers remain case-sensitive.
+Stateless MCP has no sign-in session: each successful bearer authentication is
+recorded with provider `mcp` and is visible separately in the user's history.
+Failed authentication and cookie-based page requests do not create login events.
+
+Room creation from the admin panel and MCP records the creator, timestamp, room
+ID, full room name, workspace (`code` or `whiteboard`) and initial language
+(for example `csharp`). Content, passwords, credential hashes, bearer tokens and
+Google ID tokens are never stored in statistics. History survives room deletion
+and application restarts. When statistics are enabled but an activity cannot be
+persisted, a new session is not issued and a newly created room is removed; recording errors must be fixed
+before those operations can succeed.
+
+To enable statistics:
+
+1. Apply [001_usage_statistics.sql](src/Persistence/Statistics/Migrations/001_usage_statistics.sql)
+   to the PostgreSQL database under a schema-owner account. The migration is
+   repeatable; the application does not apply it automatically.
+2. Supply `ConnectionStrings__Statistics` through deployment secrets.
+   Statistics and snippets use independent connection strings and connection pools.
+   `ConnectionStrings__Snippets` is used only for snippets; there is no fallback.
+   Both strings may explicitly point to the same database if desired.
+3. Grant the runtime account `USAGE` on schema `statistics`, `SELECT`, `INSERT`,
+   `UPDATE`, `DELETE` on its tables, and `USAGE` on its identity sequence.
+
+| Setting | Required by | Purpose |
+| --- | --- | --- |
+| `ConnectionStrings:Statistics` / `ConnectionStrings__Statistics` | Administrator activity | Dedicated PostgreSQL database for accounts and usage events. Optional; a nonempty value enables recording. |
+| `ConnectionStrings:Snippets` / `ConnectionStrings__Snippets` | PostgreSQL snippet provider | Private question library only; never used by statistics. |
+
+Only a currently configured super admin can open **Statistics** in the admin
+navigation (`/admin/statistics`), read `/admin/statistics/data`, or delete its
+history. The **Today** and **Last 7 days** tabs show a short UTC usage report, successful
+sign-ins, created rooms, active account count, first/last recorded activity, and
+room counts by workspace and language. The weekly tab covers today and the six
+preceding UTC dates; **Custom period** accepts up to 31 inclusive dates.
+Selecting an account shows its totals and events for the selected period. Click
+column headings to sort users, event history or the workspace breakdown. Search
+account/room names and filter activity, workspace, initial language or sign-in
+method; sorting and filtering run in PostgreSQL **before** pagination. Account
+lists and histories default to 50 rows per page. Counters cover retained events
+matching the selected period and filters, not live room/participant counts.
+The Refresh control has separate spacing above the summary divider.
+
+The retention form deletes events **strictly before 00:00 UTC** on the chosen
+date, across all users. The boundary itself is retained. The server accepts only
+a cutoff in the past and requires the normal admin antiforgery token for
+`DELETE /admin/statistics/data?before=<ISO-8601 timestamp>`.
+After confirmation, deletion is permanent; accounts without any retained events
+are removed from statistics. Authentication configuration, permissions, active
+rooms and snippet data are unaffected. The next activity recreates an account
+if needed.
+
+Browser tests require a disposable statistics database with the migration applied
+and `ConnectionStrings__Statistics` set. CI prepares it in its PostgreSQL service.
+The statistics persistence integration test creates and drops its own database
+when `SEALCODE_STATISTICS_ISOLATED_TEST_CONNECTION` points to a disposable server
+with `CREATE DATABASE` permission.
+
+
+### Statistics screenshots
+
+These captures use disposable browser-test accounts and sample C#, SQL and
+whiteboard rooms. They contain no deployment accounts or credentials.
+
+| Overview, dark theme | Overview, light theme |
+| --- | --- |
+| ![System usage overview with totals, workspace breakdown and account list in dark theme](docs/images/statistics-overview-dark.png) | ![System usage overview in light theme](docs/images/statistics-overview-light.png) |
+
+| User history, dark theme | User history, light theme |
+| --- | --- |
+| ![User sign-ins and code and whiteboard room creation history in dark theme](docs/images/statistics-user-dark.png) | ![User sign-ins and room creation history in light theme](docs/images/statistics-user-light.png) |
+
+| Today report, dark theme | Active filters and sorting, light theme |
+| --- | --- |
+| ![Today tab with its UTC date range and short usage report](docs/images/statistics-today-dark.png) | ![User activity filtered to code room creation and practice room names, sorted by room name](docs/images/statistics-filtered-sorted-light.png) |
+
+The Today capture shows a single UTC date; the overview above shows the last
+seven days. The filtered capture shows the selected activity/workspace filters,
+literal room search, and the ascending arrow on the Room column. The counters
+change with those filters. Refresh is separated from the summary divider.
+
+<details>
+<summary>Mobile views (375 pixels wide)</summary>
+
+The activity table scrolls horizontally to keep dates and room metadata readable.
+
+| Dark theme | Light theme |
+| --- | --- |
+| ![Mobile user statistics in dark theme](docs/images/statistics-mobile-dark.png) | ![Mobile user statistics in light theme](docs/images/statistics-mobile-light.png) |
+
+</details>
+
+### Statistics verification
+
+| Level | Scenarios |
+| --- | --- |
+| [Query unit tests](src/Models.Tests/UsageStatisticsQuery.Tests.cs) | UTC normalization, default seven-day period, the 31-day boundary, page/offset limits, allowed sort keys and bounded filters. |
+| [Server unit tests](src/SealCode.Tests/UsageStatistics.Tests.cs) | Independent connection strings without fallback, disabled accounting when configuration is absent/empty, both room kinds, successful recording and rollback on persistence failure or cancellation. |
+| [Client unit tests](tests/client/admin-statistics.test.js) | Today/week/custom periods and date validation, server filter forwarding/reset, independent table sorting and direction, totals/empty states, user/event pagination, stale responses, error recovery, safe text rendering, retention confirmation/cancellation, duplicate-submit protection, UTC cutoff and CSRF. |
+| [PostgreSQL integration tests](src/Persistence.Tests/PostgreSqlUsageStatisticsRepository.Tests.cs) | Repeatable migration, concurrent account upserts, local/Google identity semantics, durable metadata, UTC report boundaries, filters/sorting before pagination, user/event pages with stable ordering, invalid-query rejection before connecting, atomic rollback, cancellation, exclusive cutoff, orphan cleanup, account recreation and concurrent retention. |
+| [HTTP integration tests](src/SealCode.Tests/SealCodeApi.Tests.cs) | Operation without database configuration (sign-in, both room kinds, file snippets and disabled reports), guest/ordinary/super-admin access, account-specific queries, no-store responses, CSRF, invalid period/page/filter/sort/cutoff rejection, successful and failed sign-ins and room recording. Google tests also verify provider accounting. |
+| [MCP integration tests](src/SealCode.Tests/AdminMcp.Tests.cs) | Real MCP transport, super-admin access, disabled statistics, bounded period/page/offset/sort validation before reading, filter forwarding and compatibility with older protocol clients. |
+| [Browser tests](tests/e2e/admin-statistics.spec.js) | Today/week reports, custom-period validation, server filters/sorting, Refresh spacing, overview/user history, workspace metadata, real pagination, XSS-safe room names, guest/ordinary-admin denial, canceled/confirmed retention, dark/light themes and desktop/mobile layouts. Actual deletion of old events and the strict UTC boundary are checked against PostgreSQL. |
+
+Run the focused checks (database environment variables must point to a disposable
+server/database prepared as described above):
+
+```bash
+npm run typecheck
+npm run test:client
+dotnet test src/Models.Tests --filter FullyQualifiedName~UsageStatisticsQuery
+dotnet test src/SealCode.Tests --filter 'FullyQualifiedName~Statistics|FullyQualifiedName~WithoutDatabaseConfiguration|FullyQualifiedName~SuccessfulLogins|FullyQualifiedName~GoogleSignInTests|FullyQualifiedName~AdminMcpTests'
+dotnet test src/Persistence.Tests --filter FullyQualifiedName~PostgreSqlUsageStatistics
+npm run build:client
+npx playwright test tests/e2e/admin-statistics.spec.js tests/e2e/without-database.spec.js
+```
+
+
+The [database-free browser test](tests/e2e/without-database.spec.js) runs an isolated
+host with both connection strings empty, despite the database connection used by
+the main browser test host. It checks real form sign-in, joining and deleting code
+and whiteboard rooms, the file question library, the hidden statistics link and
+404 responses for disabled reports and retention. An enabled but unreachable or
+unmigrated statistics database is treated as a persistence error, not as an
+instruction to silently disable accounting.
+
+
+### Bounded statistics API and MCP
+
+The read-only MCP tool `get_usage_statistics` uses the [Admin MCP](#admin-mcp)
+endpoint and is available only to a configured super administrator token. Ordinary admins are rejected even if they know the
+tool name; unconfigured statistics return an explicit disabled error. The tool
+uses the same validated query as `GET /admin/statistics/data`:
+
+| Limit | Behavior |
+| --- | --- |
+| UTC period | Inclusive `from`, exclusive `to`; nonempty and at most **31 days**. Defaults to the last seven days. Larger requests are rejected before executing report SQL. |
+| Detail page | `limit` 1–100, default 50; `offset` 0–10000. `UsersCount` or `EventsCount` indicates the total matching rows. Narrow dates/filters to inspect results beyond the offset limit. |
+| Workspace breakdown | At most 100 groups; `BreakdownCount` indicates truncation. Filter workspace/language to narrow it. |
+| Database work | Queries restrict indexed event timestamps before aggregation; aggregation remains in PostgreSQL, and only the summary and bounded rows reach the application. SQL execution times out after 15 seconds. |
+| Input | Search is literal and at most 160 characters. Account IDs are capped at 512 and language filters at 32. Filters are parameters; sort expressions come from fixed allowlists. |
+
+Example MCP arguments (historical dates remain valid):
+
+```json
+{
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-08T00:00:00Z",
+  "limit": 50,
+  "offset": 0,
+  "sortBy": "rooms",
+  "descending": true
+}
+```
+
+Use `userId` from the returned user list to retrieve that account's events.
+Optional filters are `search`, `eventType` (`login`/`room`), `kind`
+(`code`/`whiteboard`), `language` (for example `csharp`) and `provider`
+(`password`/`google`/`mcp`). All totals reflect these event filters, so filtering
+by workspace excludes sign-ins, and filtering by provider excludes room events.
+
+User sort keys: `activity`, `user`, `logins`, `rooms`, `firstActivity`.
+Event sort keys: `time`, `type`, `provider`, `room`, `kind`, `language`.
+`descending` controls direction. HTTP also accepts `breakdownSortBy`
+(`count`/`kind`/`language`) and `breakdownDescending` for independent breakdown
+sorting. All timestamp boundaries and displayed times use UTC.
+
+
+For account-specific room history, pass an exact `Id` from `Users` (the value
+below is a sample configured-account identifier):
+
+```json
+{
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-08T00:00:00Z",
+  "userId": "ADMIN",
+  "eventType": "room",
+  "kind": "code",
+  "language": "csharp",
+  "search": "interview",
+  "sortBy": "time",
+  "descending": true,
+  "limit": 50,
+  "offset": 0
+}
+```

@@ -2,6 +2,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
+using Abstractions;
+
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -22,13 +24,17 @@ internal sealed class AdminUserManager : IAdminUserManager
     /// </summary>
     /// <param name="settings">The application configuration.</param>
     /// <param name="accessor">The current HTTP context accessor.</param>
+    /// <param name="statistics">Durable successful-login accounting.</param>
     public AdminUserManager(
         IOptions<ApplicationConfiguration> settings,
-        IHttpContextAccessor accessor)
+        IHttpContextAccessor accessor,
+        IUsageStatisticsRepository statistics)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(accessor);
 
+        ArgumentNullException.ThrowIfNull(statistics);
+        _statistics = statistics;
         _settings = settings.Value;
         _accessor = accessor;
     }
@@ -109,6 +115,7 @@ internal sealed class AdminUserManager : IAdminUserManager
             return false;
         }
 
+        await _statistics.RecordLoginAsync(new AdminUser(user.Name, user.IsSuperAdmin), "password", cancellationToken).ConfigureAwait(false);
         var identity = new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, user.Name.Trim()), new Claim("credential", CredentialStamp(user))],
             CookieAuthenticationDefaults.AuthenticationScheme);
@@ -132,6 +139,7 @@ internal sealed class AdminUserManager : IAdminUserManager
             return false;
         }
 
+        await _statistics.RecordLoginAsync(new AdminUser($"google:{identity.Subject}", displayName: identity.Email), "google", Context.RequestAborted).ConfigureAwait(false);
         var claims = new[]
         {
             new Claim(ClaimTypes.Name, $"google:{identity.Subject}"),
@@ -156,6 +164,7 @@ internal sealed class AdminUserManager : IAdminUserManager
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user.PasswordHash ?? user.Password ?? "")));
 
     private static readonly string _dummyHash = new PasswordHasher<AdminUserConfiguration>().HashPassword(new() { Name = "unknown" }, Guid.NewGuid().ToString());
+    private readonly IUsageStatisticsRepository _statistics;
     private readonly ApplicationConfiguration _settings;
     private HttpContext Context => _accessor.HttpContext
         ?? throw new InvalidOperationException("HttpContext is not available outside an HTTP request.");
