@@ -49,7 +49,7 @@ internal sealed class StatisticsMcpTools
         }
         if (!statistics.Enabled)
         {
-            throw new McpException("Statistics are disabled. Configure ConnectionStrings:Statistics.");
+            throw new McpException("Statistics are disabled. Configure ConnectionStrings:SealCode.");
         }
         var query = new UsageStatisticsQuery(from, to, userId, offset)
         {

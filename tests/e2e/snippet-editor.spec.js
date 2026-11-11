@@ -7,7 +7,7 @@ test('super admin previews and publishes snippets with immediate cache refresh a
   test.skip(!connection, 'Requires a disposable migrated database with a seeded general/1 question.');
   const host = await isolatedHost({
     Snippets: { Enabled: true, Provider: 'PostgreSql' },
-    ConnectionStrings: { Snippets: connection },
+    ConnectionStrings: { SealCode: connection },
     AdminUsers: [
       { Name: 'BrowserAdmin', Password: 'browser-pass', IsSuperAdmin: true },
       { Name: 'RegularAdmin', Password: 'regular-pass', IsSuperAdmin: false }
@@ -102,7 +102,7 @@ test('super admin previews and publishes snippets with immediate cache refresh a
 
 test('super admin manages category and question lifecycles with immediately visible cache changes', async ({ browser, isolatedHost }) => {
   test.skip(!connection, 'Requires a disposable migrated snippet database.');
-  const host = await isolatedHost({ Snippets: { Enabled: true, Provider: 'PostgreSql' }, ConnectionStrings: { Snippets: connection } });
+  const host = await isolatedHost({ Snippets: { Enabled: true, Provider: 'PostgreSql' }, ConnectionStrings: { SealCode: connection } });
   const context = await browser.newContext({ baseURL: host.baseURL, viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.on('dialog', dialog => dialog.accept());

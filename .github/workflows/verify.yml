@@ -23,8 +23,8 @@ jobs:
     env:
       SEALCODE_STATISTICS_ISOLATED_TEST_CONNECTION: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres
       SEALCODE_SNIPPETS_ISOLATED_TEST_CONNECTION: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres
-      ConnectionStrings__Statistics: Host=localhost;Port=5432;Database=sealcode_statistics;Username=postgres;Password=postgres
-      SEALCODE_SNIPPETS_EDITOR_TEST_CONNECTION: Host=localhost;Port=5432;Database=sealcode_snippet_editor;Username=postgres;Password=postgres
+      ConnectionStrings__SealCode: Host=localhost;Port=5432;Database=sealcode;Username=postgres;Password=postgres
+      SEALCODE_SNIPPETS_EDITOR_TEST_CONNECTION: Host=localhost;Port=5432;Database=sealcode;Username=postgres;Password=postgres
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,19 +51,18 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Build client assets for browser tests
         run: npm run build:client
-      - name: Prepare disposable statistics and snippet browser databases
+      - name: Prepare shared disposable browser database
         env:
           PGHOST: localhost
           PGPORT: '5432'
           PGUSER: postgres
           PGPASSWORD: postgres
         run: |
-          createdb sealcode_snippet_editor
-          createdb sealcode_statistics
-          psql -v ON_ERROR_STOP=1 -d sealcode_statistics -f src/Persistence/Statistics/Migrations/001_usage_statistics.sql
-          psql -v ON_ERROR_STOP=1 -d sealcode_snippet_editor -f src/Persistence/Snippets/Migrations/001_create_snippets.sql
-          psql -v ON_ERROR_STOP=1 -d sealcode_snippet_editor -f src/Persistence/Snippets/Migrations/002_question_steps.sql
-          psql -v ON_ERROR_STOP=1 -d sealcode_snippet_editor -c "INSERT INTO snippets.categories(language,title) VALUES ('general','General'); INSERT INTO snippets.questions(language,number,topic,description,markdown) VALUES ('general',1,'Original','Coverage','Original source');"
+          createdb sealcode
+          psql -v ON_ERROR_STOP=1 -d sealcode -f src/Persistence/Statistics/Migrations/001_usage_statistics.sql
+          psql -v ON_ERROR_STOP=1 -d sealcode -f src/Persistence/Snippets/Migrations/001_create_snippets.sql
+          psql -v ON_ERROR_STOP=1 -d sealcode -f src/Persistence/Snippets/Migrations/002_question_steps.sql
+          psql -v ON_ERROR_STOP=1 -d sealcode -c "INSERT INTO snippets.categories(language,title) VALUES ('general','General'); INSERT INTO snippets.questions(language,number,topic,description,markdown) VALUES ('general',1,'Original','Coverage','Original source');"
       - name: Smoke test
         run: npm run test:smoke
       - run: npx playwright test --grep-invert @smoke

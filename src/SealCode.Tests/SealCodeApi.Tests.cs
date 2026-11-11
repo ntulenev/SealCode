@@ -848,7 +848,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
                     ["Snippets:Enabled"] = "true",
                     ["Snippets:Provider"] = provider,
                     ["Snippets:StartupRetryCount"] = "0",
-                    ["ConnectionStrings:Snippets"] = connection
+                    ["ConnectionStrings:SealCode"] = connection
                 }));
             if (provider == "File")
             {
@@ -1279,8 +1279,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Statistics"] = "",
-                ["ConnectionStrings:Snippets"] = "",
+                ["ConnectionStrings:SealCode"] = "",
                 ["Snippets:Enabled"] = "true",
                 ["Snippets:Provider"] = "File"
             }));
@@ -1549,6 +1548,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
                     ["AdminUsers:1:IsSuperAdmin"] = "true",
                     ["Languages:0"] = "csharp",
                     ["Languages:1"] = "sql",
+                    ["ConnectionStrings:SealCode"] = "",
+                    ["Snippets:Provider"] = "File",
                     ["MaxUsersPerRoom"] = "3"
                 };
 

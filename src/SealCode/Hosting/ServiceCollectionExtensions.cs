@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 using ModelContextProtocol.AspNetCore;
@@ -110,18 +111,34 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>Registers the dedicated statistics pool, repository and tracked room creator.</summary>
+    /// <summary>Registers one lazy, host-owned PostgreSQL pool for snippets and statistics.</summary>
+    /// <param name="services">The application service collection.</param>
+    /// <returns>The service collection for further registration.</returns>
+    private static IServiceCollection AddSealCodeDatabase(this IServiceCollection services)
+    {
+        services.TryAddSingleton(provider =>
+        {
+            var connection = provider.GetRequiredService<IConfiguration>().GetConnectionString("SealCode");
+            if (string.IsNullOrWhiteSpace(connection))
+            {
+                throw new InvalidOperationException("Set ConnectionStrings:SealCode and apply the database migrations.");
+            }
+            return NpgsqlDataSource.Create(connection);
+        });
+        return services;
+    }
+
+    /// <summary>Registers statistics using the shared application pool and the tracked room creator.</summary>
     /// <param name="services">The application service collection.</param>
     /// <returns>The service collection for further registration.</returns>
     public static IServiceCollection AddSealCodeStatistics(this IServiceCollection services)
     {
+        _ = services.AddSealCodeDatabase();
         _ = services.AddSingleton<TrackedRoomCreator>();
         _ = services.AddSingleton<IUsageStatisticsRepository>(provider =>
-            string.IsNullOrWhiteSpace(provider.GetRequiredService<IConfiguration>().GetConnectionString("Statistics"))
+            string.IsNullOrWhiteSpace(provider.GetRequiredService<IConfiguration>().GetConnectionString("SealCode"))
                 ? new DisabledUsageStatisticsRepository()
-                : new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<UsageStatisticsDataSource>().Value));
-        _ = services.AddSingleton(provider => new UsageStatisticsDataSource(
-            provider.GetRequiredService<IConfiguration>()));
+                : new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<NpgsqlDataSource>()));
         return services;
     }
 
@@ -154,6 +171,7 @@ internal static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(environment);
 
+        _ = services.AddSealCodeDatabase();
         _ = services.AddSingleton<ISnippetRepository>(provider =>
         {
             var settings = provider.GetRequiredService<IOptions<ApplicationConfiguration>>().Value.Snippets;
@@ -162,15 +180,6 @@ internal static class ServiceCollectionExtensions
                 return new PostgreSqlSnippetRepository(() => provider.GetRequiredService<NpgsqlDataSource>());
             }
             return new FileSnippetRepository(Path.Combine(environment.ContentRootPath, "Resources", "Snippets"));
-        });
-        _ = services.AddSingleton(provider =>
-        {
-            var connection = provider.GetRequiredService<IConfiguration>().GetConnectionString("Snippets");
-            if (string.IsNullOrWhiteSpace(connection))
-            {
-                throw new InvalidOperationException("Set ConnectionStrings:Snippets when the PostgreSql snippet provider is enabled.");
-            }
-            return NpgsqlDataSource.Create(connection);
         });
         _ = services.AddSingleton<ISnippetCatalog, SnippetCatalog>();
         _ = services.AddSingleton<SnippetAdministration>();

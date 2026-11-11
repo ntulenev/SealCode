@@ -168,7 +168,7 @@ for (const provider of ['File', 'PostgreSql']) {
   test(`${provider} startup failure leaves the portal running with a red disabled library button`, async ({ browser, isolatedHost }, testInfo) => {
     const host = await isolatedHost({
       Snippets: { Enabled: true, Provider: provider, StartupRetryCount: 0 },
-      ConnectionStrings: { Snippets: 'Host=127.0.0.1;Port=1;Database=unavailable;Username=test;Timeout=1' }
+      ConnectionStrings: { SealCode: '' }
     }, provider === 'File' ? root => writeFile(join(root, 'Resources/Snippets/catalog.json'), '{invalid') : undefined);
     const context = await browser.newContext({ baseURL: host.baseURL });
     try {

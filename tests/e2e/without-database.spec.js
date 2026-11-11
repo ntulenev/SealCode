@@ -3,7 +3,7 @@ import { csrf } from './admin-token.js';
 
 test('without database configuration admins use rooms and file snippets while statistics stay disabled', async ({ browser, isolatedHost }) => {
   const host = await isolatedHost({
-    ConnectionStrings: { Statistics: '', Snippets: '' },
+    ConnectionStrings: { SealCode: '' },
     Snippets: { Enabled: true, Provider: 'File' }
   });
   const context = await browser.newContext({ baseURL: host.baseURL });
