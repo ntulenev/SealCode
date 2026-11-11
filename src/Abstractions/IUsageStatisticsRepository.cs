@@ -24,12 +24,11 @@ public interface IUsageStatisticsRepository
     Task RecordRoomAsync(RoomState room, CancellationToken cancellationToken);
 
     /// <summary>Reads totals, workspace breakdown and a page of accounts or account events.</summary>
-    /// <param name="userId">The stored account identifier, or null for all users.</param>
-    /// <param name="offset">The nonnegative offset into pages of 50 users or events.</param>
+    /// <param name="query">A UTC period of at most 31 days, filters, sorting and bounded pagination.</param>
     /// <param name="cancellationToken">Cancels the database read.</param>
     /// <returns>Totals, room breakdown, and the requested page of users or events.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The offset is negative.</exception>
-    Task<JsonElement> ReadAsync(string? userId, int offset, CancellationToken cancellationToken);
+    /// <exception cref="ArgumentException">The query violates a report limit.</exception>
+    Task<JsonElement> ReadAsync(UsageStatisticsQuery query, CancellationToken cancellationToken);
 
     /// <summary>Deletes events strictly before the UTC cutoff and removes orphaned accounts.</summary>
     /// <param name="before">The exclusive cutoff, converted to UTC before deletion.</param>

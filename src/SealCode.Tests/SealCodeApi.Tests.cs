@@ -1356,6 +1356,23 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         Assert.Equal(DateTimeOffset.Parse("2020-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture), repository.Cutoff);
     }
 
+    [Theory]
+    [InlineData("from=2020-01-01T00:00:00Z&to=2020-02-02T00:00:00Z")]
+    [InlineData("limit=101")]
+    [InlineData("offset=10001")]
+    [InlineData("kind=unknown")]
+    [InlineData("provider=unknown")]
+    [InlineData("sortBy=DROP_TABLE")]
+    public async Task StatisticsRejectUnboundedOrInvalidQueriesBeforeReading(string query)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsync(client, "Root", "pass2");
+        using var response = await client.GetAsync($"/admin/statistics/data?{query}");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(((TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>()).LastQuery);
+    }
+
     [Fact]
     public async Task SuccessfulLoginsAndBothRoomKindsAreRecordedAndFailedWritesDoNotLeaveRooms()
     {

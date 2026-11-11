@@ -82,3 +82,39 @@ test('history pagination and room names remain safe in the browser', async ({ pa
   await expect(page.locator('#statisticsDetails')).toContainText(maliciousName);
   await expect(page.locator('#previousPage')).toBeDisabled();
 });
+
+test('period reports, server filters, table sorting and refresh spacing work together', async ({ page, request }) => {
+  const prefix = `Filter sample ${Date.now()}`;
+  for (const [name, kind] of [[`${prefix} Alpha`, 'code'], [`${prefix} Zeta`, 'whiteboard']]) {
+    const response = await request.post('/admin/rooms', { headers: await csrf(request), data: { name, kind, language: 'csharp' } });
+    expect(response.ok()).toBeTruthy();
+  }
+  await page.goto('/admin/statistics');
+  await expect(page.locator('#statisticsSummary dd')).toHaveCount(5);
+  const refresh = await page.locator('#refreshStatistics').boundingBox();
+  const summary = await page.locator('section[aria-labelledby="summaryTitle"]').boundingBox();
+  expect(summary.y - (refresh.y + refresh.height)).toBeGreaterThanOrEqual(20);
+  await page.getByRole('tab', { name: 'Today', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Today', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#statisticsReportText')).toContainText('Today:');
+  await page.getByRole('tab', { name: 'Last 7 days', exact: true }).click();
+  await expect(page.locator('#statisticsReportText')).toContainText('Last 7 days:');
+  await page.locator('#statisticsSearch').fill(prefix);
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page.locator('#statisticsSummary dd').nth(3)).not.toHaveText('—');
+  await page.locator('#statisticsDetails button', { hasText: 'BrowserAdmin' }).click();
+  await expect(page.locator('#statisticsDetails tr')).toHaveCount(2);
+  const names = page.locator('#statisticsDetails tr td:nth-child(4)');
+  await page.locator('#statisticsHead').getByRole('button', { name: /^Room/ }).click();
+  await expect(names).toHaveText([`${prefix} Alpha`, `${prefix} Zeta`]);
+  await page.locator('#statisticsHead').getByRole('button', { name: /^Room/ }).click();
+  await expect(names).toHaveText([`${prefix} Zeta`, `${prefix} Alpha`]);
+  await page.locator('#statisticsKind').selectOption('whiteboard');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(names).toHaveText([`${prefix} Zeta`]);
+  await page.getByRole('tab', { name: 'Custom period', exact: true }).click();
+  await page.locator('#statisticsFrom').fill('2020-01-01');
+  await page.locator('#statisticsTo').fill('2020-02-01');
+  await page.getByRole('button', { name: 'Apply period', exact: true }).click();
+  await expect(page.locator('#statisticsStatus')).toContainText('at most 31 days');
+});

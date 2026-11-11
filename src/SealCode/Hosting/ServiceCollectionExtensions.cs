@@ -135,6 +135,7 @@ internal static class ServiceCollectionExtensions
         _ = services.AddMcpServer()
             .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
             .WithTools<AdminMcpTools>()
+            .WithTools<StatisticsMcpTools>()
             .WithTools<SnippetMcpTools>();
         return services;
     }

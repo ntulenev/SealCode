@@ -33,15 +33,9 @@ internal static class StatisticsEndpoints
         });
         _ = group.MapGet("", (IWebHostEnvironment environment) =>
             Results.File(Path.Combine(environment.ContentRootPath, "Resources", "Statistics", "index.html"), "text/html"));
-        _ = group.MapGet("/data", async (IUsageStatisticsRepository repository, CancellationToken cancellationToken,
-            string? userId = null, int offset = 0) =>
-        {
-            if (offset < 0 || offset > 1_000_000 || userId?.Length > 512)
-            {
-                return Results.BadRequest(new { error = "Invalid user or page offset." });
-            }
-            return Results.Json(await repository.ReadAsync(userId, offset, cancellationToken).ConfigureAwait(false));
-        });
+        _ = group.MapGet("/data", async ([AsParameters] StatisticsRequest request,
+            IUsageStatisticsRepository repository, CancellationToken cancellationToken)
+            => Results.Json(await repository.ReadAsync(request.ToQuery(), cancellationToken).ConfigureAwait(false)));
         _ = group.MapDelete("/data", async (DateTimeOffset before, IUsageStatisticsRepository repository,
             CancellationToken cancellationToken) =>
         {

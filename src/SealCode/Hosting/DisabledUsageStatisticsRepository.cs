@@ -29,7 +29,7 @@ internal sealed class DisabledUsageStatisticsRepository : IUsageStatisticsReposi
 
     /// <inheritdoc />
     /// <exception cref="InvalidOperationException">Statistics are not configured.</exception>
-    public Task<JsonElement> ReadAsync(string? userId, int offset, CancellationToken cancellationToken)
+    public Task<JsonElement> ReadAsync(UsageStatisticsQuery query, CancellationToken cancellationToken)
         => throw new InvalidOperationException("Statistics are disabled.");
 
     /// <inheritdoc />

@@ -9,7 +9,8 @@ function element() {
     append(...children) { this.children.push(...children); },
     replaceChildren() { this.children = []; this.textContent = ''; },
     addEventListener(event, handler) { this.handlers[event] = handler; },
-    reportValidity() { return this.valid; }
+    reportValidity() { return this.valid; },
+    attributes: {}, setAttribute(key, value) { this.attributes[key] = value; }
   };
 }
 const report = {
@@ -35,8 +36,12 @@ async function fixture({ fetchData = async () => ok(report), confirm = () => tru
   const elements = Object.fromEntries([
     'statisticsStatus', 'statisticsCutoff', 'previousPage', 'nextPage', 'allUsers', 'statisticsSummary',
     'statisticsBreakdown', 'summaryTitle', 'detailsTitle', 'statisticsHead', 'statisticsDetails',
-    'statisticsPage', 'refreshStatistics', 'pruneStatistics', 'deleteButton'
+    'statisticsPage', 'refreshStatistics', 'pruneStatistics', 'deleteButton', 'statisticsReportText',
+    'statisticsFrom', 'statisticsTo', 'applyStatisticsRange', 'statisticsToday', 'statisticsWeek', 'statisticsCustom',
+    'statisticsBreakdownHead', 'statisticsBreakdownNote', 'statisticsFilters', 'statisticsSearch', 'statisticsEventType',
+    'statisticsKind', 'statisticsLanguage', 'statisticsProvider', 'resetStatisticsFilters'
   ].map(id => [id, element()]));
+  for (const id of ['statisticsSearch', 'statisticsEventType', 'statisticsKind', 'statisticsLanguage', 'statisticsProvider']) elements[id].value = '';
   const calls = [];
   const page = createAdminStatisticsPage({
     document: { getElementById: id => elements[id], createElement: element, querySelector: () => elements.deleteButton },
@@ -90,7 +95,7 @@ test('empty reports display explicit empty states and disable pagination', async
   assert.equal(elements.nextPage.disabled, true);
 });
 
-for (const [status, message] of [[401, 'Session expired'], [403, 'super admins only'], [500, 'Try Refresh']]) {
+for (const [status, message] of [[401, 'Session expired'], [403, 'super admins only'], [500, 'try Refresh']]) {
   test(`HTTP ${status} clears stale data and Refresh recovers`, async () => {
     let fail = false;
     const { elements, page } = await fixture({ fetchData: async () => fail ? { ok: false, status } : ok(report) });
@@ -175,4 +180,78 @@ test('non-Error network rejections produce usable messages', async () => {
   assert.equal(elements.statisticsStatus.textContent, 'Unable to load statistics.');
   await submit();
   assert.equal(elements.statisticsStatus.textContent, 'Unable to delete statistics.');
+});
+
+test('today and weekly tabs request UTC calendar windows and custom periods enforce the month limit', async () => {
+  const { elements, calls } = await fixture();
+  await elements.statisticsToday.handlers.click();
+  let query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(Date.parse(query.get('to')) - Date.parse(query.get('from')), 86400000);
+  assert.equal(new Date(query.get('from')).getUTCHours(), 0);
+  assert.match(elements.statisticsReportText.textContent, /^Today:/);
+  await elements.statisticsWeek.handlers.click();
+  query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(Date.parse(query.get('to')) - Date.parse(query.get('from')), 7 * 86400000);
+  await elements.statisticsCustom.handlers.click();
+  assert.equal(elements.statisticsFrom.disabled, false);
+  elements.statisticsFrom.value = '2020-01-01';
+  elements.statisticsTo.value = '2020-01-31';
+  await elements.applyStatisticsRange.handlers.click();
+  query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.get('from'), '2020-01-01T00:00:00.000Z');
+  assert.equal(query.get('to'), '2020-02-01T00:00:00.000Z');
+  const count = calls.length;
+  elements.statisticsTo.value = '2020-02-01';
+  await elements.applyStatisticsRange.handlers.click();
+  assert.equal(calls.length, count);
+  assert.match(elements.statisticsStatus.textContent, /at most 31 days/);
+  elements.statisticsFrom.value = '';
+  await elements.applyStatisticsRange.handlers.click();
+  assert.equal(calls.length, count);
+});
+
+test('filters reset pagination, persist into account history, and can be cleared', async () => {
+  const { elements, calls, select } = await fixture();
+  elements.statisticsSearch.value = '  Alpha  ';
+  elements.statisticsEventType.value = 'room';
+  elements.statisticsKind.value = 'code';
+  elements.statisticsLanguage.value = 'csharp';
+  await elements.statisticsFilters.handlers.submit(event);
+  let query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.get('search'), 'Alpha');
+  assert.equal(query.get('eventType'), 'room');
+  assert.equal(query.get('kind'), 'code');
+  assert.equal(query.get('language'), 'csharp');
+  await select();
+  query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.get('search'), 'Alpha');
+  assert.equal(query.get('offset'), '0');
+  await elements.resetStatisticsFilters.handlers.click();
+  query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.has('search'), false);
+  assert.equal(query.has('kind'), false);
+  assert.equal(elements.statisticsSearch.value, '');
+});
+
+test('table headers sort the entire server result and toggle direction independently for the breakdown', async () => {
+  const { elements, calls, select } = await fixture({ fetchData: async () => ok({ ...report, BreakdownCount: 101 }) });
+  assert.match(elements.statisticsBreakdownNote.textContent, /first 100 groups/);
+  const userHeader = () => elements.statisticsHead.children[0].children[0];
+  await userHeader().children[0].handlers.click();
+  let query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.get('sortBy'), 'user');
+  assert.equal(query.get('descending'), 'false');
+  assert.equal(userHeader().attributes['aria-sort'], 'ascending');
+  await userHeader().children[0].handlers.click();
+  assert.equal(userHeader().attributes['aria-sort'], 'descending');
+  await elements.statisticsBreakdownHead.children[0].children[0].children[0].handlers.click();
+  query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.get('breakdownSortBy'), 'kind');
+  assert.equal(query.get('breakdownDescending'), 'false');
+  assert.equal(query.get('sortBy'), 'user');
+  await select();
+  await elements.statisticsHead.children[0].children[3].children[0].handlers.click();
+  query = new URL(calls.at(-1).url, 'http://test').searchParams;
+  assert.equal(query.get('sortBy'), 'room');
+  assert.equal(query.get('descending'), 'false');
 });

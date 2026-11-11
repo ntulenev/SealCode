@@ -27,6 +27,57 @@ namespace SealCode.Tests;
 public sealed class AdminMcpTests
 {
     [Fact]
+    public async Task StatisticsToolRequiresSuperAdminAndPreservesBoundedFiltersAsync()
+    {
+        using var factory = CreateFactory();
+        var statistics = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        using var ordinaryHttp = CreateHttpClient(factory, ADMIN_TOKEN);
+        await using var ordinary = await ConnectAsync(ordinaryHttp);
+        Assert.True((await ordinary.CallToolAsync("get_usage_statistics")).IsError);
+        Assert.Null(statistics.LastQuery);
+        using var rootHttp = CreateHttpClient(factory, ROOT_TOKEN);
+        await using var root = await ConnectAsync(rootHttp);
+        var result = await root.CallToolAsync("get_usage_statistics", new Dictionary<string, object?>
+        {
+            ["from"] = "2020-01-01T00:00:00Z",
+            ["to"] = "2020-01-08T00:00:00Z",
+            ["userId"] = "ADMIN",
+            ["search"] = "interview",
+            ["kind"] = "code",
+            ["sortBy"] = "room",
+            ["descending"] = false,
+            ["limit"] = 10,
+            ["offset"] = 10
+        });
+        Assert.NotEqual(true, result.IsError);
+        Assert.Equal("ADMIN", statistics.LastQuery!.UserId);
+        Assert.Equal("interview", statistics.LastQuery.Search);
+        Assert.Equal("room", statistics.LastQuery.SortBy);
+        Assert.Equal(10, statistics.LastQuery.Limit);
+        Assert.False(statistics.LastQuery.Descending);
+    }
+
+    [Fact]
+    public async Task StatisticsToolRejectsOversizedPeriodsPagesAndUnknownSortsBeforeReadingAsync()
+    {
+        using var factory = CreateFactory();
+        var statistics = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        using var http = CreateHttpClient(factory, ROOT_TOKEN);
+        await using var client = await ConnectAsync(http);
+        foreach (var query in new[]
+        {
+            new Dictionary<string, object?> { ["from"] = "2020-01-01T00:00:00Z", ["to"] = "2020-02-02T00:00:00Z" },
+            new Dictionary<string, object?> { ["limit"] = 101 },
+            new Dictionary<string, object?> { ["offset"] = 10001 },
+            new Dictionary<string, object?> { ["sortBy"] = "time; DROP TABLE statistics.events" }
+        })
+        {
+            Assert.True((await client.CallToolAsync("get_usage_statistics", query)).IsError);
+            Assert.Null(statistics.LastQuery);
+        }
+    }
+
+    [Fact]
     public async Task McpAuthenticatesAndCreatesRoomsWithoutAStatisticsDatabase()
     {
         using var source = CreateFactory();
@@ -40,11 +91,14 @@ public sealed class AdminMcpTests
                 services.AddSealCodeStatistics();
             });
         });
-        using var http = CreateHttpClient(factory, ADMIN_TOKEN);
+        using var http = CreateHttpClient(factory, ROOT_TOKEN);
         await using var client = await ConnectAsync(http);
         var created = await client.CallToolAsync("create_room", new Dictionary<string, object?> { ["name"] = "Without statistics" });
         Assert.NotEqual(true, created.IsError);
         Assert.Equal("Without statistics", Payload(created).GetProperty("name").GetString());
+        var disabled = await client.CallToolAsync("get_usage_statistics");
+        Assert.True(disabled.IsError);
+        Assert.Contains("disabled", disabled.Content.OfType<TextContentBlock>().Single().Text, StringComparison.Ordinal);
         Assert.IsType<DisabledUsageStatisticsRepository>(factory.Services.GetRequiredService<IUsageStatisticsRepository>());
     }
 
@@ -96,7 +150,7 @@ public sealed class AdminMcpTests
         await using var root = await ConnectAsync(rootHttp);
 
         var tools = await admin.ListToolsAsync();
-        Assert.Equal(["create_room", "create_snippet_question", "delete_room", "delete_snippet_category", "delete_snippet_question", "list_languages", "list_rooms", "list_snippets", "save_snippet_category", "update_snippet"],
+        Assert.Equal(["create_room", "create_snippet_question", "delete_room", "delete_snippet_category", "delete_snippet_question", "get_usage_statistics", "list_languages", "list_rooms", "list_snippets", "save_snippet_category", "update_snippet"],
             [.. tools.Select(tool => tool.Name).Order(StringComparer.Ordinal)]);
         foreach (var name in new[] { "create_room", "delete_room", "list_rooms" })
         {
@@ -278,7 +332,7 @@ public sealed class AdminMcpTests
         using var http = CreateHttpClient(factory, ADMIN_TOKEN);
         http.DefaultRequestHeaders.Add("Origin", http.BaseAddress!.GetLeftPart(UriPartial.Authority));
         await using var client = await ConnectAsync(http, "2025-11-25");
-        Assert.Equal(10, (await client.ListToolsAsync()).Count);
+        Assert.Equal(11, (await client.ListToolsAsync()).Count);
     }
 
     [Fact]

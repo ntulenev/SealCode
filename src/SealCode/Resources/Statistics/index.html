@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="A small, shared workspace for writing code together." />
-  <title>Limits — SealCode</title>
+  <title>Statistics — SealCode</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1.21.1" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=1.21.1" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=1.21.1" />
@@ -24,10 +24,25 @@
     <p id="adminGreeting" class="admin-greeting" role="status"></p>
     <nav class="admin-nav" aria-label="Administration"><a href="/admin">Rooms</a><a href="/admin/limits">Limits</a><a href="/admin/statistics" aria-current="page">Statistics</a></nav>
     <div class="page-heading"><p class="eyebrow">Service usage</p><h1>Statistics<span class="accent">.</span></h1><p class="section-description">Successful sign-ins and rooms created, including deleted rooms. All times are UTC.</p><p class="muted">MCP is stateless: each authenticated request counts as a sign-in.</p></div>
+    <div class="statistics-periods" role="tablist" aria-label="Report period">
+      <button id="statisticsToday" type="button" role="tab" aria-selected="false">Today</button>
+      <button id="statisticsWeek" type="button" role="tab" aria-selected="true">Last 7 days</button>
+      <button id="statisticsCustom" type="button" role="tab" aria-selected="false">Custom period</button>
+    </div>
+    <div class="statistics-range"><label>From (UTC)<input id="statisticsFrom" type="date" required disabled /></label><label>Through (UTC)<input id="statisticsTo" type="date" required disabled /></label><button id="applyStatisticsRange" type="button" class="ghost" disabled>Apply period</button></div>
+    <p class="muted">At most 31 days per report. Totals and all tables reflect the selected period and filters.</p>
+    <form id="statisticsFilters" class="statistics-filters" aria-label="Statistics filters">
+      <label>Search users or rooms<input id="statisticsSearch" type="search" maxlength="160" placeholder="Name or room" /></label>
+      <label>Activity<select id="statisticsEventType"><option value="">All activity</option><option value="login">Sign-ins</option><option value="room">Room creation</option></select></label>
+      <label>Workspace<select id="statisticsKind"><option value="">All workspaces</option><option value="code">Code</option><option value="whiteboard">Whiteboard</option></select></label>
+      <label>Language<input id="statisticsLanguage" type="text" maxlength="32" placeholder="e.g. csharp" /></label>
+      <label>Sign-in method<select id="statisticsProvider"><option value="">All methods</option><option value="password">Password</option><option value="google">Google</option><option value="mcp">MCP</option></select></label>
+      <button type="submit">Apply filters</button><button id="resetStatisticsFilters" type="button" class="ghost">Reset filters</button>
+    </form>
     <p id="statisticsStatus" role="status" aria-live="polite">Loading statistics…</p>
     <button id="refreshStatistics" class="ghost" type="button">Refresh</button>
-    <section class="workspace-section" aria-labelledby="summaryTitle"><h2 id="summaryTitle">All users</h2><button id="allUsers" class="ghost" type="button" hidden>Back to all users</button><dl id="statisticsSummary" class="limits-list"></dl></section>
-    <section class="workspace-section"><h2>Rooms by workspace and language</h2><div class="statistics-scroll"><table><thead><tr><th>Workspace</th><th>Language</th><th>Created</th></tr></thead><tbody id="statisticsBreakdown"></tbody></table></div></section>
+    <section class="workspace-section" aria-labelledby="summaryTitle"><h2 id="summaryTitle">All users</h2><p id="statisticsReportText" class="muted"></p><button id="allUsers" class="ghost" type="button" hidden>Back to all users</button><dl id="statisticsSummary" class="limits-list"></dl></section>
+    <section class="workspace-section"><h2>Rooms by workspace and language</h2><div class="statistics-scroll"><table><thead id="statisticsBreakdownHead"></thead><tbody id="statisticsBreakdown"></tbody></table></div><p id="statisticsBreakdownNote" class="muted"></p></section>
     <section class="workspace-section"><h2 id="detailsTitle">Users</h2><div class="statistics-scroll"><table class="statistics-activity-table"><thead id="statisticsHead"></thead><tbody id="statisticsDetails"></tbody></table></div><p id="statisticsPage" class="muted"></p><button id="previousPage" class="ghost" type="button">Previous</button> <button id="nextPage" class="ghost" type="button">Next</button></section>
     <section class="workspace-section"><h2>Delete old statistics</h2><p class="muted">Permanently delete events strictly before the selected date at 00:00 UTC. Accounts without remaining events are also removed. Administrator access and active rooms are unaffected.</p><form id="pruneStatistics"><label for="statisticsCutoff">Delete events before (UTC)<input id="statisticsCutoff" type="date" required /></label><button type="submit">Delete old statistics</button></form></section>
   </main>

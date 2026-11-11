@@ -39,7 +39,7 @@ public sealed class UsageStatisticsTests
         await statistics.RecordLoginAsync(new AdminUser("Admin"), "password", CancellationToken.None);
         await statistics.RecordRoomAsync(Room(RoomKind.Code), CancellationToken.None);
         Assert.False(statistics.Enabled);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => statistics.ReadAsync(null, 0, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => statistics.ReadAsync(new UsageStatisticsQuery(), CancellationToken.None));
         await Assert.ThrowsAsync<InvalidOperationException>(() => statistics.DeleteBeforeAsync(DateTimeOffset.UtcNow, CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentNullException>(() => statistics.RecordRoomAsync(null!, CancellationToken.None));
         using var cancellation = new CancellationTokenSource();

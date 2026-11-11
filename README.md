@@ -1176,11 +1176,17 @@ To enable statistics:
 
 Only a currently configured super admin can open **Statistics** in the admin
 navigation (`/admin/statistics`), read `/admin/statistics/data`, or delete its
-history. The overview shows successful sign-ins, created rooms, active account
-count, first/last recorded activity, and room counts by workspace and language.
-Selecting an account shows its totals and chronological events. Account lists
-and histories have pages of 50 rows. The counters cover retained events, not
-live room or participant counts; deleting history changes those totals.
+history. The **Today** and **Last 7 days** tabs show a short UTC usage report, successful
+sign-ins, created rooms, active account count, first/last recorded activity, and
+room counts by workspace and language. The weekly tab covers today and the six
+preceding UTC dates; **Custom period** accepts up to 31 inclusive dates.
+Selecting an account shows its totals and events for the selected period. Click
+column headings to sort users, event history or the workspace breakdown. Search
+account/room names and filter activity, workspace, initial language or sign-in
+method; sorting and filtering run in PostgreSQL **before** pagination. Account
+lists and histories default to 50 rows per page. Counters cover retained events
+matching the selected period and filters, not live room/participant counts.
+The Refresh control has separate spacing above the summary divider.
 
 The retention form deletes events **strictly before 00:00 UTC** on the chosen
 date, across all users. The boundary itself is retained. The server accepts only
@@ -1252,3 +1258,44 @@ and whiteboard rooms, the file question library, the hidden statistics link and
 404 responses for disabled reports and retention. An enabled but unreachable or
 unmigrated statistics database is treated as a persistence error, not as an
 instruction to silently disable accounting.
+
+
+### Bounded statistics API and MCP
+
+The read-only MCP tool `get_usage_statistics` is available only to a configured
+super administrator token. Ordinary admins are rejected even if they know the
+tool name; unconfigured statistics return an explicit disabled error. The tool
+uses the same validated query as `GET /admin/statistics/data`:
+
+| Limit | Behavior |
+| --- | --- |
+| UTC period | Inclusive `from`, exclusive `to`; nonempty and at most **31 days**. Defaults to the last seven days. Larger requests are rejected before executing report SQL. |
+| Detail page | `limit` 1–100, default 50; `offset` 0–10000. `UsersCount` or `EventsCount` indicates the total matching rows. Narrow dates/filters to inspect results beyond the offset limit. |
+| Workspace breakdown | At most 100 groups; `BreakdownCount` indicates truncation. Filter workspace/language to narrow it. |
+| Database work | Queries restrict indexed event timestamps before aggregation; aggregation remains in PostgreSQL, and only the summary and bounded rows reach the application. SQL execution times out after 15 seconds. |
+| Input | Search is literal and at most 160 characters. Account IDs are capped at 512 and language filters at 32. Filters are parameters; sort expressions come from fixed allowlists. |
+
+Example MCP arguments (historical dates remain valid):
+
+```json
+{
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-08T00:00:00Z",
+  "limit": 50,
+  "offset": 0,
+  "sortBy": "rooms",
+  "descending": true
+}
+```
+
+Use `userId` from the returned user list to retrieve that account's events.
+Optional filters are `search`, `eventType` (`login`/`room`), `kind`
+(`code`/`whiteboard`), `language` (for example `csharp`) and `provider`
+(`password`/`google`/`mcp`). All totals reflect these event filters, so filtering
+by workspace excludes sign-ins, and filtering by provider excludes room events.
+
+User sort keys: `activity`, `user`, `logins`, `rooms`, `firstActivity`.
+Event sort keys: `time`, `type`, `provider`, `room`, `kind`, `language`.
+`descending` controls direction. HTTP also accepts `breakdownSortBy`
+(`count`/`kind`/`language`) and `breakdownDescending` for independent breakdown
+sorting. All timestamp boundaries and displayed times use UTC.
