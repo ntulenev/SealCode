@@ -7,6 +7,9 @@ namespace Abstractions;
 /// <summary>Durable administrator activity, without authentication secrets or room content.</summary>
 public interface IUsageStatisticsRepository
 {
+    /// <summary>Gets whether statistics are enabled by a dedicated database connection.</summary>
+    bool Enabled { get; }
+
     /// <summary>Upserts an account and records a successful authentication.</summary>
     /// <param name="user">The authenticated account, excluding credentials.</param>
     /// <param name="provider">The authentication method: password, google or mcp.</param>

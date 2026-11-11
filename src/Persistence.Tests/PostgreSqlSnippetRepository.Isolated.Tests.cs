@@ -9,6 +9,28 @@ namespace Persistence.Tests;
 public sealed class PostgreSqlSnippetRepositoryIsolatedTests
 {
     [IsolatedPostgreSqlFact]
+    public async Task OptionalWhiteboardExampleCanBeReappliedWithoutOverwritingEditsAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            var repository = new PostgreSqlSnippetRepository(source);
+            Assert.Empty((await repository.LoadAsync(CancellationToken.None)).Categories);
+            var seed = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory,
+                "Migrations", "003_whiteboard_example.sql"));
+            await ExecuteAsync(source, seed);
+            await ExecuteAsync(source, seed);
+            var category = Assert.Single((await repository.LoadAsync(CancellationToken.None)).Categories);
+            Assert.Equal("whiteboard", category.Language.Value);
+            Assert.Contains("```whiteboard", Assert.Single(category.Questions).Markdown, StringComparison.Ordinal);
+
+            await ExecuteAsync(source, "UPDATE snippets.questions SET markdown = 'Edited diagram' WHERE language = 'whiteboard' AND number = 1");
+            await ExecuteAsync(source, seed);
+            var edited = Assert.Single((await repository.LoadAsync(CancellationToken.None)).Categories);
+            Assert.Equal("Edited diagram", Assert.Single(edited.Questions).Markdown);
+        });
+    }
+
+    [IsolatedPostgreSqlFact]
     public async Task UpgradePreservesExistingMarkdownAndLoadsNumberedFollowUpsAsync()
     {
         await WithDatabaseAsync(async source =>
@@ -326,11 +348,12 @@ public sealed class PostgreSqlSnippetRepositoryIsolatedTests
         {
             settings.Database = database;
             await using var source = NpgsqlDataSource.Create(settings.ConnectionString);
-            foreach (var path in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Migrations"), "*.sql").Order(StringComparer.Ordinal))
+            // Apply schema migrations only. Optional examples must not seed empty-catalog tests.
+            foreach (var name in new[] { "001_create_snippets.sql", "002_question_steps.sql" })
             {
-                if (applyStepMigration || Path.GetFileName(path) == "001_create_snippets.sql")
+                if (applyStepMigration || name == "001_create_snippets.sql")
                 {
-                    await ExecuteAsync(source, await File.ReadAllTextAsync(path));
+                    await ExecuteAsync(source, await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", name)));
                 }
             }
             await test(source);

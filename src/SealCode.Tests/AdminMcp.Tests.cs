@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -19,10 +20,34 @@ using Models.Snippets;
 
 using Moq;
 
+using SealCode.Hosting;
+
 namespace SealCode.Tests;
 
 public sealed class AdminMcpTests
 {
+    [Fact]
+    public async Task McpAuthenticatesAndCreatesRoomsWithoutAStatisticsDatabase()
+    {
+        using var source = CreateFactory();
+        using var factory = source.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["ConnectionStrings:Statistics"] = "" }));
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUsageStatisticsRepository>();
+                services.AddSealCodeStatistics();
+            });
+        });
+        using var http = CreateHttpClient(factory, ADMIN_TOKEN);
+        await using var client = await ConnectAsync(http);
+        var created = await client.CallToolAsync("create_room", new Dictionary<string, object?> { ["name"] = "Without statistics" });
+        Assert.NotEqual(true, created.IsError);
+        Assert.Equal("Without statistics", Payload(created).GetProperty("name").GetString());
+        Assert.IsType<DisabledUsageStatisticsRepository>(factory.Services.GetRequiredService<IUsageStatisticsRepository>());
+    }
+
     private const string ADMIN_TOKEN = "test-admin-mcp-token-0123456789abcdef";
     private const string ROOT_TOKEN = "test-root-mcp-token-0123456789abcdef";
 

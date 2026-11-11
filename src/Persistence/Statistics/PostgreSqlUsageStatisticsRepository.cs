@@ -12,6 +12,9 @@ namespace Persistence.Statistics;
 /// <summary>Stores usage events and computes bounded reports in PostgreSQL.</summary>
 public sealed class PostgreSqlUsageStatisticsRepository : IUsageStatisticsRepository
 {
+    /// <inheritdoc />
+    public bool Enabled => true;
+
     /// <summary>Uses a deferred host-owned connection pool.</summary>
     /// <param name="getDataSource">Resolves the host-owned statistics connection pool.</param>
     /// <exception cref="ArgumentNullException">The resolver is null.</exception>

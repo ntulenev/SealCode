@@ -1,6 +1,7 @@
 using Abstractions;
 
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 using Models;
 
@@ -12,6 +13,41 @@ namespace SealCode.Tests;
 
 public sealed class UsageStatisticsTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void MissingStatisticsConnectionDisablesAccountingWithoutResolvingAnyDatabase(string? connection)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Statistics"] = connection,
+            ["ConnectionStrings:Snippets"] = "invalid snippet connection must not be used"
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSealCodeStatistics();
+        using var provider = services.BuildServiceProvider();
+        Assert.IsType<DisabledUsageStatisticsRepository>(provider.GetRequiredService<IUsageStatisticsRepository>());
+        Assert.False(provider.GetRequiredService<IUsageStatisticsRepository>().Enabled);
+    }
+
+    [Fact]
+    public async Task DisabledAccountingDoesNotStoreEventsAndRejectsReportOperations()
+    {
+        var statistics = new DisabledUsageStatisticsRepository();
+        await statistics.RecordLoginAsync(new AdminUser("Admin"), "password", CancellationToken.None);
+        await statistics.RecordRoomAsync(Room(RoomKind.Code), CancellationToken.None);
+        Assert.False(statistics.Enabled);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => statistics.ReadAsync(null, 0, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => statistics.DeleteBeforeAsync(DateTimeOffset.UtcNow, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => statistics.RecordRoomAsync(null!, CancellationToken.None));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => statistics.RecordLoginAsync(new AdminUser("Admin"), "password", cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => statistics.RecordRoomAsync(Room(RoomKind.Code), cancellation.Token));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

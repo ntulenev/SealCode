@@ -8,6 +8,8 @@ namespace SealCode.Tests;
 
 internal sealed class TestUsageStatisticsRepository : IUsageStatisticsRepository
 {
+    public bool Enabled => true;
+
     public List<(AdminUser User, string Provider)> Logins { get; } = [];
     public List<RoomState> Rooms { get; } = [];
     public DateTimeOffset? Cutoff { get; private set; }

@@ -22,7 +22,14 @@ internal static class StatisticsEndpoints
             {
                 return Results.Unauthorized();
             }
-            return user.IsSuperAdmin ? await next(context).ConfigureAwait(false) : Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!user.IsSuperAdmin)
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+            var statistics = context.HttpContext.RequestServices.GetRequiredService<IUsageStatisticsRepository>();
+            return statistics.Enabled
+                ? await next(context).ConfigureAwait(false)
+                : Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Statistics are disabled");
         });
         _ = group.MapGet("", (IWebHostEnvironment environment) =>
             Results.File(Path.Combine(environment.ContentRootPath, "Resources", "Statistics", "index.html"), "text/html"));

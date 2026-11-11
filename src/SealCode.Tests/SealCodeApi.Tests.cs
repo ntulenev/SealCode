@@ -16,12 +16,15 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 using Models;
 
 using Moq;
+
+using SealCode.Hosting;
 
 using Transport.Models;
 
@@ -444,9 +447,11 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         payload.Should().Be("Room not found");
     }
 
-    [Fact(DisplayName = "SignalR /roomHub allows joining a room")]
+    [Theory(DisplayName = "SignalR /roomHub exposes room ownership only to authenticated administrators")]
+    [InlineData(true)]
+    [InlineData(false)]
     [Trait("Category", "Integration")]
-    public async Task JoinRoomOverSignalRReturnsRoomState()
+    public async Task JoinRoomOverSignalRReturnsRoomState(bool asAdmin)
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -457,15 +462,16 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         var cookie = await LoginAsAdminAsync(client);
         var roomId = await CreateRoomAsync(client, cookie);
 
-        var cookieContainer = new CookieContainer();
-        cookieContainer.Add(client.BaseAddress!, cookie);
-
         var hubUrl = new Uri(client.BaseAddress!, "/roomHub");
-        var connection = new HubConnectionBuilder()
+        await using var connection = new HubConnectionBuilder()
             .WithUrl(hubUrl, options =>
             {
                 options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
-                options.Cookies = cookieContainer;
+                // TestServer replaces the HTTP handler that would normally send CookieContainer cookies.
+                if (asAdmin)
+                {
+                    options.Headers["Cookie"] = $"{cookie.Name}={cookie.Value}";
+                }
             })
             .Build();
 
@@ -478,13 +484,11 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         result.Text.Should().Be(string.Empty);
         result.Version.Should().BeGreaterThanOrEqualTo(1);
         result.Users.Should().ContainSingle().Which.Should().Be("Alice");
-        result.CreatedBy.Should().Be("Admin");
+        result.CreatedBy.Should().Be(asAdmin ? "Admin" : null);
         result.DocumentRevision.Should().Be(0);
         result.CheckpointRevision.Should().Be(0);
         result.YjsState.Should().BeNull();
         result.YjsUpdates.Should().BeEmpty();
-
-        await connection.DisposeAsync();
     }
 
     [Fact]
@@ -1268,6 +1272,52 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
     }
 
     [Fact]
+    public async Task WithoutDatabaseConfigurationAdminsCanSignInCreateBothRoomKindsAndUseFileSnippets()
+    {
+        using var source = CreateFactory();
+        using var factory = source.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Statistics"] = "",
+                ["ConnectionStrings:Snippets"] = "",
+                ["Snippets:Enabled"] = "true",
+                ["Snippets:Provider"] = "File"
+            }));
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUsageStatisticsRepository>();
+                services.AddSealCodeStatistics();
+            });
+        });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var health = await client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+        var cookie = await LoginAsync(client, "Root", "pass2");
+        var me = await client.GetFromJsonAsync<JsonElement>("/admin/me");
+        Assert.False(me.GetProperty("StatisticsEnabled").GetBoolean());
+        foreach (var kind in new[] { "code", "whiteboard" })
+        {
+            var id = await CreateRoomAsync(client, cookie, kind);
+            await using var connection = await CreateConnectionAsync(factory, client.BaseAddress!, cookie);
+            var joined = await connection.InvokeAsync<JoinRoomResult>("JoinRoom", id, "Admin");
+            Assert.Equal(kind, joined.Kind);
+            using var deleted = await SecureDeleteAsync(client, $"/admin/rooms/{id}");
+            Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        }
+        using var catalog = await client.GetAsync("/admin/snippets/catalog");
+        Assert.Equal(HttpStatusCode.OK, catalog.StatusCode);
+        Assert.NotEmpty((await catalog.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray());
+        using var statistics = await client.GetAsync("/admin/statistics/data");
+        Assert.Equal(HttpStatusCode.NotFound, statistics.StatusCode);
+        using var page = await client.GetAsync("/admin/statistics");
+        Assert.Equal(HttpStatusCode.NotFound, page.StatusCode);
+        using var prune = await SecureDeleteAsync(client, "/admin/statistics/data?before=2020-01-01T00:00:00Z");
+        Assert.Equal(HttpStatusCode.NotFound, prune.StatusCode);
+        Assert.IsType<DisabledUsageStatisticsRepository>(factory.Services.GetRequiredService<IUsageStatisticsRepository>());
+    }
+
+    [Fact]
     public async Task StatisticsRequireSuperAdminAndPruningRequiresCsrfAndPastCutoff()
     {
         using var factory = CreateFactory();
@@ -1429,6 +1479,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
             .WithUrl(hubUrl, options =>
             {
                 options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
+                options.Headers["Cookie"] = $"{cookie.Name}={cookie.Value}";
                 options.Cookies = cookieContainer;
             })
             .Build();

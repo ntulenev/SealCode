@@ -107,11 +107,11 @@ internal static class AdminEndpoints
             return Results.Json(new { settings.Value.MaxUsersPerRoom, settings.Value.Limits });
         });
 
-        _ = app.MapGet("/admin/me", (IAdminUserManager adminUserManager, HttpContext context) =>
+        _ = app.MapGet("/admin/me", (IAdminUserManager adminUserManager, IUsageStatisticsRepository statistics, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             return adminUserManager.TryGetAdminUser(out var adminUser)
-                ? Results.Json(new { adminUser.DisplayName, adminUser.IsSuperAdmin })
+                ? Results.Json(new { adminUser.DisplayName, adminUser.IsSuperAdmin, StatisticsEnabled = statistics.Enabled })
                 : Results.Unauthorized();
         });
 

@@ -117,7 +117,9 @@ internal static class ServiceCollectionExtensions
     {
         _ = services.AddSingleton<TrackedRoomCreator>();
         _ = services.AddSingleton<IUsageStatisticsRepository>(provider =>
-            new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<UsageStatisticsDataSource>().Value));
+            string.IsNullOrWhiteSpace(provider.GetRequiredService<IConfiguration>().GetConnectionString("Statistics"))
+                ? new DisabledUsageStatisticsRepository()
+                : new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<UsageStatisticsDataSource>().Value));
         _ = services.AddSingleton(provider => new UsageStatisticsDataSource(
             provider.GetRequiredService<IConfiguration>()));
         return services;

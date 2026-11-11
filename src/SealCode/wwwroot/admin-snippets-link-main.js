@@ -9,7 +9,9 @@ fetch('/admin/snippets/manage/access', { cache: 'no-store' }).then(async respons
 }).catch(() => {});
 
 fetch('/admin/me', { cache: 'no-store' }).then(async response => {
-  if (!response.ok || !(await response.json()).IsSuperAdmin) return;
+  if (!response.ok) return;
+  const admin = await response.json();
+  if (!admin.IsSuperAdmin || !admin.StatisticsEnabled) return;
   const navigation = document.querySelector('.admin-nav');
   if (!navigation || navigation.querySelector('a[href="/admin/statistics"]')) return;
   const link = document.createElement('a');

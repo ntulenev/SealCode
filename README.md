@@ -1135,8 +1135,14 @@ The browser test client ignores certificate trust only for that local test certi
 
 ## Administrator usage statistics
 
-All successful password and Google sign-ins are written to PostgreSQL before a
-session is issued. An account row is created automatically on first activity and
+Statistics are optional. Omit `ConnectionStrings:Statistics` (or leave it empty)
+to run without a statistics database. Password, Google and MCP authentication,
+code/whiteboard rooms and file-backed snippets continue to work; no usage events
+are stored, the Statistics navigation link is hidden, and its page/read/delete
+endpoints return 404 to super admins.
+
+When a nonempty `ConnectionStrings:Statistics` is configured, successful password
+and Google sign-ins are written to PostgreSQL before a session is issued. An account row is created automatically on first activity and
 its display name is refreshed on subsequent activity. Configured account names
 are case-insensitive; Google subject identifiers remain case-sensitive.
 Stateless MCP has no sign-in session: each successful bearer authentication is
@@ -1147,16 +1153,16 @@ Room creation from the admin panel and MCP records the creator, timestamp, room
 ID, full room name, workspace (`code` or `whiteboard`) and initial language
 (for example `csharp`). Content, passwords, credential hashes, bearer tokens and
 Google ID tokens are never stored in statistics. History survives room deletion
-and application restarts. If an activity cannot be persisted, a new session is
+and application restarts. When statistics are enabled but an activity cannot be persisted, a new session is
 not issued and a newly created room is removed; recording errors must be fixed
 before those operations can succeed.
 
-Before deploying this version:
+To enable statistics:
 
 1. Apply [001_usage_statistics.sql](src/Persistence/Statistics/Migrations/001_usage_statistics.sql)
    to the PostgreSQL database under a schema-owner account. The migration is
    repeatable; the application does not apply it automatically.
-2. Supply the required `ConnectionStrings__Statistics` through deployment secrets.
+2. Supply `ConnectionStrings__Statistics` through deployment secrets.
    Statistics and snippets use independent connection strings and connection pools.
    `ConnectionStrings__Snippets` is used only for snippets; there is no fallback.
    Both strings may explicitly point to the same database if desired.
@@ -1165,7 +1171,7 @@ Before deploying this version:
 
 | Setting | Required by | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings:Statistics` / `ConnectionStrings__Statistics` | Administrator activity | Dedicated PostgreSQL database for accounts and usage events. Required for sign-in and room creation. |
+| `ConnectionStrings:Statistics` / `ConnectionStrings__Statistics` | Administrator activity | Dedicated PostgreSQL database for accounts and usage events. Optional; a nonempty value enables recording. |
 | `ConnectionStrings:Snippets` / `ConnectionStrings__Snippets` | PostgreSQL snippet provider | Private question library only; never used by statistics. |
 
 Only a currently configured super admin can open **Statistics** in the admin
@@ -1220,10 +1226,10 @@ The activity table scrolls horizontally to keep dates and room metadata readable
 
 | Level | Scenarios |
 | --- | --- |
-| [Server unit tests](src/SealCode.Tests/UsageStatistics.Tests.cs) | Independent connection strings without fallback, missing configuration, both room kinds, successful recording and rollback on persistence failure or cancellation. |
+| [Server unit tests](src/SealCode.Tests/UsageStatistics.Tests.cs) | Independent connection strings without fallback, disabled accounting when configuration is absent/empty, both room kinds, successful recording and rollback on persistence failure or cancellation. |
 | [Client unit tests](tests/client/admin-statistics.test.js) | Totals and empty states, account selection, user and event pagination, stale responses, HTTP/network errors, refresh, safe text rendering, confirmation/cancellation, duplicate-submit protection, UTC cutoff and CSRF. |
 | [PostgreSQL integration tests](src/Persistence.Tests/PostgreSqlUsageStatisticsRepository.Tests.cs) | Repeatable migration, concurrent account upserts, local/Google identity semantics, durable metadata, user and event pages with stable ordering, parameterized filters, atomic rollback, cancellation, exclusive cutoff, orphan cleanup, account recreation and concurrent retention. |
-| [HTTP integration tests](src/SealCode.Tests/SealCodeApi.Tests.cs) | Guest/ordinary/super-admin access, account-specific queries, no-store responses, CSRF, invalid cutoff/offset rejection, successful and failed sign-ins and room recording. Google and MCP tests also verify provider accounting. |
+| [HTTP integration tests](src/SealCode.Tests/SealCodeApi.Tests.cs) | Operation without database configuration (sign-in, both room kinds, file snippets and disabled reports), guest/ordinary/super-admin access, account-specific queries, no-store responses, CSRF, invalid cutoff/offset rejection, successful and failed sign-ins and room recording. Google and MCP tests also verify provider accounting. |
 | [Browser tests](tests/e2e/admin-statistics.spec.js) | Overview and user history, code and whiteboard metadata, real history pagination, XSS-safe room names, guest/ordinary-admin denial, canceled and confirmed retention, dark/light themes and desktop/mobile layouts. Actual deletion of old events and the strict UTC boundary are checked against PostgreSQL. |
 
 Run the focused checks (database environment variables must point to a disposable
@@ -1237,3 +1243,12 @@ dotnet test src/Persistence.Tests --filter FullyQualifiedName~PostgreSqlUsageSta
 npm run build:client
 npx playwright test tests/e2e/admin-statistics.spec.js
 ```
+
+
+The [database-free browser test](tests/e2e/without-database.spec.js) runs an isolated
+host with both connection strings empty, despite the database connection used by
+the main browser test host. It checks real form sign-in, joining and deleting code
+and whiteboard rooms, the file question library, the hidden statistics link and
+404 responses for disabled reports and retention. An enabled but unreachable or
+unmigrated statistics database is treated as a persistence error, not as an
+instruction to silently disable accounting.
