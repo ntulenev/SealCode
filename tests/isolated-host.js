@@ -40,6 +40,7 @@ export async function startIsolatedHost(settings, prepareContentRoot) {
   const port = reservation.address().port;
   await new Promise((done) => reservation.close(done));
   const root = await mkdtemp(join(tmpdir(), 'sealcode-isolated-'));
+  await cp(resolve('src/SealCode/Resources/Statistics'), join(root, 'Resources', 'Statistics'), { recursive: true });
   if (settings.Snippets?.Enabled)
     await cp(resolve('src/SealCode/Resources/Snippets'), join(root, 'Resources', 'Snippets'), { recursive: true });
   await writeFile(

@@ -29,6 +29,7 @@ app.UseAuthorization();
 app.Use(AdminHttpSecurity.InvokeAsync);
 app.MapSealCodeEndpoints();
 app.MapAdminEndpoints();
+app.MapStatisticsEndpoints();
 app.MapSnippetEndpoints();
 app.MapSnippetAdministrationEndpoints();
 app.MapAdminMcpEndpoints();

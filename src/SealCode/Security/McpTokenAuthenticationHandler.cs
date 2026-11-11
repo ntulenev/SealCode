@@ -4,9 +4,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 
+using Abstractions;
+
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
+using Models;
 using Models.Configuration;
 
 namespace SealCode.Security;
@@ -25,24 +28,27 @@ internal sealed class McpTokenAuthenticationHandler : AuthenticationHandler<Auth
     /// <param name="logger">The authentication logger factory.</param>
     /// <param name="encoder">The URL encoder.</param>
     /// <param name="settings">The validated application settings.</param>
+    /// <param name="statistics">Durable authentication accounting.</param>
     public McpTokenAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        IOptions<ApplicationConfiguration> settings)
+        IOptions<ApplicationConfiguration> settings,
+        IUsageStatisticsRepository statistics)
         : base(options, logger, encoder)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
         _settings = settings.Value;
+        _statistics = statistics;
     }
 
     /// <inheritdoc />
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected async override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.ContainsKey("Authorization"))
         {
-            return Task.FromResult(AuthenticateResult.NoResult());
+            return AuthenticateResult.NoResult();
         }
 
         if (Request.Headers.Authorization.Count != 1
@@ -51,7 +57,7 @@ internal sealed class McpTokenAuthenticationHandler : AuthenticationHandler<Auth
             || string.IsNullOrEmpty(header.Parameter)
             || header.Parameter.Length is < 32 or > 1024)
         {
-            return Task.FromResult(AuthenticateResult.Fail("Invalid MCP bearer token."));
+            return AuthenticateResult.Fail("Invalid MCP bearer token.");
         }
 
         var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(header.Parameter));
@@ -68,15 +74,16 @@ internal sealed class McpTokenAuthenticationHandler : AuthenticationHandler<Auth
 
         if (matched is null)
         {
-            return Task.FromResult(AuthenticateResult.Fail("Invalid MCP bearer token."));
+            return AuthenticateResult.Fail("Invalid MCP bearer token.");
         }
 
+        await _statistics.RecordLoginAsync(new AdminUser(matched.Name, matched.IsSuperAdmin), "mcp", Context.RequestAborted).ConfigureAwait(false);
         var identity = new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, matched.Name.Trim()),
              new Claim(ClaimTypes.Name, matched.Name.Trim()),
              new Claim("credential", AdminUserManager.CredentialStamp(matched))], SCHEME_NAME);
-        return Task.FromResult(AuthenticateResult.Success(
-            new AuthenticationTicket(new ClaimsPrincipal(identity), SCHEME_NAME)));
+        return AuthenticateResult.Success(
+            new AuthenticationTicket(new ClaimsPrincipal(identity), SCHEME_NAME));
     }
 
     /// <inheritdoc />
@@ -87,5 +94,6 @@ internal sealed class McpTokenAuthenticationHandler : AuthenticationHandler<Auth
         return Task.CompletedTask;
     }
 
+    private readonly IUsageStatisticsRepository _statistics;
     private readonly ApplicationConfiguration _settings;
 }

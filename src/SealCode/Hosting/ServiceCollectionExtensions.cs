@@ -16,6 +16,7 @@ using Models.Configuration;
 using Npgsql;
 
 using Persistence.Snippets;
+using Persistence.Statistics;
 
 using SealCode.Mcp;
 using SealCode.Routing;
@@ -104,6 +105,11 @@ internal static class ServiceCollectionExtensions
         _ = services.AddSingleton<IRoomRegistry, RoomRegistry>();
         _ = services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
         _ = services.AddSingleton<IRoomManager, RoomManager>();
+        _ = services.AddSingleton<TrackedRoomCreator>();
+        _ = services.AddSingleton<IUsageStatisticsRepository>(provider =>
+            new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<UsageStatisticsDataSource>().Value));
+        _ = services.AddSingleton(provider => new UsageStatisticsDataSource(
+            provider.GetRequiredService<IConfiguration>()));
         _ = services.AddSingleton<IRoomSessionService, RoomSessionService>();
         _ = services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
         return services;

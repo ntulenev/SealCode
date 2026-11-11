@@ -1,0 +1,14 @@
+.statistics-scroll { overflow-x: auto; }
+.statistics-scroll table { width: 100%; border-collapse: collapse; text-align: left; }
+.statistics-scroll th, .statistics-scroll td { padding: .8rem; border-bottom: 1px solid var(--border, #8885); vertical-align: top; }
+.statistics-scroll td { overflow-wrap: anywhere; }
+.statistics-scroll .statistics-activity-table { min-width: 850px; }
+.statistics-activity-table td:first-child { white-space: nowrap; }
+#pruneStatistics { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+#pruneStatistics label { display: grid; gap: .5rem; }
+#statisticsSummary { display: grid; grid-template-columns: minmax(12rem, 1fr) 2fr; gap: .75rem 2rem; margin: 1.5rem 0 0; }
+#statisticsSummary dd { margin: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  #statisticsSummary { grid-template-columns: 1fr; gap: .3rem; }
+  #statisticsSummary dd { margin-bottom: .8rem; }
+}

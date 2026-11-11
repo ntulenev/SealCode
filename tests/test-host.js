@@ -1,9 +1,10 @@
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
 export function testHostCommand(baseURL, admins) {
   const root = mkdtempSync(join(tmpdir(), 'sealcode-tests-'));
+  cpSync(resolve('src/SealCode/Resources/Statistics'), join(root, 'Resources', 'Statistics'), { recursive: true });
   writeFileSync(
     join(root, 'appsettings.json'),
     JSON.stringify({

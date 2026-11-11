@@ -25,7 +25,7 @@ public sealed class AdminUserManagerTests
     [Fact]
     public async Task CallsOutsideRequestShouldThrowClearException()
     {
-        var manager = new AdminUserManager(CreateSettings(), new HttpContextAccessor());
+        var manager = new AdminUserManager(CreateSettings(), new HttpContextAccessor(), new TestUsageStatisticsRepository());
 
         var read = manager.IsAdmin;
         read.Should().Throw<InvalidOperationException>().WithMessage("*outside an HTTP request*");
@@ -43,7 +43,7 @@ public sealed class AdminUserManagerTests
     {
         var settings = CreateSettings();
 
-        var action = () => new AdminUserManager(settings, null!);
+        var action = () => new AdminUserManager(settings, null!, new TestUsageStatisticsRepository());
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -54,7 +54,7 @@ public sealed class AdminUserManagerTests
     {
         var context = new DefaultHttpContext();
 
-        var action = () => new AdminUserManager(null!, new HttpContextAccessor { HttpContext = context });
+        var action = () => new AdminUserManager(null!, new HttpContextAccessor { HttpContext = context }, new TestUsageStatisticsRepository());
 
         action.Should().Throw<ArgumentNullException>();
     }
@@ -176,7 +176,7 @@ public sealed class AdminUserManagerTests
             Name = configuredName,
             Password = "pass1"
         };
-        var manager = new AdminUserManager(settings, new HttpContextAccessor { HttpContext = context });
+        var manager = new AdminUserManager(settings, new HttpContextAccessor { HttpContext = context }, new TestUsageStatisticsRepository());
         SetForm(context, "name=Admin&password=pass1");
 
         var result = await manager.TrySetCurrentUserAsync(CancellationToken.None);
@@ -241,7 +241,7 @@ public sealed class AdminUserManagerTests
     });
 
     private static AdminUserManager CreateManager(HttpContext context)
-        => new(CreateSettings(), new HttpContextAccessor { HttpContext = context });
+        => new(CreateSettings(), new HttpContextAccessor { HttpContext = context }, new TestUsageStatisticsRepository());
 
     private static void SetForm(DefaultHttpContext context, string formBody)
     {

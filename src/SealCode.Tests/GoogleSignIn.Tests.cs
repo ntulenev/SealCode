@@ -58,6 +58,9 @@ public sealed class GoogleSignInTests
         await SetAntiforgeryAsync(client);
         using var login = await client.PostAsJsonAsync("/admin/google-login", new { Credential = "valid" });
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var statistics = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        Assert.Equal("google", Assert.Single(statistics.Logins).Provider);
+        Assert.Equal("google:google-subject-1", statistics.Logins[0].User.Name);
         AddResponseCookie(client, login, "admin_auth");
         await SetAntiforgeryAsync(client);
 

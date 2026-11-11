@@ -1267,6 +1267,72 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         (await connection.InvokeAsync<long>("GetDocumentRevision", roomId)).Should().Be(5);
     }
 
+    [Fact]
+    public async Task StatisticsRequireSuperAdminAndPruningRequiresCsrfAndPastCutoff()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        foreach (var url in new[] { "/admin/statistics", "/admin/statistics/data" })
+        {
+            using var denied = await client.GetAsync(url);
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        }
+        _ = await LoginAsAdminAsync(client);
+        using var forbidden = await client.GetAsync("/admin/statistics/data");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        using var forbiddenPage = await client.GetAsync("/admin/statistics");
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenPage.StatusCode);
+        using var forbiddenDelete = await SecureDeleteAsync(client, "/admin/statistics/data?before=2020-01-01T00:00:00Z");
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenDelete.StatusCode);
+        _ = await LoginAsync(client, "Root", "pass2");
+        using var page = await client.GetAsync("/admin/statistics");
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        using var report = await client.GetAsync("/admin/statistics/data?userId=ADMIN&offset=50");
+        Assert.Equal(HttpStatusCode.OK, report.StatusCode);
+        Assert.Equal("no-store", report.Headers.CacheControl!.ToString());
+        var payload = await report.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("ADMIN", payload.GetProperty("UserId").GetString());
+        Assert.Equal(50, payload.GetProperty("Offset").GetInt32());
+        using var invalidPage = await client.GetAsync("/admin/statistics/data?offset=-1");
+        Assert.Equal(HttpStatusCode.BadRequest, invalidPage.StatusCode);
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        using var missingCsrf = await client.DeleteAsync("/admin/statistics/data?before=2020-01-01T00:00:00Z");
+        Assert.Equal(HttpStatusCode.BadRequest, missingCsrf.StatusCode);
+        using var future = await SecureDeleteAsync(client, "/admin/statistics/data?before=2999-01-01T00:00:00Z");
+        Assert.Equal(HttpStatusCode.BadRequest, future.StatusCode);
+        using var deleted = await SecureDeleteAsync(client, "/admin/statistics/data?before=2020-01-01T03:00:00%2B03:00");
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        var repository = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        Assert.Equal(DateTimeOffset.Parse("2020-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture), repository.Cutoff);
+    }
+
+    [Fact]
+    public async Task SuccessfulLoginsAndBothRoomKindsAreRecordedAndFailedWritesDoNotLeaveRooms()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var repository = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        using var invalidContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "Admin", ["password"] = "wrong" });
+        using var invalid = await SecurePostAsync(client, "/admin/login", invalidContent);
+        Assert.Empty(repository.Logins);
+        var cookie = await LoginAsAdminAsync(client);
+        Assert.Equal("password", Assert.Single(repository.Logins).Provider);
+        _ = await CreateRoomAsync(client, cookie);
+        _ = await CreateRoomAsync(client, cookie, "whiteboard");
+        Assert.Equal([RoomKind.Code, RoomKind.Whiteboard], repository.Rooms.Select(room => room.Kind));
+        Assert.Equal("sql", repository.Rooms[0].Language.Value);
+        var rooms = factory.Services.GetRequiredService<IRoomManager>();
+        repository.FailWrites = true;
+        using var failed = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Unrecorded" });
+        Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+        Assert.Equal(2, rooms.GetRoomsSnapshot(new AdminUser("Admin")).Length);
+        using var freshClient = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var failedLoginContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["name"] = "Admin", ["password"] = "pass1" });
+        using var failedLogin = await SecurePostAsync(freshClient, "/admin/login", failedLoginContent);
+        Assert.Equal(HttpStatusCode.InternalServerError, failedLogin.StatusCode);
+        Assert.False(failedLogin.Headers.TryGetValues("Set-Cookie", out _));
+    }
+
     private static async Task RefreshTokenAsync(HttpClient client)
     {
         var tokenResponse = await client.GetAsync("/admin/token");
@@ -1394,6 +1460,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             ArgumentNullException.ThrowIfNull(builder);
+            builder.ConfigureServices(services => services.AddSingleton<IUsageStatisticsRepository>(new TestUsageStatisticsRepository()));
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 // Keep local Google credentials and domain arrays out of the default test host.

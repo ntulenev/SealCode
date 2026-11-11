@@ -84,6 +84,9 @@ public sealed class AdminMcpTests
 
         var created = await admin.CallToolAsync("create_room", new Dictionary<string, object?> { ["name"] = "MCP room" });
         Assert.NotEqual(true, created.IsError);
+        var statistics = (TestUsageStatisticsRepository)factory.Services.GetRequiredService<IUsageStatisticsRepository>();
+        Assert.Contains(statistics.Logins, entry => entry.Provider == "mcp" && entry.User.Name == "Admin");
+        Assert.Equal("MCP room", Assert.Single(statistics.Rooms).Name.Value);
         var ownId = Payload(created).GetProperty("roomId").GetString()!;
         Assert.Equal("csharp", Payload(created).GetProperty("language").GetString());
         Assert.Equal("Admin", Payload(created).GetProperty("createdBy").GetString());
@@ -422,6 +425,7 @@ public sealed class AdminMcpTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.ConfigureServices(services => services.AddSingleton<IUsageStatisticsRepository>(new TestUsageStatisticsRepository()));
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
                 new Dictionary<string, string?>

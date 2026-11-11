@@ -9,6 +9,7 @@
 	<ItemGroup>
 		<Content Update="Resources\Snippets\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="Resources\Snippets\*.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="Resources\Statistics\*.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="Resources\Snippets\*.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Compile Remove="Abstractions\**\*.cs" />
 		<Compile Remove="Models\**\*.cs" />

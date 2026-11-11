@@ -111,7 +111,7 @@ internal static class AdminEndpoints
         {
             context.Response.Headers.CacheControl = "no-store";
             return adminUserManager.TryGetAdminUser(out var adminUser)
-                ? Results.Json(new { adminUser.DisplayName })
+                ? Results.Json(new { adminUser.DisplayName, adminUser.IsSuperAdmin })
                 : Results.Unauthorized();
         });
 
@@ -162,7 +162,7 @@ internal static class AdminEndpoints
 
         _ = app.MapPost("/admin/rooms",
                     async (HttpContext context,
-                           IRoomManager roomManager,
+                           TrackedRoomCreator creator,
                            ILanguageValidator languageValidator,
                            IAdminUserManager adminUserManager,
                            CancellationToken cancellationToken) =>
@@ -195,7 +195,7 @@ internal static class AdminEndpoints
                 });
             }
             var name = new RoomName(payload.Name);
-            var room = roomManager.CreateRoom(name, language, adminUser, kind);
+            var room = await creator.CreateAsync(name, language, adminUser, kind, cancellationToken).ConfigureAwait(false);
             return Results.Json(new
             {
                 RoomId = room.RoomId.Value,

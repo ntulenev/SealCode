@@ -1131,3 +1131,56 @@ The browser test client ignores certificate trust only for that local test certi
 - [Backend architecture](docs/backend.md) — backend mechanisms and real-time collaboration.
 - [ADR 0004: Resource and security boundaries](docs/adr/0004-resource-and-security-boundaries.md) — contracts and constraints.
 - [Implementation audit](docs/audit-implementation.md) — validation evidence.
+
+
+## Administrator usage statistics
+
+All successful password and Google sign-ins are written to PostgreSQL before a
+session is issued. An account row is created automatically on first activity and
+its display name is refreshed on subsequent activity. Configured account names
+are case-insensitive; Google subject identifiers remain case-sensitive.
+Stateless MCP has no sign-in session: each successful bearer authentication is
+recorded with provider `mcp` and is visible separately in the user's history.
+Failed authentication and cookie-based page requests do not create login events.
+
+Room creation from the admin panel and MCP records the creator, timestamp, room
+ID, full room name, workspace (`code` or `whiteboard`) and initial language
+(for example `csharp`). Content, passwords, credential hashes, bearer tokens and
+Google ID tokens are never stored in statistics. History survives room deletion
+and application restarts. If an activity cannot be persisted, a new session is
+not issued and a newly created room is removed; recording errors must be fixed
+before those operations can succeed.
+
+Before deploying this version:
+
+1. Apply [001_usage_statistics.sql](src/Persistence/Statistics/Migrations/001_usage_statistics.sql)
+   to the PostgreSQL database under a schema-owner account. The migration is
+   repeatable; the application does not apply it automatically.
+2. Supply `ConnectionStrings__Statistics` through deployment secrets. When absent,
+   `ConnectionStrings__Snippets` is used, including when the snippet library is
+   disabled or uses files. Statistics always require PostgreSQL.
+3. Grant the runtime account `USAGE` on schema `statistics`, `SELECT`, `INSERT`,
+   `UPDATE`, `DELETE` on its tables, and `USAGE` on its identity sequence.
+
+Only a currently configured super admin can open **Statistics** in the admin
+navigation (`/admin/statistics`), read `/admin/statistics/data`, or delete its
+history. The overview shows successful sign-ins, created rooms, active account
+count, first/last recorded activity, and room counts by workspace and language.
+Selecting an account shows its totals and chronological events. Account lists
+and histories have pages of 50 rows. The counters cover retained events, not
+live room or participant counts; deleting history changes those totals.
+
+The retention form deletes events **strictly before 00:00 UTC** on the chosen
+date, across all users. The boundary itself is retained. The server accepts only
+a cutoff in the past and requires the normal admin antiforgery token for
+`DELETE /admin/statistics/data?before=<ISO-8601 timestamp>`.
+After confirmation, deletion is permanent; accounts without any retained events
+are removed from statistics. Authentication configuration, permissions, active
+rooms and snippet data are unaffected. The next activity recreates an account
+if needed.
+
+Browser tests require a disposable statistics database with the migration applied
+and `ConnectionStrings__Statistics` set. CI prepares it in its PostgreSQL service.
+The statistics persistence integration test creates and drops its own database
+when `SEALCODE_SNIPPETS_ISOLATED_TEST_CONNECTION` points to a disposable server
+with `CREATE DATABASE` permission.
