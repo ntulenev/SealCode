@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs';
 rmSync('src/SealCode/wwwroot/assets', { recursive: true, force: true });
 await build({
   entryPoints: {
+    'demo-main': 'src/SealCode/wwwroot/demo-main.js',
     'snippet-launcher-main': 'src/SealCode/wwwroot/snippet-launcher-main.js',
     'admin-snippets-main': 'src/SealCode/wwwroot/admin-snippets-main.js',
     'snippets-main': 'src/SealCode/wwwroot/snippets-main.js',
