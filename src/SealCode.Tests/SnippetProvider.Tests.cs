@@ -42,7 +42,7 @@ public sealed class SnippetProviderTests
         using var provider = Services("PostgreSql", true, null);
         var repository = provider.GetRequiredService<ISnippetRepository>();
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.LoadAsync(CancellationToken.None));
-        Assert.Contains("ConnectionStrings:Snippets", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ConnectionStrings:SealCode", error.Message, StringComparison.Ordinal);
     }
 
     private static ServiceProvider Services(string name, bool enabled, string? connection)
@@ -51,7 +51,7 @@ public sealed class SnippetProviderTests
         var environment = new Mock<IWebHostEnvironment>();
         environment.SetupGet(value => value.ContentRootPath).Returns(Path.GetTempPath());
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["ConnectionStrings:Snippets"] = connection }).Build());
+            new Dictionary<string, string?> { ["ConnectionStrings:SealCode"] = connection }).Build());
         services.AddSingleton(Options.Create(new ApplicationConfiguration
         {
             AdminUsers = [],

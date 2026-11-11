@@ -251,7 +251,7 @@ Enable it in `src/SealCode/appsettings.json`:
 | `Snippets:Enabled` | `false` | Load the catalog into memory at startup. Disabled libraries perform no file or database reads. |
 | `Snippets:SuperAdminsOnly` | `true` | Only super admins can open the page or read its API. Set to `false` for all authenticated admins, including permitted Google admins. |
 | `Snippets:Provider` | `File` | `File` loads JSON/Markdown once; `PostgreSql` loads the database at startup and checks its timestamp every 30 minutes. Values are case-insensitive. |
-| `ConnectionStrings:Snippets` | unset | Required to load PostgreSQL content. Supply through deployment secrets or `ConnectionStrings__Snippets`. |
+| `ConnectionStrings:SealCode` | unset | Shared PostgreSQL database for snippets and statistics. Supply through deployment secrets or `ConnectionStrings__SealCode`; apply both schemas before use. |
 | `Snippets:StartupRetryCount` | `3` | Additional startup attempts after likely PostgreSQL connection failures; range 0–10. `0` makes one attempt. File reads are never retried. |
 | `Snippets:StartupRetryDelaySeconds` | `2` | Delay between PostgreSQL startup retries; range 0–60 seconds. Each read also uses the connection string's timeout settings. |
 
@@ -363,8 +363,11 @@ leave the library unavailable when the feature is enabled. Filenames cannot cont
    ```
 
 2. Set `Snippets__Enabled=true`, `Snippets__Provider=PostgreSql` and
-   `ConnectionStrings__Snippets` through deployment secrets/environment variables.
+   `ConnectionStrings__SealCode` through deployment secrets/environment variables.
    A connection has the shape `Host=<host>;Port=5432;Database=<database>;Username=<user>;Password=<secret>;SSL Mode=VerifyFull`.
+   Apply the [statistics migration](src/Persistence/Statistics/Migrations/001_usage_statistics.sql)
+   to the same database and grant its runtime permissions as described under
+   [administrator usage statistics](#administrator-usage-statistics); the shared connection also enables statistics.
    Configure TLS to match your provider's certificate setup. Keep real credentials
    out of tracked settings, command arguments and logs.
 3. Add or edit content directly through the database UI. The application does not
@@ -739,7 +742,7 @@ away to leave. No participant account or installation is required.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 - `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
-- `ConnectionStrings:Statistics`: optional dedicated PostgreSQL connection for usage statistics. Omit/empty disables statistics while sign-in and rooms continue to work. It never falls back to `ConnectionStrings:Snippets`; see [setup and access](#administrator-usage-statistics).
+- `ConnectionStrings:SealCode`: shared PostgreSQL connection and pool for snippets and usage statistics. Omit/empty disables statistics; file snippets, sign-in and rooms continue to work. See [setup and access](#administrator-usage-statistics).
 
 The checked-in `appsettings.json` contains empty `PasswordHash` placeholders. Before starting the app, generate a hash for each admin with `dotnet run --project tools/password-hash` and set its `PasswordHash` locally or through environment variables (for example, `AdminUsers__0__PasswordHash`). Paste the generated hash, not the plain-text password. Empty hashes fail configuration validation. Do not commit your credentials.
 
@@ -1142,13 +1145,13 @@ The browser test client ignores certificate trust only for that local test certi
 
 ## Administrator usage statistics
 
-Statistics are optional. Omit `ConnectionStrings:Statistics` (or leave it empty)
-to run without a statistics database. Password, Google and MCP authentication,
+Statistics are optional. Omit `ConnectionStrings:SealCode` (or leave it empty)
+to run without PostgreSQL. Password, Google and MCP authentication,
 code/whiteboard rooms and file-backed snippets continue to work; no usage events
 are stored, the Statistics navigation link is hidden, and its page/read/delete
 endpoints return 404 to super admins.
 
-When a nonempty `ConnectionStrings:Statistics` is configured, successful password
+When a nonempty `ConnectionStrings:SealCode` is configured, successful password
 and Google sign-ins are written to PostgreSQL before a session is issued. An
 account row is created automatically on first activity and its display name is refreshed on subsequent activity. Configured account names
 are case-insensitive; Google subject identifiers remain case-sensitive.
@@ -1169,17 +1172,44 @@ To enable statistics:
 1. Apply [001_usage_statistics.sql](src/Persistence/Statistics/Migrations/001_usage_statistics.sql)
    to the PostgreSQL database under a schema-owner account. The migration is
    repeatable; the application does not apply it automatically.
-2. Supply `ConnectionStrings__Statistics` through deployment secrets.
-   Statistics and snippets use independent connection strings and connection pools.
-   `ConnectionStrings__Snippets` is used only for snippets; there is no fallback.
-   Both strings may explicitly point to the same database if desired.
+2. Supply `ConnectionStrings__SealCode` through deployment secrets.
+   Statistics and PostgreSQL snippets share this database and a single connection pool;
+   their tables remain in the separate `statistics` and `snippets` schemas.
+   File-backed or disabled snippets do not require the `snippets` schema.
 3. Grant the runtime account `USAGE` on schema `statistics`, `SELECT`, `INSERT`,
    `UPDATE`, `DELETE` on its tables, and `USAGE` on its identity sequence.
 
 | Setting | Required by | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings:Statistics` / `ConnectionStrings__Statistics` | Administrator activity | Dedicated PostgreSQL database for accounts and usage events. Optional; a nonempty value enables recording. |
-| `ConnectionStrings:Snippets` / `ConnectionStrings__Snippets` | PostgreSQL snippet provider | Private question library only; never used by statistics. |
+| `ConnectionStrings:SealCode` / `ConnectionStrings__SealCode` | Statistics and PostgreSQL snippet provider | One shared database and connection pool. Optional for file snippets; a nonempty value enables statistics. |
+
+### Upgrading from separate databases
+
+The old `ConnectionStrings:Snippets` and `ConnectionStrings:Statistics` keys are
+no longer read. Set `ConnectionStrings__SealCode` to the existing snippets database.
+Do not commit real connection strings or credentials to appsettings.
+
+To keep existing statistics, stop all application instances and back up both
+databases before switching. Copy the **entire** `statistics` schema into the
+snippets database, including its data, indexes and identity sequence state.
+For example, with PostgreSQL service entries `legacy-statistics` and `sealcode`
+configured locally (credentials supplied securely outside the repository):
+
+```bash
+pg_dump --dbname=service=legacy-statistics --schema=statistics --format=custom --no-owner --no-privileges --file=statistics.dump
+pg_restore --dbname=service=sealcode --single-transaction --exit-on-error --no-owner --no-privileges statistics.dump
+```
+
+Restore into a target without a `statistics` schema; restore the dump **before**
+applying the repeatable statistics migration. If there is no history to preserve,
+just apply that migration to the snippets database. Use a schema-owner account
+for this operation, then grant the shared runtime account access to both schemas
+(including statistics inserts, updates, deletes and sequence usage, and snippet
+editing permissions). Set the new connection secret, remove the old keys and
+restart. Verify sign-in, room creation, statistics history and snippet editing
+before retiring the old database. The application does not move data automatically.
+
+### Viewing and pruning statistics
 
 Only a currently configured super admin can open **Statistics** in the admin
 navigation (`/admin/statistics`), read `/admin/statistics/data`, or delete its
@@ -1204,8 +1234,9 @@ are removed from statistics. Authentication configuration, permissions, active
 rooms and snippet data are unaffected. The next activity recreates an account
 if needed.
 
-Browser tests require a disposable statistics database with the migration applied
-and `ConnectionStrings__Statistics` set. CI prepares it in its PostgreSQL service.
+Browser tests use one disposable database with both schema migrations applied
+and `ConnectionStrings__SealCode` set. CI prepares it in its PostgreSQL service.
+`SEALCODE_SNIPPETS_EDITOR_TEST_CONNECTION` points to this same database.
 The statistics persistence integration test creates and drops its own database
 when `SEALCODE_STATISTICS_ISOLATED_TEST_CONNECTION` points to a disposable server
 with `CREATE DATABASE` permission.

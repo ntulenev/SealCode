@@ -1,11 +1,19 @@
 using Abstractions;
 
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using Models;
+using Models.Configuration;
 
 using Moq;
+
+using Npgsql;
+
+using Persistence.Snippets;
+using Persistence.Statistics;
 
 using SealCode.Hosting;
 
@@ -17,12 +25,11 @@ public sealed class UsageStatisticsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
-    public void MissingStatisticsConnectionDisablesAccountingWithoutResolvingAnyDatabase(string? connection)
+    public void MissingSharedConnectionDisablesAccountingWithoutResolvingAnyDatabase(string? connection)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:Statistics"] = connection,
-            ["ConnectionStrings:Snippets"] = "invalid snippet connection must not be used"
+            ["ConnectionStrings:SealCode"] = connection
         }).Build();
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
@@ -52,29 +59,50 @@ public sealed class UsageStatisticsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
-    public void StatisticsNeverFallBackToSnippetConnection(string? connection)
+    public void MissingSharedConnectionReportsTheNewSetting(string? connection)
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:Snippets"] = "Host=snippet-only;Database=snippets",
-            ["ConnectionStrings:Statistics"] = connection
-        }).Build();
-        var error = Assert.Throws<InvalidOperationException>(() => new UsageStatisticsDataSource(configuration));
-        Assert.Contains("ConnectionStrings:Statistics", error.Message, StringComparison.Ordinal);
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["ConnectionStrings:SealCode"] = connection }).Build());
+        services.AddSealCodeStatistics();
+        using var provider = services.BuildServiceProvider();
+        var error = Assert.Throws<InvalidOperationException>(provider.GetRequiredService<NpgsqlDataSource>);
+        Assert.Contains("ConnectionStrings:SealCode", error.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void DedicatedPoolUsesOnlyTheStatisticsConnectionAndDoesNotConnectDuringConstruction()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BothFeaturesShareOneLazyPoolRegardlessOfRegistrationOrder(bool snippetsFirst)
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["ConnectionStrings:SealCode"] = "Host=localhost;Database=sealcode" }).Build());
+        services.AddSingleton(Options.Create(new ApplicationConfiguration
         {
-            ["ConnectionStrings:Snippets"] = "not a connection string",
-            ["ConnectionStrings:Statistics"] = "Host=statistics-only;Database=usage"
-        }).Build();
-        using var pool = new UsageStatisticsDataSource(configuration);
-        Assert.Contains("Host=statistics-only", pool.Value.ConnectionString, StringComparison.Ordinal);
-        Assert.Contains("Database=usage", pool.Value.ConnectionString, StringComparison.Ordinal);
-        Assert.Throws<ArgumentNullException>(() => new UsageStatisticsDataSource(null!));
+            AdminUsers = [],
+            Languages = ["csharp"],
+            Snippets = new() { Enabled = true, Provider = "PostgreSql" }
+        }));
+        var environment = new Mock<IWebHostEnvironment>();
+        environment.SetupGet(value => value.ContentRootPath).Returns(Path.GetTempPath());
+        if (snippetsFirst)
+        {
+            services.AddSealCodeSnippets(environment.Object);
+            services.AddSealCodeStatistics();
+        }
+        else
+        {
+            services.AddSealCodeStatistics();
+            services.AddSealCodeSnippets(environment.Object);
+        }
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(NpgsqlDataSource));
+        using var provider = services.BuildServiceProvider();
+        Assert.IsType<PostgreSqlSnippetRepository>(provider.GetRequiredService<ISnippetRepository>());
+        Assert.IsType<PostgreSqlUsageStatisticsRepository>(provider.GetRequiredService<IUsageStatisticsRepository>());
+        var pool = provider.GetRequiredService<NpgsqlDataSource>();
+        Assert.Contains("Database=sealcode", pool.ConnectionString, StringComparison.Ordinal);
+        Assert.Same(pool, provider.GetRequiredService<NpgsqlDataSource>());
     }
 
     [Theory]

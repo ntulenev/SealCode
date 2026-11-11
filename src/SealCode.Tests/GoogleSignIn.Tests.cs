@@ -27,7 +27,7 @@ public sealed class GoogleSignInTests
         using var factory = configured.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:Statistics"] = "" }));
+                new Dictionary<string, string?> { ["ConnectionStrings:SealCode"] = "" }));
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IUsageStatisticsRepository>();

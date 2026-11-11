@@ -9,6 +9,28 @@ namespace Persistence.Tests;
 public sealed class PostgreSqlUsageStatisticsRepositoryTests
 {
     [StatisticsDatabaseFact]
+    public async Task SharedDatabaseKeepsSnippetsWhenStatisticsAreDeletedAsync()
+    {
+        await WithDatabaseAsync(async source =>
+        {
+            var snippets = new Snippets.PostgreSqlSnippetRepository(source);
+            var statistics = new PostgreSqlUsageStatisticsRepository(() => source);
+            await ExecuteAsync(source, """
+                INSERT INTO snippets.categories(language, title) VALUES ('sql', 'SQL');
+                INSERT INTO snippets.questions(language, number, topic, description, markdown)
+                VALUES ('sql', 1, 'Shared database', 'Coverage', 'SELECT 1;');
+                """);
+            await statistics.RecordLoginAsync(new AdminUser("Shared"), "password", CancellationToken.None);
+            await ExecuteAsync(source, "UPDATE statistics.events SET occurred_at = '2020-01-01T00:00:00Z'");
+            Assert.Equal(1, await statistics.DeleteBeforeAsync(DateTimeOffset.UtcNow.AddDays(-1), CancellationToken.None));
+            var library = await snippets.LoadAsync(CancellationToken.None);
+            Assert.Equal("Shared database", Assert.Single(Assert.Single(library.Categories).Questions).Topic);
+            Assert.Equal(0, (await statistics.ReadAsync(new UsageStatisticsQuery(), CancellationToken.None))
+                .GetProperty("EventsCount").GetInt32());
+        });
+    }
+
+    [StatisticsDatabaseFact]
     public async Task BoundedReportsApplyFiltersSortingAndPaginationBeforeReturningRowsAsync()
     {
         await WithDatabaseAsync(async source =>
@@ -221,6 +243,10 @@ public sealed class PostgreSqlUsageStatisticsRepositoryTests
             settings.Database = database;
             await using var source = NpgsqlDataSource.Create(settings.ConnectionString);
             await ExecuteAsync(source, await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "StatisticsMigrations", "001_usage_statistics.sql")));
+            foreach (var name in new[] { "001_create_snippets.sql", "002_question_steps.sql" })
+            {
+                await ExecuteAsync(source, await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", name)));
+            }
             await test(source);
         }
         finally

@@ -84,7 +84,7 @@ public sealed class AdminMcpTests
         using var factory = source.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:Statistics"] = "" }));
+                new Dictionary<string, string?> { ["ConnectionStrings:SealCode"] = "" }));
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUsageStatisticsRepository>();
