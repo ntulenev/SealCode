@@ -177,7 +177,8 @@ export function createRoomApplication({
       const sync = readSyncResult(result);
       roomNameEl.textContent = sync.name;
       roomNameEl.title = sync.name;
-      if (createdByEl) createdByEl.textContent = sync.createdBy || 'unknown';
+      if (createdByEl) createdByEl.textContent = sync.createdBy || '';
+      document.getElementById('roomCreator')?.classList.toggle('hidden', !sync.createdBy);
       roomView.apply(result);
       applyJoinDocument(yjs, sync, lifecycle.joined);
       currentVersion = Math.max(currentVersion, sync.version);

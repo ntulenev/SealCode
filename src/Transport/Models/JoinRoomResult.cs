@@ -10,7 +10,7 @@ namespace Transport.Models;
 /// <param name="Text">The room text.</param>
 /// <param name="Version">The current room version.</param>
 /// <param name="Users">The display names of users currently in the room.</param>
-/// <param name="CreatedBy">The display name of the room creator.</param>
+/// <param name="CreatedBy">The display name of the room creator, available only to administrators.</param>
 /// <param name="DocumentRevision">The latest CRDT document revision.</param>
 /// <param name="CheckpointRevision">The revision represented by <paramref name="YjsState"/>.</param>
 /// <param name="YjsState">Optional checkpoint state for the CRDT document.</param>
@@ -21,7 +21,7 @@ public sealed record JoinRoomResult(
     string Text,
     int Version,
     string[] Users,
-    string CreatedBy,
+    string? CreatedBy,
     long DocumentRevision,
     long CheckpointRevision,
     string? YjsState,

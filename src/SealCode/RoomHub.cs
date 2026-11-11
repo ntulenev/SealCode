@@ -6,6 +6,7 @@ using Models;
 using Models.Exceptions;
 
 using SealCode.Hub;
+using SealCode.Security;
 
 using Transport;
 using Transport.Models;
@@ -84,7 +85,7 @@ public sealed class RoomHub : SignalRHub
             subscribed = true;
             // Subscribe before taking the snapshot so concurrent updates are either
             // included in it or delivered to the client's synchronization buffer.
-            joinResult = JoinRoomResult.From(room);
+            joinResult = CreateSyncResult(room);
         }
         catch
         {
@@ -156,7 +157,7 @@ public sealed class RoomHub : SignalRHub
     /// <returns>The current checkpoint and update journal.</returns>
     [HubMethodName(HubContract.Methods.SyncYjs)]
     public JoinRoomResult SyncYjs(string roomId)
-        => JoinRoomResult.From(GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _));
+        => CreateSyncResult(GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _));
 
     /// <summary>
     /// Stores a compact Yjs checkpoint when it represents the latest document revision.
@@ -310,6 +311,12 @@ public sealed class RoomHub : SignalRHub
         {
             await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
         }
+    }
+
+    private JoinRoomResult CreateSyncResult(RoomState room)
+    {
+        var isAdmin = Context.GetHttpContext()?.RequestServices.GetRequiredService<IAdminUserManager>().IsAdmin() == true;
+        return JoinRoomResult.From(room) with { CreatedBy = isAdmin ? room.CreatedBy.DisplayName : null };
     }
 
     private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify)

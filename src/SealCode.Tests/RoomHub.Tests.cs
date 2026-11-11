@@ -994,6 +994,7 @@ public sealed class RoomHubTests
             defaultClients.Setup(c => c.Group(It.IsAny<string>())).Returns(proxy.Object);
             defaultClients.Setup(c => c.GroupExcept(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(proxy.Object);
             var context = new Mock<HubCallerContext>(MockBehavior.Strict);
+            context.SetupGet(c => c.Features).Returns(new Microsoft.AspNetCore.Http.Features.FeatureCollection());
             context.SetupGet(c => c.ConnectionId).Returns("conn-1");
             context.SetupGet(c => c.ConnectionAborted).Returns(cancellationToken);
             context.SetupGet(c => c.Items).Returns(items ?? new Dictionary<object, object?>());
