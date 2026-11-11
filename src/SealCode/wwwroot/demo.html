@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Try SealCode's code editor and whiteboard before your coding or architecture session. No account or invitation needed." />
+  <title>Demo — SealCode</title>
+  <link rel="icon" href="/favicon.ico?v=1.20.0" />
+  <script src="/theme.js?v=1.20.0"></script>
+  <link rel="stylesheet" href="/site.css?v=1.20.0" />
+  <link rel="stylesheet" href="/whiteboard.css?v=1.20.0" />
+  <link rel="stylesheet" href="/assets/demo-main.css?v=1.20.0" />
+  <link rel="stylesheet" href="/demo.css?v=1.20.0" />
+</head>
+<body class="demo-page">
+  <header class="site-header"><a class="brand" href="/" aria-label="SealCode home"><img src="/Logo.png?v=1.20.0" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><nav class="header-actions" aria-label="Main navigation"><a href="/">Home <span aria-hidden="true">↗</span></a><button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to light theme" title="Switch to light theme"><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span data-theme-label>Light</span></button></nav></header>
+  <main class="demo-main">
+    <section class="demo-intro" aria-labelledby="demoTitle">
+      <p class="eyebrow">Get ready for your session</p>
+      <h1 id="demoTitle">A little practice.<br /><span class="accent">A smoother session.</span></h1>
+      <p>Have a coding or architecture session coming up on SealCode? Get familiar with the code editor and whiteboard here, so you can focus on the conversation when your session starts.</p>
+      <div class="demo-actions"><a class="button-link" href="#code">Try the editor ↓</a><a href="#board">Try the whiteboard ↓</a><button id="pauseDemo" class="ghost" type="button" aria-pressed="false">Pause demo cursors</button></div>
+      <p class="demo-note">No account or invitation needed. Changes stay in this tab and reset when you reload. Maya and Leo are simulated participants.</p>
+    </section>
+    <section id="code" class="demo-workspace" aria-labelledby="codeTitle">
+      <header class="demo-workspace-heading"><div><p class="eyebrow">01 / Code editor</p><h2 id="codeTitle">Try a few lines of code</h2><p>Edit, select text, or try autocomplete and undo. The code is a practice example and does not run.</p></div><button id="resetCode" class="ghost" type="button">Reset code</button></header>
+      <div class="demo-presence" aria-label="Demo participants"><span>You</span><span class="demo-peer">Maya · demo participant</span><span class="demo-language">JavaScript</span></div>
+      <div id="demoEditor" aria-label="Practice code editor"></div>
+    </section>
+    <section id="board" class="demo-workspace" aria-labelledby="boardTitle">
+      <header class="demo-workspace-heading"><div><p class="eyebrow">02 / Whiteboard</p><h2 id="boardTitle">Sketch the bigger picture</h2><p>Move a service, double-click a label, or add a shape. Use Space + drag to pan and Ctrl + wheel to zoom.</p></div><button id="resetBoard" class="ghost" type="button">Reset diagram</button></header>
+      <div class="demo-presence" aria-label="Demo participants"><span>You</span><span class="demo-peer">Leo · demo participant</span></div>
+      <div id="demoBoard" class="whiteboard" aria-label="Practice architecture whiteboard"></div>
+    </section>
+    <p class="demo-outro">Ready for your session? <a href="/">Return home to join with your invitation link →</a></p>
+  </main>
+  <footer class="site-footer"><span>Made for small teams. Built to share ideas.</span><a href="/about.html">About SealCode</a></footer>
+  <script type="module" src="/assets/demo-main.js?v=1.20.0"></script>
+</body>
+</html>

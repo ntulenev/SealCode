@@ -1,0 +1,29 @@
+.demo-main { width: min(1200px, 100%); margin: 0 auto; padding: 32px; }
+.demo-intro { max-width: 780px; padding: 24px 0 48px; }
+.demo-intro h1 { font-size: clamp(36px, 5vw, 60px); }
+.demo-intro > p:not(.eyebrow) { max-width: 68ch; color: var(--muted); }
+.demo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; margin: 28px 0 20px; }
+.demo-note { font-size: 13px; }
+.demo-workspace { scroll-margin-top: 20px; margin-bottom: 56px; }
+.demo-workspace-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
+.demo-workspace-heading .eyebrow { margin-bottom: 8px; }
+.demo-workspace-heading h2 { margin-bottom: 8px; font-size: 26px; }
+.demo-workspace-heading p:last-child { margin: 0; color: var(--muted); max-width: 70ch; }
+.demo-workspace-heading button { flex-shrink: 0; }
+.demo-presence { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding: 12px 16px; border: 1px solid var(--border); background: var(--panel); font-size: 13px; }
+.demo-peer { color: var(--accent); }
+.demo-peer::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 8px; background: currentColor; border-radius: 50%; }
+.demo-language { margin-left: auto; color: var(--muted); font-family: var(--mono); }
+#demoEditor { height: 480px; border: 1px solid var(--border); border-top: 0; }
+#demoBoard { height: 560px; border: 1px solid var(--border); border-top: 0; }
+.demo-code-cursor { position: relative; width: 2px; height: 19px; background: var(--accent); pointer-events: none; font-size: 0; }
+.demo-code-cursor::after { content: 'Maya · demo'; position: absolute; bottom: 100%; left: 0; padding: 0 5px; background: var(--accent); color: var(--accent-text); font: 11px/18px var(--sans); white-space: nowrap; }
+.demo-outro { padding: 0 0 24px; color: var(--muted); }
+@media (max-width: 600px) {
+  .demo-main { padding: 16px; }
+  .demo-intro { padding-top: 8px; }
+  .demo-actions { gap: 16px; }
+  .demo-workspace-heading { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  #demoEditor { height: 440px; }
+  #demoBoard { height: 600px; }
+}

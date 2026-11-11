@@ -12,6 +12,7 @@ For a description of how the backend and real-time collaboration work, see [Back
 
 ## Features
 
+- Public practice demo at `/demo.html` with the real code editor and whiteboard, sample code and architecture diagram, and simulated collaborator cursors. No account, invitation, or backend room is required.
 - Collaborative whiteboard rooms with rectangles, one-way and bidirectional arrows, lines, text, databases, queues, ellipses and diamonds; pan, zoom, labels, resizing and selective undo/redo.
 - Real-time multi-user editing in Monaco, with syntax highlighting, participant presence and remote cursors.
 - Monaco's built-in autocomplete is always enabled, with language-specific IntelliSense limitations described below.
@@ -28,6 +29,22 @@ For a description of how the backend and real-time collaboration work, see [Back
 - Configurable capacity of 1–5 participants per room, resource budgets and optional expiration of empty rooms.
 - Locally bundled editor dependencies and workers. Optional Google sign-in loads Google's identity script.
 - Build version and commit in the footer, plus an About page with the project repository link.
+
+## Public demo
+
+Open `/demo.html` (also linked from the home page) before a coding or architecture
+session to practice with the participant tools. The page includes an editable
+JavaScript example and a whiteboard with two services, a database, a queue and
+connecting arrows. Try editing, drawing, moving shapes, labels, pan/zoom and
+undo/redo. Reset buttons restore each example independently.
+
+Maya's editor cursor and Leo's whiteboard cursor are simulated locally in
+JavaScript; they never modify your work. You can pause their movement, and the
+demo respects reduced-motion preferences and pauses while the tab is hidden.
+All edits live only in the current tab and disappear on reload. The demo loads
+static assets only: it does not call application APIs, open SignalR/WebSocket
+connections, create rooms, authenticate, or store documents on the server.
+It can also be served by a static file host after `npm run build:client`.
 
 ## Screenshots
 
