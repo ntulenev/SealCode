@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSealCodeConfiguration(builder.Configuration);
 builder.Services.AddSealCodeSecurity(builder.Environment);
 builder.Services.AddSealCodeRooms();
+builder.Services.AddSealCodeStatistics();
 builder.Services.AddSealCodeSignalR();
 builder.Services.AddSealCodeMcp();
 builder.Services.AddSealCodeSnippets(builder.Environment);

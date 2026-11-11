@@ -13,6 +13,8 @@ namespace Persistence.Statistics;
 public sealed class PostgreSqlUsageStatisticsRepository : IUsageStatisticsRepository
 {
     /// <summary>Uses a deferred host-owned connection pool.</summary>
+    /// <param name="getDataSource">Resolves the host-owned statistics connection pool.</param>
+    /// <exception cref="ArgumentNullException">The resolver is null.</exception>
     public PostgreSqlUsageStatisticsRepository(Func<NpgsqlDataSource> getDataSource)
     {
         ArgumentNullException.ThrowIfNull(getDataSource);

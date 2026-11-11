@@ -105,13 +105,21 @@ internal static class ServiceCollectionExtensions
         _ = services.AddSingleton<IRoomRegistry, RoomRegistry>();
         _ = services.AddSingleton<IRoomNotifier, SignalRRoomNotifier>();
         _ = services.AddSingleton<IRoomManager, RoomManager>();
+        _ = services.AddSingleton<IRoomSessionService, RoomSessionService>();
+        _ = services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
+        return services;
+    }
+
+    /// <summary>Registers the dedicated statistics pool, repository and tracked room creator.</summary>
+    /// <param name="services">The application service collection.</param>
+    /// <returns>The service collection for further registration.</returns>
+    public static IServiceCollection AddSealCodeStatistics(this IServiceCollection services)
+    {
         _ = services.AddSingleton<TrackedRoomCreator>();
         _ = services.AddSingleton<IUsageStatisticsRepository>(provider =>
             new PostgreSqlUsageStatisticsRepository(() => provider.GetRequiredService<UsageStatisticsDataSource>().Value));
         _ = services.AddSingleton(provider => new UsageStatisticsDataSource(
             provider.GetRequiredService<IConfiguration>()));
-        _ = services.AddSingleton<IRoomSessionService, RoomSessionService>();
-        _ = services.AddSingleton<ILanguageValidator, ConfigurationLanguageValidator>();
         return services;
     }
 

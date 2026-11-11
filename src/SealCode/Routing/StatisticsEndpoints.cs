@@ -7,8 +7,13 @@ namespace SealCode.Routing;
 /// <summary>Super-administrator-only usage reports and retention controls.</summary>
 internal static class StatisticsEndpoints
 {
+    /// <summary>Maps protected reports and retention operations.</summary>
+    /// <param name="app">The application receiving statistics endpoints.</param>
+    /// <exception cref="ArgumentNullException">The application is null.</exception>
     public static void MapStatisticsEndpoints(this WebApplication app)
     {
+        ArgumentNullException.ThrowIfNull(app);
+
         var group = app.MapGroup("/admin/statistics").AddEndpointFilter(async (context, next) =>
         {
             context.HttpContext.Response.Headers.CacheControl = "no-store";

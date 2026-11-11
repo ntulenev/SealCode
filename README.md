@@ -1156,11 +1156,17 @@ Before deploying this version:
 1. Apply [001_usage_statistics.sql](src/Persistence/Statistics/Migrations/001_usage_statistics.sql)
    to the PostgreSQL database under a schema-owner account. The migration is
    repeatable; the application does not apply it automatically.
-2. Supply `ConnectionStrings__Statistics` through deployment secrets. When absent,
-   `ConnectionStrings__Snippets` is used, including when the snippet library is
-   disabled or uses files. Statistics always require PostgreSQL.
+2. Supply the required `ConnectionStrings__Statistics` through deployment secrets.
+   Statistics and snippets use independent connection strings and connection pools.
+   `ConnectionStrings__Snippets` is used only for snippets; there is no fallback.
+   Both strings may explicitly point to the same database if desired.
 3. Grant the runtime account `USAGE` on schema `statistics`, `SELECT`, `INSERT`,
    `UPDATE`, `DELETE` on its tables, and `USAGE` on its identity sequence.
+
+| Setting | Required by | Purpose |
+| --- | --- | --- |
+| `ConnectionStrings:Statistics` / `ConnectionStrings__Statistics` | Administrator activity | Dedicated PostgreSQL database for accounts and usage events. Required for sign-in and room creation. |
+| `ConnectionStrings:Snippets` / `ConnectionStrings__Snippets` | PostgreSQL snippet provider | Private question library only; never used by statistics. |
 
 Only a currently configured super admin can open **Statistics** in the admin
 navigation (`/admin/statistics`), read `/admin/statistics/data`, or delete its
@@ -1182,5 +1188,52 @@ if needed.
 Browser tests require a disposable statistics database with the migration applied
 and `ConnectionStrings__Statistics` set. CI prepares it in its PostgreSQL service.
 The statistics persistence integration test creates and drops its own database
-when `SEALCODE_SNIPPETS_ISOLATED_TEST_CONNECTION` points to a disposable server
+when `SEALCODE_STATISTICS_ISOLATED_TEST_CONNECTION` points to a disposable server
 with `CREATE DATABASE` permission.
+
+
+### Statistics screenshots
+
+These captures use disposable browser-test accounts and sample C# rooms and
+whiteboards. They contain no deployment accounts or credentials.
+
+| Overview, dark theme | Overview, light theme |
+| --- | --- |
+| ![System usage overview with totals, workspace breakdown and account list in dark theme](docs/images/statistics-overview-dark.png) | ![System usage overview in light theme](docs/images/statistics-overview-light.png) |
+
+| User history, dark theme | User history, light theme |
+| --- | --- |
+| ![User sign-ins and code and whiteboard room creation history in dark theme](docs/images/statistics-user-dark.png) | ![User sign-ins and room creation history in light theme](docs/images/statistics-user-light.png) |
+
+<details>
+<summary>Mobile views (375 pixels wide)</summary>
+
+The activity table scrolls horizontally to keep dates and room metadata readable.
+
+| Dark theme | Light theme |
+| --- | --- |
+| ![Mobile user statistics in dark theme](docs/images/statistics-mobile-dark.png) | ![Mobile user statistics in light theme](docs/images/statistics-mobile-light.png) |
+
+</details>
+
+### Statistics verification
+
+| Level | Scenarios |
+| --- | --- |
+| [Server unit tests](src/SealCode.Tests/UsageStatistics.Tests.cs) | Independent connection strings without fallback, missing configuration, both room kinds, successful recording and rollback on persistence failure or cancellation. |
+| [Client unit tests](tests/client/admin-statistics.test.js) | Totals and empty states, account selection, user and event pagination, stale responses, HTTP/network errors, refresh, safe text rendering, confirmation/cancellation, duplicate-submit protection, UTC cutoff and CSRF. |
+| [PostgreSQL integration tests](src/Persistence.Tests/PostgreSqlUsageStatisticsRepository.Tests.cs) | Repeatable migration, concurrent account upserts, local/Google identity semantics, durable metadata, user and event pages with stable ordering, parameterized filters, atomic rollback, cancellation, exclusive cutoff, orphan cleanup, account recreation and concurrent retention. |
+| [HTTP integration tests](src/SealCode.Tests/SealCodeApi.Tests.cs) | Guest/ordinary/super-admin access, account-specific queries, no-store responses, CSRF, invalid cutoff/offset rejection, successful and failed sign-ins and room recording. Google and MCP tests also verify provider accounting. |
+| [Browser tests](tests/e2e/admin-statistics.spec.js) | Overview and user history, code and whiteboard metadata, real history pagination, XSS-safe room names, guest/ordinary-admin denial, canceled and confirmed retention, dark/light themes and desktop/mobile layouts. Actual deletion of old events and the strict UTC boundary are checked against PostgreSQL. |
+
+Run the focused checks (database environment variables must point to a disposable
+server/database prepared as described above):
+
+```bash
+npm run typecheck
+npm run test:client
+dotnet test src/SealCode.Tests --filter 'FullyQualifiedName~UsageStatisticsTests|FullyQualifiedName~StatisticsRequire|FullyQualifiedName~SuccessfulLogins|FullyQualifiedName~GoogleSignInTests|FullyQualifiedName~AdminMcpTests'
+dotnet test src/Persistence.Tests --filter FullyQualifiedName~PostgreSqlUsageStatistics
+npm run build:client
+npx playwright test tests/e2e/admin-statistics.spec.js
+```

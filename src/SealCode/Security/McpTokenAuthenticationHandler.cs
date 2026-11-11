@@ -38,6 +38,7 @@ internal sealed class McpTokenAuthenticationHandler : AuthenticationHandler<Auth
         : base(options, logger, encoder)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(statistics);
 
         _settings = settings.Value;
         _statistics = statistics;

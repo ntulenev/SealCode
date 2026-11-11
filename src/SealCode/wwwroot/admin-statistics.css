@@ -4,6 +4,7 @@
 .statistics-scroll td { overflow-wrap: anywhere; }
 .statistics-scroll .statistics-activity-table { min-width: 850px; }
 .statistics-activity-table td:first-child { white-space: nowrap; }
+#allUsers[hidden] { display: none; }
 #pruneStatistics { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
 #pruneStatistics label { display: grid; gap: .5rem; }
 #statisticsSummary { display: grid; grid-template-columns: minmax(12rem, 1fr) 2fr; gap: .75rem 2rem; margin: 1.5rem 0 0; }
