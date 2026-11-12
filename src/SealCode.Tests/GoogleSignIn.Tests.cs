@@ -175,6 +175,8 @@ public sealed class GoogleSignInTests
     [InlineData("other@gmail.com", null, true)]
     [InlineData("user123@gmail.com.evil.org", null, true)]
     [InlineData("prefixuser123@gmail.com", null, true)]
+    [InlineData("user123+alias@gmail.com", null, true)]
+    [InlineData("user.123@gmail.com", null, true)]
     [InlineData("user123@gmail.com", null, false)]
     [InlineData("user123@gmail.com", "example.org", false)]
     public async Task EmailExceptionsDoNotAdmitOtherOrUnverifiedAccounts(string email, string? hostedDomain, bool verified)
@@ -200,6 +202,31 @@ public sealed class GoogleSignInTests
         var identity = new GoogleIdentity(subject == "overlong" ? new string('a', 256) : subject!, "user123@gmail.com", null, true);
         Assert.False(GoogleSignInAccess.IsAllowed(identity, config));
         Assert.False(GoogleSignInAccess.IsAllowed(null, config));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void AllowedHostedDomainStillRequiresNonemptyEmail(string? email)
+    {
+        var config = new GoogleSignInConfiguration { AllowedHostedDomains = ["example.org"] };
+        var identity = new GoogleIdentity("valid-subject", email!, "example.org", true);
+        Assert.False(GoogleSignInAccess.IsAllowed(identity, config));
+    }
+
+    [Fact]
+    public void AllowedDomainStillGrantsAccessAfterEmailExceptionIsRemoved()
+    {
+        var config = new GoogleSignInConfiguration
+        {
+            AllowedHostedDomains = ["EXAMPLE.ORG"],
+            AllowedEmails = ["person@example.org"]
+        };
+        var identity = new GoogleIdentity(new string('a', 255), "person@example.org", "example.org", true);
+        Assert.True(GoogleSignInAccess.IsAllowed(identity, config));
+        config.AllowedEmails[0] = "replacement@gmail.com";
+        Assert.True(GoogleSignInAccess.IsAllowed(identity, config));
     }
 
     private static WebApplicationFactory<Program> Configure(

@@ -27,7 +27,9 @@ internal interface IAdminUserManager
     /// <returns>True when authentication succeeds; otherwise false.</returns>
     Task<bool> TrySetCurrentUserAsync(CancellationToken cancellationToken);
 
-    /// <summary>Signs in a verified, permitted Google Workspace user as an ordinary admin.</summary>
+    /// <summary>Signs in a verified Google user allowed by domain or email as an ordinary admin.</summary>
+    /// <param name="identity">The identity obtained from a verified Google ID token.</param>
+    /// <returns>True when the identity is permitted and an admin session has been issued.</returns>
     Task<bool> TrySetGoogleCurrentUserAsync(GoogleIdentity identity);
 
     /// <summary>

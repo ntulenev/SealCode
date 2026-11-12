@@ -173,6 +173,7 @@ public sealed class ConfigurationValidationTests
     [InlineData("user123@gmail.com ")]
     [InlineData(" user123@gmail.com")]
     [InlineData("Display Name <user123@gmail.com>")]
+    [InlineData("Display<user123@gmail.com>")]
     [InlineData("*@gmail.com")]
     [InlineData("user@*")]
     [InlineData("user@gmail.com\n")]

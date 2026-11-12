@@ -10,5 +10,9 @@ public sealed class GoogleSignInConfiguration
     public string[] AllowedHostedDomains { get; init; } = [];
 
     /// <summary>Exact email addresses accepted from verified Google ID tokens, regardless of hosted domain.</summary>
+    /// <remarks>
+    /// Matches full addresses without regard to case. An email match permits sign-in even
+    /// without a Workspace hosted-domain claim. Defaults to an empty list.
+    /// </remarks>
     public string[] AllowedEmails { get; init; } = [];
 }
