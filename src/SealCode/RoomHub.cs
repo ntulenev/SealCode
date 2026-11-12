@@ -6,6 +6,7 @@ using Models;
 using Models.Exceptions;
 
 using SealCode.Hub;
+using SealCode.Observers;
 using SealCode.Security;
 
 using Transport;
@@ -28,8 +29,10 @@ public sealed class RoomHub : SignalRHub
     /// <param name="roomManager">The room manager.</param>
     /// <param name="sessions">The room participant service.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="observers">Optional independent delivery of committed edits to viewers.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
-    public RoomHub(IRoomManager roomManager, IRoomSessionService sessions, ILogger<RoomHub> logger)
+    public RoomHub(IRoomManager roomManager, IRoomSessionService sessions, ILogger<RoomHub> logger,
+        ObserverSessions? observers = null)
     {
         ArgumentNullException.ThrowIfNull(roomManager);
         ArgumentNullException.ThrowIfNull(sessions);
@@ -37,6 +40,7 @@ public sealed class RoomHub : SignalRHub
         _roomManager = roomManager;
         _sessions = sessions;
         _logger = logger;
+        _observers = observers;
     }
 
     /// <summary>
@@ -125,6 +129,7 @@ public sealed class RoomHub : SignalRHub
     {
         var parsedRoomId = ParseRoomIdOrThrow(roomId);
         var appendResult = HubErrors.Invoke(() => _sessions.Append(parsedRoomId, new(Context.ConnectionId), updateBase64));
+        _observers?.RecordUpdate(parsedRoomId, updateBase64, appendResult.DocumentRevision.Value);
 
         // Once appended, the update belongs to the room even if its author disconnects.
         await BroadcastAfterCommitAsync(() => Clients.Group(parsedRoomId.Value)
@@ -148,7 +153,13 @@ public sealed class RoomHub : SignalRHub
     /// <returns>The current document, metadata, and presence revisions.</returns>
     [HubMethodName(HubContract.Methods.GetRoomRevisions)]
     public RoomRevisions GetRoomRevisions(string roomId)
-        => GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _).GetRevisions();
+    {
+        var room = GetRoomForParticipant(ParseRoomIdOrThrow(roomId), out _);
+        var revisions = room.GetRevisions();
+        var (count, revision) = _observers?.Count(room.RoomId) ?? (0, 0L);
+        return new RoomRevisions(revisions.DocumentRevision, revisions.MetadataRevision, revisions.PresenceRevision)
+        { ObserverCount = count, ObserverRevision = revision };
+    }
 
     /// <summary>
     /// Returns an atomic document snapshot without repeating room registration.
@@ -316,7 +327,13 @@ public sealed class RoomHub : SignalRHub
     private JoinRoomResult CreateSyncResult(RoomState room)
     {
         var isAdmin = Context.GetHttpContext()?.RequestServices.GetRequiredService<IAdminUserManager>().IsAdmin() == true;
-        return JoinRoomResult.From(room) with { CreatedBy = isAdmin ? room.CreatedBy.DisplayName : null };
+        var (count, revision) = _observers?.Count(room.RoomId) ?? (0, 0L);
+        return JoinRoomResult.From(room) with
+        {
+            CreatedBy = isAdmin ? room.CreatedBy.DisplayName : null,
+            ObserverCount = count,
+            ObserverRevision = revision
+        };
     }
 
     private async Task RemoveFromRoomAsync(string roomId, ConnectionId connectionId, bool notify)
@@ -404,4 +421,5 @@ public sealed class RoomHub : SignalRHub
     private readonly IRoomManager _roomManager;
     private readonly IRoomSessionService _sessions;
     private readonly ILogger<RoomHub> _logger;
+    private readonly ObserverSessions? _observers;
 }

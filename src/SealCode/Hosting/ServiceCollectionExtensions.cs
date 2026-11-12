@@ -20,6 +20,7 @@ using Persistence.Snippets;
 using Persistence.Statistics;
 
 using SealCode.Mcp;
+using SealCode.Observers;
 using SealCode.Routing;
 using SealCode.Security;
 
@@ -196,12 +197,19 @@ internal static class ServiceCollectionExtensions
     public static IServiceCollection AddSealCodeSignalR(this IServiceCollection services)
     {
         _ = services.AddSingleton<RoomResourceFilter>();
+        _ = services.AddSingleton<ObserverSessions>();
+        _ = services.AddHostedService(provider => provider.GetRequiredService<ObserverSessions>());
         _ = services.AddSignalR(options =>
             {
-                options.AddFilter<RoomResourceFilter>();
                 options.MaximumReceiveMessageSize = RoomLimits.MaxSignalRMessageBytes;
                 options.KeepAliveInterval = TimeSpan.FromSeconds(5);
                 options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
+            })
+            .AddHubOptions<RoomHub>(options => options.AddFilter<RoomResourceFilter>())
+            .AddHubOptions<ObserverHub>(options =>
+            {
+                options.MaximumReceiveMessageSize = 8192;
+                options.AddFilter<ObserverFilter>();
             })
             .AddJsonProtocol(options =>
             {

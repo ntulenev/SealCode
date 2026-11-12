@@ -15,6 +15,18 @@ test('limits page shows server configuration and fits both themes and screen siz
   await expect(page.locator('#technicalLimits')).toBeHidden();
   await page.getByText('Technical limits', { exact: true }).click();
   await expect(page.locator('#technicalLimits dd')).toHaveCount(9);
+  await expect(page.locator('#observerLimits dd')).toHaveText([
+    config.Observers.Enabled ? 'Enabled' : 'Disabled',
+    `${config.Observers.MaxPerRoom}`, `${config.Observers.MaxConnections}`, `${config.Observers.MaxConnectionsPerSource}`,
+    `${config.Limits.MaxConnections + (config.Observers.Enabled ? config.Observers.MaxConnections : 0)}`
+  ].map(value => /^\d+$/.test(value) ? new Intl.NumberFormat('en-US').format(Number(value)) : value));
+  await page.getByText('Guest transport limits', { exact: true }).click();
+  await expect(page.locator('#observerTechnicalLimits dd')).toHaveText([
+    `${config.Observers.UnjoinedTimeoutSeconds} seconds`, `${config.Observers.NewConnectionsPerSourcePerMinute} / minute`,
+    `${config.Observers.InvocationsPerSecond} / second`, `${config.Observers.SnapshotRequestsPerConnectionPerMinute} / minute`,
+    `${config.Observers.ConcurrentSnapshots}`, '1,024 KiB', `${config.Observers.DeliveryQueueEventsPerConnection}`,
+    `${config.Observers.SendTimeoutSeconds} seconds`
+  ].map(value => /^\d+$/.test(value) ? new Intl.NumberFormat('en-US').format(Number(value)) : value));
   for (const theme of ['dark', 'light']) {
     if (theme === 'light') await page.locator('[data-theme-toggle]').click();
     for (const width of [1440, 375]) {

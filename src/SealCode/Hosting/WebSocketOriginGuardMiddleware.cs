@@ -21,7 +21,8 @@ internal sealed class WebSocketOriginGuardMiddleware
     /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.Request.Path.StartsWithSegments("/roomHub", StringComparison.Ordinal)
+        if ((context.Request.Path.StartsWithSegments("/roomHub", StringComparison.Ordinal)
+                || context.Request.Path.StartsWithSegments("/observerHub", StringComparison.OrdinalIgnoreCase))
             && context.Request.Headers.Upgrade.ToString().Equals("websocket", StringComparison.OrdinalIgnoreCase)
             && context.Request.Headers.TryGetValue("Origin", out var origin)
             && (!Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri)

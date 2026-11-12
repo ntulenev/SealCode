@@ -104,7 +104,7 @@ internal static class AdminEndpoints
                 return Results.Unauthorized();
             }
 
-            return Results.Json(new { settings.Value.MaxUsersPerRoom, settings.Value.Limits });
+            return Results.Json(new { settings.Value.MaxUsersPerRoom, settings.Value.Limits, settings.Value.Observers });
         });
 
         _ = app.MapGet("/admin/me", (IAdminUserManager adminUserManager, IUsageStatisticsRepository statistics, HttpContext context) =>

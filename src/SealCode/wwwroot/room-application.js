@@ -36,6 +36,7 @@ import { setLanguageOptions } from './language-options.js';
 import { createRoomDeletion } from './room-deletion.js';
 import { generateDisplayName } from './display-name.js';
 import { WhiteboardPresence } from './whiteboard-presence.js';
+import { createObserverPresence } from './observer-presence.js';
 
 /** Creates the room controllers and wires their UI and transport callbacks. */
 export function createRoomApplication({
@@ -67,6 +68,7 @@ export function createRoomApplication({
     deleteRoomError
   } = elements;
   const syncErrors = new SyncErrors();
+  const observerPresence = createObserverPresence(document);
   const downloadLocalText = document.getElementById('downloadLocalText');
   const generateNameBtn = document.getElementById('generateDisplayName');
   let collaborativeUndoEnabled = true;
@@ -99,6 +101,7 @@ export function createRoomApplication({
 
   const connectionLifecycle = createRoomConnection(signalR, '/roomHub');
   const connection = connectionLifecycle.connection;
+  connection.on('ObserverCountChanged', observerPresence);
   const boardPresence = board ? new WhiteboardPresence({
     board,
     document,
@@ -174,6 +177,7 @@ export function createRoomApplication({
     connectedState: signalR.HubConnectionState.Connected,
     onJoinStart: () => joinError.classList.add('hidden'),
     applyJoin: (result) => {
+      observerPresence(result.ObserverCount ?? 0, result.ObserverRevision ?? 0);
       const sync = readSyncResult(result);
       roomNameEl.textContent = sync.name;
       roomNameEl.title = sync.name;
@@ -360,13 +364,18 @@ export function createRoomApplication({
       MetadataRevision: roomView.languageRevision,
       PresenceRevision: roomView.presenceRevision
     }),
-    probe: () => connection.invoke(HubMethods.GetRoomRevisions, roomId),
+    probe: async () => {
+      const revisions = await connection.invoke(HubMethods.GetRoomRevisions, roomId);
+      observerPresence(revisions.ObserverCount ?? 0, revisions.ObserverRevision ?? 0);
+      return revisions;
+    },
     snapshot: () => connection.invoke(HubMethods.SyncYjs, roomId),
     begin: () => {
       yjs.isSynchronizingYjs = true;
       return ++yjs.synchronizationEpoch;
     },
     apply: (result) => {
+      observerPresence(result.ObserverCount ?? 0, result.ObserverRevision ?? 0);
       const sync = readSyncResult(result);
       if (
         !yjs.mergeYjsSyncState(

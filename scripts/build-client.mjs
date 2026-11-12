@@ -8,6 +8,7 @@ await build({
     'admin-snippets-main': 'src/SealCode/wwwroot/admin-snippets-main.js',
     'snippets-main': 'src/SealCode/wwwroot/snippets-main.js',
     room: 'src/SealCode/wwwroot/room.js',
+    watch: 'src/SealCode/wwwroot/watch-main.js',
     whiteboard: 'src/SealCode/wwwroot/whiteboard.js',
     'admin-main': 'src/SealCode/wwwroot/admin-main.js',
     'admin-statistics-main': 'src/SealCode/wwwroot/admin-statistics-main.js',

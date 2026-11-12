@@ -6,6 +6,14 @@ namespace Models;
 public sealed class RoomRevisions
 {
     /// <summary>
+    /// Gets the independent viewer count for participant probes.
+    /// </summary>
+    public int ObserverCount { get; init; }
+    /// <summary>
+    /// Gets the independent viewer count revision.
+    /// </summary>
+    public long ObserverRevision { get; init; }
+    /// <summary>
     /// Initializes a new instance of the <see cref="RoomRevisions"/> class.
     /// </summary>
     /// <param name="documentRevision">The current document revision.</param>

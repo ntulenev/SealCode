@@ -49,9 +49,27 @@ export function createAdminLimitsPage({ document, fetch }) {
       document.getElementById('adminGreeting').textContent = `Hello, ${user.DisplayName}!`;
       render('capacityLimits', [
         ['Rooms', count(limits.MaxRooms), 'Total rooms in this application, across all administrators. Empty rooms also count.'],
-        ['Participants per room', count(config.MaxUsersPerRoom), 'Maximum people connected to the same room at once.'],
-        ['Simultaneous connections', count(limits.MaxConnections), 'Across the application, including connections that have not joined a room. Multiple tabs use separate connections.'],
+        ['Editors per room', count(config.MaxUsersPerRoom), 'Maximum editors connected to the same room. Read-only guests use their own limit.'],
+        ['Editor connections', count(limits.MaxConnections), 'Editor connections across the application, including connections that have not joined a room.'],
         ['Connections per source', count(limits.MaxConnectionsPerSource), 'Shared by clients from the same source address. People on the same office network may share this limit.']
+      ]);
+      const observers = config.Observers;
+      render('observerLimits', [
+        ['Guest access', observers.Enabled ? 'Enabled' : 'Disabled', 'Global availability. A room owner must also create a guest link.'],
+        ['Observers per room', count(observers.MaxPerRoom), 'Guests watching the same room. They cannot edit or create checkpoints.'],
+        ['Observer connections', count(observers.MaxConnections), 'Separate application-wide guest pool, including connections not yet joined.'],
+        ['Observers per source', count(observers.MaxConnectionsPerSource), 'Shared by guests on the same source address, such as one office network.'],
+        ['Combined connection budget', count(limits.MaxConnections + (observers.Enabled ? observers.MaxConnections : 0)), 'Editor pool plus the guest pool when guest access is enabled. The hosting plan must support this total.']
+      ]);
+      render('observerTechnicalLimits', [
+        ['Time to open a guest link', `${count(observers.UnjoinedTimeoutSeconds)} seconds`, 'An unjoined guest transport is closed after this deadline.'],
+        ['New guest connections per source', `${count(observers.NewConnectionsPerSourcePerMinute)} / minute`, 'Independent guest admission rate limit.'],
+        ['Guest requests per connection', `${count(observers.InvocationsPerSecond)} / second`, 'Guest commands are limited separately from editor requests.'],
+        ['Full synchronizations per guest', `${count(observers.SnapshotRequestsPerConnectionPerMinute)} / minute`, 'Limits repeated initial-state and recovery requests.'],
+        ['Concurrent guest snapshots', count(observers.ConcurrentSnapshots), 'Shared permits for creating and sending full guest snapshots.'],
+        ['Queued guest data', bytes(observers.DeliveryQueueBytesPerConnection), 'Maximum queued live data per guest connection.'],
+        ['Queued guest events', count(observers.DeliveryQueueEventsPerConnection), 'Maximum queued live events per guest connection.'],
+        ['Guest send timeout', `${count(observers.SendTimeoutSeconds)} seconds`, 'Slow guest connections are disconnected without blocking editor delivery.']
       ]);
       render('lifecycleLimits', [
         ['Delete empty rooms after', limits.RoomIdleTimeoutMinutes === 0 ? 'Disabled' : `${count(limits.RoomIdleTimeoutMinutes)} minutes`, 'Automatic cleanup after a room is empty and inactive. Occupied rooms are kept.'],

@@ -30,7 +30,7 @@ using Transport.Models;
 
 namespace SealCode.Tests;
 
-public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFactory)
+public sealed partial class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFactory)
     : IClassFixture<SealCodeApiTests.SealCodeAppFactory>
 {
     [Fact]
@@ -184,7 +184,7 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        payload.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("MaxUsersPerRoom", "Limits");
+        payload.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("MaxUsersPerRoom", "Limits", "Observers");
         payload.GetProperty("MaxUsersPerRoom").GetInt32().Should().Be(2);
         var limits = payload.GetProperty("Limits");
         limits.GetProperty("MaxRooms").GetInt32().Should().Be(7);
@@ -193,6 +193,8 @@ public sealed class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFac
         limits.GetProperty("RoomIdleTimeoutMinutes").GetInt32().Should().Be(45);
         var expected = factory.Services.GetRequiredService<IOptions<Models.Configuration.ApplicationConfiguration>>().Value.Limits;
         limits.GetRawText().Should().Be(JsonSerializer.Serialize(expected));
+        var observers = factory.Services.GetRequiredService<IOptions<Models.Configuration.ApplicationConfiguration>>().Value.Observers;
+        payload.GetProperty("Observers").GetRawText().Should().Be(JsonSerializer.Serialize(observers));
     }
 
     [Fact]

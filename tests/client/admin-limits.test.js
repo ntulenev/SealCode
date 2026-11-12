@@ -12,6 +12,10 @@ function element() {
 }
 const config = {
   MaxUsersPerRoom: 3,
+  Observers: { Enabled: false, MaxPerRoom: 20, MaxConnections: 40, MaxConnectionsPerSource: 20,
+    UnjoinedTimeoutSeconds: 15, NewConnectionsPerSourcePerMinute: 30, InvocationsPerSecond: 5,
+    SnapshotRequestsPerConnectionPerMinute: 4, ConcurrentSnapshots: 2,
+    DeliveryQueueBytesPerConnection: 1048576, DeliveryQueueEventsPerConnection: 256, SendTimeoutSeconds: 10 },
   Limits: {
     MaxRooms: 12, MaxConnections: 80, MaxConnectionsPerSource: 20,
     RoomIdleTimeoutMinutes: 0, UnjoinedConnectionTimeoutSeconds: 60,
@@ -25,7 +29,7 @@ const config = {
 async function fixture(fetchConfig = async () => ({ ok: true, json: async () => config })) {
   const elements = Object.fromEntries([
     'limitsStatus', 'limitsContent', 'retryLimits', 'adminGreeting',
-    'capacityLimits', 'lifecycleLimits', 'technicalLimits'
+    'capacityLimits', 'observerLimits', 'observerTechnicalLimits', 'lifecycleLimits', 'technicalLimits'
   ].map((id) => [id, element()]));
   const page = createAdminLimitsPage({
     document: { getElementById: (id) => elements[id], createElement: element },
@@ -48,6 +52,15 @@ test('renders configured values and units, including disabled cleanup', async ()
   assert.equal(elements.limitsContent.hidden, false);
   assert.equal(elements.retryLimits.hidden, true);
   assert.equal(elements.limitsStatus.textContent, '');
+  assert.deepEqual(elements.observerLimits.children.slice(0, 5).map(row => row.children[1].textContent), ['Disabled', '20', '40', '20', '80']);
+});
+
+test('observer limits use configured values and include enabled guest pool in the total', async () => {
+  const elements = await fixture(async () => ({ ok: true, json: async () => ({
+    ...config, Observers: { ...config.Observers, Enabled: true, MaxPerRoom: 12, MaxConnections: 30 }
+  }) }));
+  assert.deepEqual(elements.observerLimits.children.slice(0, 5).map(row => row.children[1].textContent), ['Enabled', '12', '30', '20', '110']);
+  assert.equal(elements.observerTechnicalLimits.children[5].children[1].textContent, '1,024 KiB');
 });
 
 test('retry recovers from a request failure and renders an enabled timeout', async () => {

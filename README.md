@@ -90,6 +90,32 @@ cursors and typing, selection and copy indicators.
 | --- | --- |
 | ![Collaborative JavaScript room with four participants, syntax highlighting and presence indicators in dark theme](docs/images/room-dark.png) | ![The shared code editor and participant bar in light theme](docs/images/room-light.png) |
 
+### Read-only presentations
+
+The owner can create a separate guest link while the team continues editing.
+Observers watch the same live code or whiteboard without taking editor places.
+The compact eye counter counts guest tabs; admin Limits shows the independent
+20-per-room / 40-per-application budgets and whether guest access is enabled.
+
+| Owner controls and guest counter | Guest code view, light theme |
+| --- | --- |
+| ![Room with two editors and three observers shown separately beside the guest-link controls](docs/images/observer-owner-dark.png) | ![Read-only guest presentation with shared code, editor names and a compact observer count](docs/images/observer-code-light.png) |
+
+<details>
+<summary>Create, copy and revoke a guest link</summary>
+
+![Guest link controls in a live room: create or replace a link, copy it, or disable guest access](docs/images/observer-link-dark.png)
+
+</details>
+
+| Read-only whiteboard | Observer limits in the admin panel |
+| --- | --- |
+| ![Guest watching a system-design board with drawing controls disabled](docs/images/observer-whiteboard-dark.png) | ![Admin observer limits showing enabled guest access, 20 viewers per room, 40 guest connections and 200 combined connections](docs/images/observer-limits-light.png) |
+
+| Mobile guest view | Mobile observer limits |
+| --- | --- |
+| <img src="docs/images/observer-mobile-light.png" alt="Read-only code presentation and compact guest counter on a narrow screen" width="280" /> | <img src="docs/images/observer-limits-mobile-light.png" alt="Observer limits and independent guest connection budgets on a narrow screen" width="280" /> |
+
 ### Whiteboard workspace
 
 Whiteboard rooms replace the code editor with an infinite diagram canvas and a
@@ -1051,6 +1077,58 @@ connections. Run a load test on the intended host before sizing the process for
 many simultaneously active rooms: a connection count and a 16 MiB message limit
 do not bound transient allocations from serialization or document recovery.
 
+### Read-only presentation guests
+
+Room owners and super admins can generate a separate **Guest link** from the
+room header. Guests need no account/name, can watch code or whiteboard changes,
+and cannot write, change language, send presence activity, or create checkpoints.
+A compact viewer count appears beside the participant list; it counts connected
+tabs, independently of the five editor places. Replacing/disabling a link revokes
+its existing sessions. The editor link keeps its existing behavior.
+
+Presentation links use `/watch#<random-capability>` and never contain the editor
+room ID. The server retains the admission hash and an encrypted copy of the token
+in process memory. The owner or a super admin can copy the same link after a page
+reload without replacing it or disconnecting guests. Share this link only with people
+who should be able to read/copy the room; recipients can forward it.
+Copy always checks the current link on the server first. If another tab replaces
+the link, Copy uses the replacement; if it revokes access or the check fails,
+the cached link is not copied.
+Guest-link panels also synchronize automatically: tabs in the same browser
+profile exchange change notifications, while separate sessions poll the server
+every five seconds. Returning to a tab or opening its panel also refreshes the
+state. Notifications contain no guest token; each panel checks its own permissions
+with the server. Concurrent changes are reconciled after each command.
+
+The feature defaults to disabled. Enable it with `Observers__Enabled=true` in
+the deployment environment after verifying hosting capacity. No credentials or
+changes to the checked-in appsettings are required. The independent defaults are
+20 guests per room, 40 guest connections per process (including unjoined clients),
+and 20 guests per source. They do not consume the existing 160 editor connection
+permits, so a fully occupied process can have **200 total hub connections**.
+The host/proxy must support that total. Guest connections have separate rate
+limits and an 8 KiB incoming-message limit; large outgoing snapshots share two
+delivery permits. Slow consumers are disconnected rather than blocking editors.
+
+Guests do not keep otherwise empty rooms alive. Idle expiration, manual deletion,
+or process restart ends their sessions. Documents/links remain in memory only.
+See [the implementation specification](docs/guest-observer-spec.md) for all budgets,
+[verification results](docs/guest-observer-verification.md) for the 512 MB capacity assessment,
+and [the local load runner](tests/observer-load.mjs) for reproducible capacity checks:
+
+```sh
+npm run build:client
+dotnet build src/SealCode/SealCode.csproj -p:SkipClientBuild=true
+node tests/observer-load.mjs 30
+```
+
+The runner creates a disposable host with synthetic accounts and documents; it
+does not copy the repository's appsettings or use production connection strings.
+On Windows it samples the server's working set, private bytes and CPU. A local
+512 MiB target / 320 MiB managed-heap limit is a test profile, not a production
+memory guarantee. CPU quota, IIS/x86 behavior, network and hosting WebSocket limits
+must be checked on the deployment host before raising guest limits.
+
 ### Checkpoint thresholds
 
 | Setting | Default | Valid range |
@@ -1073,7 +1151,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=1.22.0`, so releases bypass previously cached resource URLs.
+query string `?v=2.2.0`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` and `Resources/Snippets/manage.html` pages. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
@@ -1131,6 +1209,12 @@ With Node.js 20+, the .NET 10 SDK and the repository dependencies installed:
 ```bash
 npx playwright install chromium
 node scripts/capture-readme.mjs
+```
+
+To refresh the read-only presentation, guest counter and admin observer-limit images:
+
+```bash
+node scripts/capture-observers.mjs
 ```
 
 To refresh only the dark and light examples with two named remote cursors:

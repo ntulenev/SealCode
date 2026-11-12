@@ -23,5 +23,9 @@ export function testHostCommand(baseURL, admins) {
     })
   );
   process.on('exit', () => rmSync(root, { recursive: true, force: true }));
-  return `dotnet build src/SealCode/SealCode.csproj -c Debug -p:SkipClientBuild=true && dotnet "${resolve('src/SealCode/bin/Debug/net10.0/SealCode.dll')}" --contentRoot "${root}" --webroot "${resolve('src/SealCode/wwwroot')}" --urls ${baseURL}`;
+  const host = `dotnet "${resolve('src/SealCode/bin/Debug/net10.0/SealCode.dll')}" --contentRoot "${root}" --webroot "${resolve('src/SealCode/wwwroot')}" --urls ${baseURL}`;
+  // A soak test may be holding the same Windows DLL open. Callers opting out
+  // of the build must have built the current revision explicitly first.
+  return process.env.SEALCODE_E2E_SKIP_BUILD === 'true'
+    ? host : `dotnet build src/SealCode/SealCode.csproj -c Debug -p:SkipClientBuild=true && ${host}`;
 }

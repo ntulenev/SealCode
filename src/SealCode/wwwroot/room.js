@@ -1,4 +1,5 @@
 import { createRoomApplication } from './room-application.js';
+import { mountObserverLink } from './observer-link.js';
 import * as monaco from 'monaco-editor';
 import * as signalR from '@microsoft/signalr';
 import * as Y from 'yjs';
@@ -53,6 +54,7 @@ const deleteRoomError = document.getElementById('deleteRoomError');
 
 const pathSegments = new URL(window.location.href).pathname.split('/').filter(Boolean);
 const roomId = pathSegments[pathSegments.length - 1] ?? '';
+void mountObserverLink({ document, roomId, fetch, window }).catch(() => {});
 createRoomApplication({
   monaco,
   signalR,
