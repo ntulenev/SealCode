@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
+using System.Net.Mail;
 
 using Microsoft.Extensions.Options;
 
@@ -60,10 +61,11 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
         {
             var hasClientId = !string.IsNullOrWhiteSpace(google.ClientId);
             var domains = google.AllowedHostedDomains;
-            if (domains is null || hasClientId != (domains.Length > 0)
+            var emails = google.AllowedEmails;
+            if (domains is null || emails is null || hasClientId != (domains.Length > 0 || emails.Length > 0)
                 || (hasClientId && !google.ClientId!.EndsWith(".apps.googleusercontent.com", StringComparison.Ordinal)))
             {
-                errors.Add("GoogleSignIn requires a web client ID and at least one hosted domain, or neither.");
+                errors.Add("GoogleSignIn requires a web client ID and at least one hosted domain or email address, or neither.");
             }
             if (domains is not null && (domains.Any(domain =>
                     string.IsNullOrWhiteSpace(domain)
@@ -73,6 +75,16 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
                 || domains.Distinct(StringComparer.OrdinalIgnoreCase).Count() != domains.Length))
             {
                 errors.Add("GoogleSignIn hosted domains must be unique DNS names.");
+            }
+            if (emails is not null && (emails.Any(email =>
+                    string.IsNullOrWhiteSpace(email)
+                    || email.Any(char.IsWhiteSpace)
+                    || email.Contains('*', StringComparison.Ordinal)
+                    || !MailAddress.TryCreate(email, out var address)
+                    || address.Address != email)
+                || emails.Distinct(StringComparer.OrdinalIgnoreCase).Count() != emails.Length))
+            {
+                errors.Add("GoogleSignIn email addresses must be unique full addresses without whitespace or wildcards.");
             }
         }
         foreach (var admin in options.AdminUsers ?? [])

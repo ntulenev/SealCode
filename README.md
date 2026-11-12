@@ -591,10 +591,10 @@ Run only snippet tests with `dotnet test src/SealCode.slnx --filter FullyQualifi
 HTTP integration cases also carry `Category=Integration`. CI runs these projects
 through the solution and discovers `snippets.spec.js` in its full browser suite.
 
-## Optional Google organization sign-in
+## Optional Google sign-in
 
-Google sign-in is disabled until both a web client ID and one or more allowed
-Google Workspace hosted domains are configured. Existing password accounts
+Google sign-in is disabled until a web client ID and at least one allowed
+Google Workspace hosted domain or individual email address are configured. Existing password accounts
 continue to work. Every permitted Google user receives ordinary admin rights:
 they may create rooms and delete their own rooms, but cannot delete another
 admin's rooms. Google sign-in never issues an MCP token; MCP remains limited
@@ -608,16 +608,40 @@ to bearer tokens on configured `AdminUsers` accounts.
    a JavaScript callback, so no redirect URI or client secret is used.
 3. Configure `GoogleSignIn__ClientId` with the web client ID and
    `GoogleSignIn__AllowedHostedDomains__0` with an exact Workspace hosted
-   domain, such as `example.org`. Additional domains use index `__1`,
-   `__2`, and so on. Restart the application.
+   domain, such as `mywork.com`. To allow individual accounts, including Gmail,
+   set `GoogleSignIn__AllowedEmails__0` to a full address such as `user123@gmail.com`.
+   Additional entries in either list use index `__1`, `__2`, and so on.
+   Either list can be empty; a configured client ID requires at least one entry
+   across the two lists. Restart the application after changing configuration.
 4. Publish the External app in Google Auth Platform when it is ready for
    organization-wide use; Testing mode admits only listed test users.
 
 The backend validates the Google-signed ID token, its audience and verified
-email, then requires an exact match on the token's `hd` hosted-domain claim.
-An email address ending in the allowed domain without that Google Workspace
-claim is not sufficient. A Google user's stable `sub` identifies room ownership;
-their email is displayed as the owner. Domain changes in configuration take
+email, then accepts either an exact match on the token's `hd` hosted-domain claim
+in `AllowedHostedDomains` **or** an exact full email match in `AllowedEmails`.
+Both comparisons ignore case. An explicitly listed email does not need an `hd`
+claim. An email address ending in an allowed domain without that Workspace claim
+is insufficient unless the full address is explicitly listed. Email entries must
+be unique full addresses without whitespace or wildcards; aliases and Gmail
+dot/plus variants must be listed separately.
+
+For example, this configuration admits every Workspace user in `mywork.com`
+and the individual `user123@gmail.com` account:
+
+```json
+"GoogleSignIn": {
+  "ClientId": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+  "AllowedHostedDomains": ["mywork.com"],
+  "AllowedEmails": ["user123@gmail.com"]
+}
+```
+
+The checked-in configuration keeps the client ID and both lists empty. Set real
+deployment values locally or through environment variables; do not commit
+password hashes, MCP tokens, connection strings or other credentials.
+
+A Google user's stable `sub` identifies room ownership;
+their email is displayed as the owner. Domain and email changes in configuration take
 effect for existing sessions on the next request. Existing signed-in sessions
 can otherwise remain valid for up to eight hours after an account is disabled
 at Google. A Google Workspace administrator may block third-party sign-in
@@ -738,7 +762,7 @@ away to leave. No participant account or installation is required.
 
 - `src/SealCode/appsettings.json`
 - `AdminUsers`: unique admin names and Identity V3 `PasswordHash` values. Include `IsSuperAdmin` to allow deleting rooms created by other admins. Legacy `Password` is accepted only in Development.
-- `GoogleSignIn`: optional web `ClientId` and exact `AllowedHostedDomains`; both must be set together.
+- `GoogleSignIn`: optional web `ClientId`, exact `AllowedHostedDomains` and individual `AllowedEmails`. Enable with a client ID and at least one entry in either list; domain or email matching grants access.
 - `Languages`: list of language identifiers supported by Monaco Editor (example: `csharp`, `sql`).
 - `MaxUsersPerRoom`: integer from 1 to 5.
 - `CollaborativeUndoEnabled`: optional feature flag; defaults to `true`.
