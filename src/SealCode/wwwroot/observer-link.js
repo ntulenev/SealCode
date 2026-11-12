@@ -57,5 +57,5 @@ export async function mountObserverLink({ document, roomId, fetch, window }) {
   });
   content.append(description, create, link, copy, disable, status);
   panel.append(summary, content);
-  document.querySelector('.room-meta')?.append(panel);
+  document.querySelector('.room-heading')?.append(panel);
 }
