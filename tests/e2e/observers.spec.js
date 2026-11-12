@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures.js';
 import { csrf } from './admin-token.js';
 
-async function setup(browser, isolatedHost, kind = 'code', observerSettings = {}, withGuestLink = true) {
-  const { baseURL } = await isolatedHost({ ConnectionStrings: { SealCode: '' }, Observers: { Enabled: true, ...observerSettings } });
+async function setup(browser, isolatedHost, kind = 'code', observerSettings = {}, withGuestLink = true, extraSettings = {}) {
+  const { baseURL } = await isolatedHost({ ConnectionStrings: { SealCode: '' }, Observers: { Enabled: true, ...observerSettings }, ...extraSettings });
   const owner = await browser.newContext({ baseURL });
   const login = await owner.request.post('/admin/login', { headers: await csrf(owner.request), form: { name: 'BrowserAdmin', password: 'browser-pass' } });
   expect(login.ok()).toBe(true);
@@ -148,7 +148,7 @@ test('guest link buttons follow creation, reload and revocation without copying 
 });
 
 for (const action of ['revoke', 'replace']) {
-  test(`a second owner tab cannot copy a stale guest link after ${action}`, async ({ browser, isolatedHost }) => {
+  test(`a second owner tab automatically updates its link and buttons after ${action}`, async ({ browser, isolatedHost }) => {
     const { owner, guests, editor, guest, id } = await setup(browser, isolatedHost);
     try {
       const second = await owner.newPage();
@@ -176,15 +176,17 @@ for (const action of ['revoke', 'replace']) {
         replacement = await editor.getByRole('textbox', { name: 'Read-only guest link' }).inputValue();
         expect(replacement).not.toBe(original);
       }
-      // Keep the other tab's stale state to exercise the authoritative check on Copy.
-      await expect(input).toHaveValue(original);
-      await second.getByText('Copy link', { exact: true }).click();
       if (action === 'revoke') {
         await expect(second.getByText('Guest access disabled.', { exact: true })).toBeVisible();
         await expect(second.getByText('Copy link', { exact: true })).toBeHidden();
+        await expect(second.getByText('Disable guest access', { exact: true })).toBeHidden();
         await expect(input).toHaveValue('');
+        await second.getByText('Copy link', { exact: true }).dispatchEvent('click');
         expect(await second.evaluate(() => window.copiedLinks)).toEqual([]);
       } else {
+        await expect(input).toHaveValue(replacement);
+        await expect(second.getByText('Copy link', { exact: true })).toBeEnabled();
+        await second.getByText('Copy link', { exact: true }).click();
         await expect(second.getByText('Guest link copied.', { exact: true })).toBeVisible();
         expect(await second.evaluate(() => window.copiedLinks)).toEqual([replacement]);
         await expect(input).toHaveValue(replacement);
@@ -197,6 +199,63 @@ for (const action of ['revoke', 'replace']) {
     } finally { await guests.close(); await owner.close(); }
   });
 }
+
+test('owner and super-admin profiles reconcile creation, concurrent rotations, counters, revoke and lost permissions', async ({ browser, isolatedHost }) => {
+  const { owner, guests, editor, guest, id, baseURL } = await setup(browser, isolatedHost, 'code', {}, false, {
+    AdminUsers: [
+      { Name: 'BrowserAdmin', Password: 'browser-pass', IsSuperAdmin: false },
+      { Name: 'Root', Password: 'root-pass', IsSuperAdmin: true },
+      { Name: 'Other', Password: 'other-pass', IsSuperAdmin: false }
+    ]
+  });
+  const root = await browser.newContext({ baseURL });
+  const stranger = await browser.newContext({ baseURL });
+  try {
+    expect((await root.request.post('/admin/login', { headers: await csrf(root.request), form: { name: 'Root', password: 'root-pass' } })).ok()).toBe(true);
+    expect((await stranger.request.post('/admin/login', { headers: await csrf(stranger.request), form: { name: 'Other', password: 'other-pass' } })).ok()).toBe(true);
+    const admin = await root.newPage();
+    const denied = await stranger.newPage();
+    for (const [page, name] of [[admin, 'Super admin'], [denied, 'Other admin']]) {
+      await page.goto(`/room/${id}`);
+      await page.locator('#displayNameInput').fill(name); await page.locator('#joinBtn').click();
+      await expect(page.locator('#joinOverlay')).toBeHidden();
+    }
+    await expect(denied.locator('.observer-link')).toHaveCount(0);
+    for (const page of [editor, admin]) await page.getByText('Guest link', { exact: true }).click();
+    const ownerInput = editor.getByRole('textbox', { name: 'Read-only guest link', includeHidden: true });
+    const rootInput = admin.getByRole('textbox', { name: 'Read-only guest link', includeHidden: true });
+    await expect(rootInput).toBeHidden();
+    editor.on('dialog', dialog => dialog.accept()); admin.on('dialog', dialog => dialog.accept());
+    await editor.getByRole('button', { name: 'Create / replace link' }).click();
+    await expect(ownerInput).toBeVisible();
+    const created = await ownerInput.inputValue();
+    // Separate browser contexts cannot exchange BroadcastChannel messages: polling must converge.
+    await expect(rootInput).toHaveValue(created);
+    await expect(admin.getByText('Copy link', { exact: true })).toBeVisible();
+    await guest.goto(created); await expect(guest.locator('#watchStatus')).toHaveText('Live · Read only');
+    for (const page of [editor, admin]) await expect(page.locator('#observerCount')).toHaveText('👁 1');
+    await Promise.all([
+      editor.getByRole('button', { name: 'Create / replace link' }).click(),
+      admin.getByRole('button', { name: 'Create / replace link' }).click()
+    ]);
+    await expect.poll(async () => {
+      const response = await owner.request.get(`/room/${id}/observer-link`);
+      const current = new URL((await response.json()).Url, baseURL).href;
+      return (await ownerInput.inputValue()) === current && (await rootInput.inputValue()) === current && current !== created;
+    }).toBe(true);
+    await expect(guest.locator('#watchStatus')).toContainText('unavailable');
+    for (const page of [editor, admin]) await expect(page.locator('#observerCount')).toBeHidden();
+    await admin.getByRole('button', { name: 'Disable guest access' }).click();
+    for (const page of [editor, admin]) {
+      await expect(page.getByText('Copy link', { exact: true })).toBeHidden();
+      await expect(page.getByText('Disable guest access', { exact: true })).toBeHidden();
+    }
+    // A previously authorized tab must clear the capability after its identity loses ownership.
+    expect((await owner.request.post('/admin/login', { headers: await csrf(owner.request), form: { name: 'Other', password: 'other-pass' } })).ok()).toBe(true);
+    await expect(editor.locator('.observer-link')).toBeHidden();
+    await expect(ownerInput).toHaveValue('');
+  } finally { await root.close(); await stranger.close(); await guests.close(); await owner.close(); }
+});
 
 test('owner can generate a distinct guest link from the room UI', async ({ browser, isolatedHost }) => {
   const { owner, guests, editor, guest, id } = await setup(browser, isolatedHost);

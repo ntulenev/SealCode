@@ -1094,6 +1094,11 @@ who should be able to read/copy the room; recipients can forward it.
 Copy always checks the current link on the server first. If another tab replaces
 the link, Copy uses the replacement; if it revokes access or the check fails,
 the cached link is not copied.
+Guest-link panels also synchronize automatically: tabs in the same browser
+profile exchange change notifications, while separate sessions poll the server
+every five seconds. Returning to a tab or opening its panel also refreshes the
+state. Notifications contain no guest token; each panel checks its own permissions
+with the server. Concurrent changes are reconciled after each command.
 
 The feature defaults to disabled. Enable it with `Observers__Enabled=true` in
 the deployment environment after verifying hosting capacity. No credentials or
