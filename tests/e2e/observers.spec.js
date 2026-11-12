@@ -85,16 +85,18 @@ test('whiteboard guest receives shapes and can pan without drawing or editing la
 });
 
 test('guest link buttons follow creation, reload and revocation without copying an empty link', async ({ browser, isolatedHost }) => {
-  const { owner, guests, editor } = await setup(browser, isolatedHost, 'code', {}, false);
+  const { owner, guests, editor, guest } = await setup(browser, isolatedHost, 'code', {}, false);
   try {
     const copy = editor.getByText('Copy link', { exact: true });
     const disable = editor.getByRole('button', { name: 'Disable guest access', includeHidden: true });
     const input = editor.getByRole('textbox', { name: 'Read-only guest link', includeHidden: true });
-    await editor.evaluate(() => {
+    const mockClipboard = () => {
       window.copiedLinks = [];
       Object.defineProperty(navigator, 'clipboard', { configurable: true,
         value: { writeText: async value => window.copiedLinks.push(value) } });
-    });
+    };
+    await editor.addInitScript(mockClipboard);
+    await editor.evaluate(mockClipboard);
     await editor.getByText('Guest link', { exact: true }).click();
     for (const width of [1440, 390]) {
       await editor.setViewportSize({ width, height: 900 });
@@ -112,12 +114,26 @@ test('guest link buttons follow creation, reload and revocation without copying 
     await expect(disable).toBeVisible(); await expect(disable).toBeEnabled();
     await copy.click();
     expect(await editor.evaluate(() => window.copiedLinks)).toEqual([await input.inputValue()]);
+    const originalLink = await input.inputValue();
+    await guest.goto(originalLink);
+    await expect(guest.locator('#watchStatus')).toHaveText('Live · Read only');
+    const rotations = [];
+    editor.on('request', request => {
+      if (request.method() === 'POST' && request.url().endsWith('/observer-link')) rotations.push(request.url());
+    });
     await editor.reload();
     await editor.locator('#displayNameInput').fill('Presenter');
     await editor.locator('#joinBtn').click();
     await expect(editor.locator('#joinOverlay')).toBeHidden();
     await editor.getByText('Guest link', { exact: true }).click();
-    await expect(copy).toBeHidden(); await expect(copy).toBeDisabled();
+    await expect(copy).toBeVisible(); await expect(copy).toBeEnabled();
+    await expect(input).toHaveValue(originalLink);
+    await copy.click();
+    expect(await editor.evaluate(() => window.copiedLinks)).toEqual([originalLink]);
+    expect(rotations).toEqual([]);
+    await expect(editor.locator('#observerCount')).toHaveText('👁 1');
+    await editor.evaluate(() => window.monaco.editor.getModels()[0].setValue('SELECT 7;'));
+    await expect(guest.locator('.view-lines')).toContainText('SELECT 7;');
     await expect(disable).toBeVisible(); await expect(disable).toBeEnabled();
     await disable.click();
     await expect(editor.getByText('Guest access disabled.', { exact: true })).toBeVisible();

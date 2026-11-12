@@ -61,13 +61,18 @@ test('owner creates, copies and revokes a link without retaining credentials in 
   assert(f.node('Guest access disabled.'));
 });
 
-test('a link retained by the server can be revoked after reload without copying an unknown token', async () => {
+test('a retained link can be copied after reload without rotation and revoked after a failed attempt', async () => {
   const f = fixture();
-  f.responses.push({ ok: true, json: async () => ({ Enabled: true, HasLink: true, MaxPerRoom: 20 }) });
+  f.responses.push({ ok: true, json: async () => ({ Enabled: true, HasLink: true, Url: '/watch#existing-capability', MaxPerRoom: 20 }) });
   await mountObserverLink(f);
   const copy = f.node('Copy link');
   const disable = f.node('Disable guest access');
-  assert.equal(copy.hidden, true); assert.equal(copy.disabled, true);
+  assert.equal(copy.hidden, false); assert.equal(copy.disabled, false);
+  const copied = [];
+  f.window.navigator.clipboard.writeText = async value => copied.push(value);
+  await copy.handlers.click();
+  assert.deepEqual(copied, ['https://test.invalid/watch#existing-capability']);
+  assert.equal(f.requests.length, 1);
   assert.equal(disable.hidden, false); assert.equal(disable.disabled, false);
   f.responses.push({ ok: false });
   disable.handlers.click(); await tick();

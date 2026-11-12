@@ -6,6 +6,7 @@ using System.Threading.Channels;
 
 using Abstractions;
 
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
@@ -27,6 +28,8 @@ public sealed class ObserverSessions : BackgroundService
 #pragma warning restore CA1515
 {
     private readonly Lock _gate = new();
+    private readonly IDataProtector _linkProtector = new EphemeralDataProtectionProvider()
+        .CreateProtector("SealCode.ObserverLinks");
     private readonly Dictionary<string, Guest> _connections = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Presentation> _rooms = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Presentation> _tokens = new(StringComparer.Ordinal);
@@ -70,7 +73,7 @@ public sealed class ObserverSessions : BackgroundService
     }
 
     /// <summary>
-    /// Creates or rotates an independent bearer capability; only its hash is retained.
+    /// Creates or rotates a capability, retaining its admission hash and an encrypted owner copy.
     /// </summary>
     /// <param name="room">The existing room to present.</param>
     /// <returns>The relative guest URL containing a newly generated capability.</returns>
@@ -91,6 +94,7 @@ public sealed class ObserverSessions : BackgroundService
             Revoke(presentation);
             var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
             presentation.TokenHash = Hash(token);
+            presentation.ProtectedToken = _linkProtector.Protect(token);
             _tokens.Add(presentation.TokenHash, presentation);
             return "/watch#" + token;
         }
@@ -112,15 +116,16 @@ public sealed class ObserverSessions : BackgroundService
     }
 
     /// <summary>
-    /// Reports whether a room has an active guest capability without returning its token.
+    /// Recovers the current guest URL for the owner without rotating its capability or sessions.
     /// </summary>
     /// <param name="roomId">The room whose guest access is inspected.</param>
-    /// <returns>True when a guest capability exists; otherwise, false.</returns>
-    public bool HasLink(RoomId roomId)
+    /// <returns>The relative guest URL when a capability exists; otherwise, null.</returns>
+    public string? GetLink(RoomId roomId)
     {
         lock (_gate)
         {
-            return _rooms.TryGetValue(roomId.Value, out var room) && room.TokenHash is not null;
+            return _rooms.TryGetValue(roomId.Value, out var room) && room.ProtectedToken is not null
+                ? "/watch#" + _linkProtector.Unprotect(room.ProtectedToken) : null;
         }
     }
 
@@ -394,6 +399,7 @@ public sealed class ObserverSessions : BackgroundService
         }
 
         room.TokenHash = null;
+        room.ProtectedToken = null;
         room.SnapshotPayload = null;
         room.PendingUpdates.Clear();
         room.PendingBytes = 0;
@@ -818,6 +824,7 @@ public sealed class ObserverSessions : BackgroundService
 
         public RoomState State { get; }
         public string? TokenHash { get; set; }
+        public string? ProtectedToken { get; set; }
         public long Generation { get; set; }
         public int Count { get; set; }
         public long CountRevision { get; set; }

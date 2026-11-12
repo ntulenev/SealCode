@@ -1087,7 +1087,9 @@ tabs, independently of the five editor places. Replacing/disabling a link revoke
 its existing sessions. The editor link keeps its existing behavior.
 
 Presentation links use `/watch#<random-capability>` and never contain the editor
-room ID. The server retains only the token hash. Share this link only with people
+room ID. The server retains the admission hash and an encrypted copy of the token
+in process memory. The owner or a super admin can copy the same link after a page
+reload without replacing it or disconnecting guests. Share this link only with people
 who should be able to read/copy the room; recipients can forward it.
 
 The feature defaults to disabled. Enable it with `Observers__Enabled=true` in

@@ -15,7 +15,7 @@ namespace SealCode.Tests;
 public sealed partial class SealCodeApiTests
 {
     [Fact]
-    public async Task GuestLinkStatusReportsCreationAndRevocationWithoutReturningTheCapability()
+    public async Task GuestLinkStatusRestoresTheCurrentCapabilityForTheOwnerUntilRevoked()
     {
         using var factory = ObserverFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -29,12 +29,14 @@ public sealed partial class SealCodeApiTests
         var active = await client.GetFromJsonAsync<JsonElement>(endpoint);
         Assert.True(active.GetProperty("HasLink").GetBoolean());
         Assert.Equal(0, active.GetProperty("ObserverCount").GetInt32());
-        Assert.False(active.TryGetProperty("Url", out _));
-        Assert.DoesNotContain(capability.Split('#')[1], active.GetRawText(), StringComparison.Ordinal);
+        Assert.Equal(capability, active.GetProperty("Url").GetString());
+        var repeated = await client.GetFromJsonAsync<JsonElement>(endpoint);
+        Assert.Equal(capability, repeated.GetProperty("Url").GetString());
         using var revoke = await GuestLinkCommandAsync(client, "DELETE", endpoint);
         Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
         var revoked = await client.GetFromJsonAsync<JsonElement>(endpoint);
         Assert.False(revoked.GetProperty("HasLink").GetBoolean());
+        Assert.False(revoked.TryGetProperty("Url", out var revokedUrl) && revokedUrl.ValueKind != JsonValueKind.Null);
     }
 
     [Theory]
@@ -64,6 +66,9 @@ public sealed partial class SealCodeApiTests
         Assert.DoesNotContain(id, initial.GetRawText(), StringComparison.Ordinal);
         var revisions = await guest.InvokeAsync<JsonElement>("GetObserverRevisions");
         Assert.Equal(1, revisions.GetProperty("ObserverCount").GetInt32());
+        var retained = await client.GetFromJsonAsync<JsonElement>($"/room/{id}/observer-link");
+        Assert.Equal(url, retained.GetProperty("Url").GetString());
+        Assert.Equal(1, (await guest.InvokeAsync<JsonElement>("GetObserverRevisions")).GetProperty("ObserverCount").GetInt32());
         var editorState = await editor.InvokeAsync<JoinRoomResult>("SyncYjs", id);
         Assert.Equal(["Presenter"], editorState.Users);
         Assert.Equal(1, editorState.ObserverCount);

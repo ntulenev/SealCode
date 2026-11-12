@@ -1,6 +1,6 @@
 import { token } from './admin-token.js';
 
-/** Owner-only presentation-link controls; capability stays in this tab's memory.
+/** Owner-only presentation-link controls; the server restores the current link on reload.
  * @param {{document: Document, roomId: string, fetch: typeof globalThis.fetch, window: Window}} options
  */
 export async function mountObserverLink({ document, roomId, fetch, window }) {
@@ -27,7 +27,7 @@ export async function mountObserverLink({ document, roomId, fetch, window }) {
   disable.textContent = 'Disable guest access';
   const link = document.createElement('input');
   link.type = 'text';
-  link.value = '';
+  link.value = settings.Url ? new URL(settings.Url, window.location.origin).href : '';
   link.readOnly = true;
   link.hidden = true;
   link.setAttribute('aria-label', 'Read-only guest link');
