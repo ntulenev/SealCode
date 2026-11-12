@@ -123,7 +123,7 @@ public sealed class ConfigurationValidationTests
     }
 
     [Fact]
-    public void GoogleSignInRequiresBothClientIdAndUniqueHostedDomains()
+    public void GoogleSignInRequiresClientIdAndUniqueHostedDomainsOrEmails()
     {
         var admins = new[] { new AdminUserConfiguration { Name = "Admin", Password = "valid" } };
         Assert.True(Validator("Development").Validate(null, Settings(admins)).Succeeded);
@@ -150,5 +150,60 @@ public sealed class ConfigurationValidationTests
             ClientId = "client.apps.googleusercontent.com",
             AllowedHostedDomains = ["not a domain"]
         })).Failed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GoogleSignInAcceptsEmailOnlyOrCombinedAllowlists(bool includeDomain)
+    {
+        Assert.True(Validator("Development").Validate(null, Settings([], google: new()
+        {
+            ClientId = "client.apps.googleusercontent.com",
+            AllowedHostedDomains = includeDomain ? ["example.org"] : [],
+            AllowedEmails = ["user123@gmail.com", "other@example.org"]
+        })).Succeeded);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("not-an-email")]
+    [InlineData("user123@gmail.com ")]
+    [InlineData(" user123@gmail.com")]
+    [InlineData("Display Name <user123@gmail.com>")]
+    [InlineData("*@gmail.com")]
+    [InlineData("user@*")]
+    [InlineData("user@gmail.com\n")]
+    public void GoogleSignInRejectsMalformedEmailEntriesEvenWithAllowedDomain(string? email)
+    {
+        Assert.True(Validator("Development").Validate(null, Settings([], google: new()
+        {
+            ClientId = "client.apps.googleusercontent.com",
+            AllowedHostedDomains = ["example.org"],
+            AllowedEmails = [email!]
+        })).Failed);
+    }
+
+    [Fact]
+    public void GoogleSignInRejectsDuplicateEmailsMissingClientIdAndNullAllowlists()
+    {
+        GoogleSignInConfiguration[] invalid =
+        [
+            new() { AllowedEmails = ["user123@gmail.com"] },
+            new() { ClientId = "invalid", AllowedEmails = ["user123@gmail.com"] },
+            new()
+            {
+                ClientId = "client.apps.googleusercontent.com",
+                AllowedEmails = ["user123@gmail.com", "USER123@GMAIL.COM"]
+            },
+            new() { AllowedEmails = null! },
+            new() { AllowedHostedDomains = null! }
+        ];
+        foreach (var google in invalid)
+        {
+            Assert.True(Validator("Development").Validate(null, Settings([], google: google)).Failed);
+        }
     }
 }

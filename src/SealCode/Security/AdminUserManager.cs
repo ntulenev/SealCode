@@ -146,7 +146,7 @@ internal sealed class AdminUserManager : IAdminUserManager
             new Claim(ClaimTypes.Email, identity.Email),
             new Claim("admin_provider", "google"),
             new Claim("google_sub", identity.Subject),
-            new Claim("google_hd", identity.HostedDomain)
+            new Claim("google_hd", identity.HostedDomain ?? "")
         };
         await Context.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,

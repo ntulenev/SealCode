@@ -9,8 +9,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 using Models;
+using Models.Configuration;
 
 using SealCode.Hosting;
 using SealCode.Security;
@@ -139,17 +141,86 @@ public sealed class GoogleSignInTests
             value => value.StartsWith("admin_auth=", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("unlisted.org", false)]
+    [InlineData(null, true)]
+    public async Task ExplicitEmailGetsOrdinaryAdminSessionAndRemovalRevokesAccess(string? hostedDomain, bool emailsOnly)
+    {
+        using var source = new SealCodeApiTests.SealCodeAppFactory();
+        using var factory = Configure(source, new("individual-account", "User123@gmail.com", hostedDomain, true), emailsOnly);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        await SetAntiforgeryAsync(client);
+        using var login = await client.PostAsJsonAsync("/admin/google-login", new { Credential = "valid" });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        AddResponseCookie(client, login, "admin_auth");
+        var user = await client.GetFromJsonAsync<JsonElement>("/admin/me");
+        Assert.Equal("User123@gmail.com", user.GetProperty("DisplayName").GetString());
+        var otherRoom = factory.Services.GetRequiredService<IRoomManager>()
+            .CreateRoom(new RoomName("Other owner's room"), new RoomLanguage("sql"), new AdminUser("other"));
+        await SetAntiforgeryAsync(client);
+        using var deletion = await client.DeleteAsync($"/admin/rooms/{otherRoom.RoomId.Value}");
+        Assert.Equal(HttpStatusCode.Forbidden, deletion.StatusCode);
+        using var mcp = await client.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        Assert.Equal(HttpStatusCode.Unauthorized, mcp.StatusCode);
+
+        factory.Services.GetRequiredService<IOptions<ApplicationConfiguration>>().Value.GoogleSignIn.AllowedEmails[0]
+            = "replacement@gmail.com";
+        using var revoked = await client.GetAsync("/admin/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("other@gmail.com", null, true)]
+    [InlineData("user123@gmail.com.evil.org", null, true)]
+    [InlineData("prefixuser123@gmail.com", null, true)]
+    [InlineData("user123@gmail.com", null, false)]
+    [InlineData("user123@gmail.com", "example.org", false)]
+    public async Task EmailExceptionsDoNotAdmitOtherOrUnverifiedAccounts(string email, string? hostedDomain, bool verified)
+    {
+        using var source = new SealCodeApiTests.SealCodeAppFactory();
+        using var factory = Configure(source, new("individual-account", email, hostedDomain, verified));
+        using var client = factory.CreateClient();
+        await SetAntiforgeryAsync(client);
+        using var login = await client.PostAsJsonAsync("/admin/google-login", new { Credential = "valid" });
+        Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
+        Assert.DoesNotContain(login.Headers.TryGetValues("Set-Cookie", out var values) ? values : [],
+            value => value.StartsWith("admin_auth=", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(null)]
+    [InlineData("overlong")]
+    public void EmailExceptionsStillRequireValidSubject(string? subject)
+    {
+        var config = new GoogleSignInConfiguration { AllowedEmails = ["user123@gmail.com"] };
+        var identity = new GoogleIdentity(subject == "overlong" ? new string('a', 256) : subject!, "user123@gmail.com", null, true);
+        Assert.False(GoogleSignInAccess.IsAllowed(identity, config));
+        Assert.False(GoogleSignInAccess.IsAllowed(null, config));
+    }
+
     private static WebApplicationFactory<Program> Configure(
         SealCodeApiTests.SealCodeAppFactory source,
-        GoogleIdentity identity)
+        GoogleIdentity identity,
+        bool emailsOnly = false)
         => source.WithWebHostBuilder(builder =>
         {
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?>
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                var settings = new Dictionary<string, string?>
                 {
                     ["GoogleSignIn:ClientId"] = ClientId,
-                    ["GoogleSignIn:AllowedHostedDomains:0"] = "example.org"
-                }));
+                    ["GoogleSignIn:AllowedEmails:0"] = "user123@gmail.com"
+                };
+                if (!emailsOnly)
+                {
+                    settings["GoogleSignIn:AllowedHostedDomains:0"] = "example.org";
+                }
+                config.AddInMemoryCollection(settings);
+            });
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IGoogleIdentityVerifier>();

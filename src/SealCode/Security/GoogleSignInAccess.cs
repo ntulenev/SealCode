@@ -10,6 +10,7 @@ internal static class GoogleSignInAccess
             && !string.IsNullOrWhiteSpace(identity.Subject)
             && identity.Subject.Length <= 255
             && !string.IsNullOrWhiteSpace(identity.Email)
-            && !string.IsNullOrWhiteSpace(identity.HostedDomain)
-            && config.AllowedHostedDomains.Contains(identity.HostedDomain, StringComparer.OrdinalIgnoreCase);
+            && (config.AllowedEmails.Contains(identity.Email, StringComparer.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(identity.HostedDomain)
+                    && config.AllowedHostedDomains.Contains(identity.HostedDomain, StringComparer.OrdinalIgnoreCase)));
 }
