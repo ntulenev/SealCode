@@ -1091,6 +1091,9 @@ room ID. The server retains the admission hash and an encrypted copy of the toke
 in process memory. The owner or a super admin can copy the same link after a page
 reload without replacing it or disconnecting guests. Share this link only with people
 who should be able to read/copy the room; recipients can forward it.
+Copy always checks the current link on the server first. If another tab replaces
+the link, Copy uses the replacement; if it revokes access or the check fails,
+the cached link is not copied.
 
 The feature defaults to disabled. Enable it with `Observers__Enabled=true` in
 the deployment environment after verifying hosting capacity. No credentials or

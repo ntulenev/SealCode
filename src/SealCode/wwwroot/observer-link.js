@@ -63,8 +63,23 @@ export async function mountObserverLink({ document, roomId, fetch, window }) {
   disable.addEventListener('click', () => { if (!disable.disabled) void mutate('DELETE'); });
   copy.addEventListener('click', async () => {
     if (copy.disabled || !link.value) return;
-    try { await window.navigator.clipboard.writeText(link.value); status.textContent = 'Guest link copied.'; }
-    catch { link.select(); status.textContent = 'Select and copy the guest link.'; }
+    updateControls(true);
+    try {
+      // Another owner tab or device may have revoked or replaced our cached URL.
+      // Never fall back to that URL if the authoritative check fails.
+      const current = await fetch(url, { cache: 'no-store' });
+      if (!current.ok) throw new Error('Could not verify guest access. Reload the room and try again.');
+      const state = await current.json();
+      hasLink = state.Enabled && state.HasLink;
+      link.value = hasLink && state.Url ? new URL(state.Url, window.location.origin).href : '';
+      if (!link.value) { status.textContent = 'Guest access disabled.'; return; }
+      try { await window.navigator.clipboard.writeText(link.value); status.textContent = 'Guest link copied.'; }
+      catch { link.select(); status.textContent = 'Select and copy the guest link.'; }
+    } catch {
+      link.value = '';
+      hasLink = false;
+      status.textContent = 'Could not verify guest access. Reload the room and try again.';
+    } finally { updateControls(); }
   });
   content.append(description, create, link, copy, disable, status);
   panel.append(summary, content);

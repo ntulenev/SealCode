@@ -113,7 +113,7 @@ test('guest link buttons follow creation, reload and revocation without copying 
     await expect(copy).toBeVisible(); await expect(copy).toBeEnabled();
     await expect(disable).toBeVisible(); await expect(disable).toBeEnabled();
     await copy.click();
-    expect(await editor.evaluate(() => window.copiedLinks)).toEqual([await input.inputValue()]);
+    await expect.poll(() => editor.evaluate(() => window.copiedLinks)).toEqual([await input.inputValue()]);
     const originalLink = await input.inputValue();
     await guest.goto(originalLink);
     await expect(guest.locator('#watchStatus')).toHaveText('Live · Read only');
@@ -129,7 +129,7 @@ test('guest link buttons follow creation, reload and revocation without copying 
     await expect(copy).toBeVisible(); await expect(copy).toBeEnabled();
     await expect(input).toHaveValue(originalLink);
     await copy.click();
-    expect(await editor.evaluate(() => window.copiedLinks)).toEqual([originalLink]);
+    await expect.poll(() => editor.evaluate(() => window.copiedLinks)).toEqual([originalLink]);
     expect(rotations).toEqual([]);
     await expect(editor.locator('#observerCount')).toHaveText('👁 1');
     await editor.evaluate(() => window.monaco.editor.getModels()[0].setValue('SELECT 7;'));
@@ -146,6 +146,57 @@ test('guest link buttons follow creation, reload and revocation without copying 
     await expect(copy).toBeHidden(); await expect(disable).toBeHidden();
   } finally { await guests.close(); await owner.close(); }
 });
+
+for (const action of ['revoke', 'replace']) {
+  test(`a second owner tab cannot copy a stale guest link after ${action}`, async ({ browser, isolatedHost }) => {
+    const { owner, guests, editor, guest, id } = await setup(browser, isolatedHost);
+    try {
+      const second = await owner.newPage();
+      await second.goto(`/room/${id}`);
+      await second.locator('#displayNameInput').fill('Second owner tab');
+      await second.locator('#joinBtn').click();
+      await expect(second.locator('#joinOverlay')).toBeHidden();
+      for (const page of [editor, second]) await page.getByText('Guest link', { exact: true }).click();
+      const input = second.getByRole('textbox', { name: 'Read-only guest link', includeHidden: true });
+      const original = await input.inputValue();
+      expect(original).toContain('/watch#');
+      await second.evaluate(() => {
+        window.copiedLinks = [];
+        Object.defineProperty(navigator, 'clipboard', { configurable: true,
+          value: { writeText: async value => window.copiedLinks.push(value) } });
+      });
+      let replacement;
+      if (action === 'revoke') {
+        await editor.getByRole('button', { name: 'Disable guest access' }).click();
+        await expect(editor.getByText('Guest access disabled.', { exact: true })).toBeVisible();
+      } else {
+        editor.on('dialog', dialog => dialog.accept());
+        await editor.getByRole('button', { name: 'Create / replace link' }).click();
+        await expect(editor.getByText('Guest link ready. Copy and share it.', { exact: true })).toBeVisible();
+        replacement = await editor.getByRole('textbox', { name: 'Read-only guest link' }).inputValue();
+        expect(replacement).not.toBe(original);
+      }
+      // Keep the other tab's stale state to exercise the authoritative check on Copy.
+      await expect(input).toHaveValue(original);
+      await second.getByText('Copy link', { exact: true }).click();
+      if (action === 'revoke') {
+        await expect(second.getByText('Guest access disabled.', { exact: true })).toBeVisible();
+        await expect(second.getByText('Copy link', { exact: true })).toBeHidden();
+        await expect(input).toHaveValue('');
+        expect(await second.evaluate(() => window.copiedLinks)).toEqual([]);
+      } else {
+        await expect(second.getByText('Guest link copied.', { exact: true })).toBeVisible();
+        expect(await second.evaluate(() => window.copiedLinks)).toEqual([replacement]);
+        await expect(input).toHaveValue(replacement);
+        await guest.goto(replacement);
+        await expect(guest.locator('#watchStatus')).toHaveText('Live · Read only');
+      }
+      const expired = await guests.newPage();
+      await expired.goto(original);
+      await expect(expired.locator('#watchStatus')).toContainText('unavailable');
+    } finally { await guests.close(); await owner.close(); }
+  });
+}
 
 test('owner can generate a distinct guest link from the room UI', async ({ browser, isolatedHost }) => {
   const { owner, guests, editor, guest, id } = await setup(browser, isolatedHost);
