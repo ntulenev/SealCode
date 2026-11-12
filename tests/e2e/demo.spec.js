@@ -113,8 +113,9 @@ test('both simulated cursors move, pause and resume without changing visitor con
   // Change the example to a single short line: mock positions must remain valid.
   await page.locator('#demoEditor .view-lines').click();
   await page.keyboard.press('Control+a');
-  await page.keyboard.type('const local = 1;');
-  const content = await page.locator('#demoEditor .view-lines').innerText();
+  const content = 'const local = 1;';
+  await page.keyboard.type(content);
+  await expect(page.locator('#demoEditor .view-lines')).toHaveText(content);
   const diagram = await page.locator('[data-shape-id]').allTextContents();
   const beforeBoard = await boardCursor.getAttribute('style');
   await expect.poll(() => boardCursor.getAttribute('style')).not.toBe(beforeBoard);
