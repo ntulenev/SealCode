@@ -18,7 +18,15 @@ function fixture(Channel) {
   removeEventListener(name) { delete documentEvents[name]; } };
   const responses = [];
   const requests = [];
+  const permissionResponses = [];
+  const permissionRequests = [];
   const fetch = async (url, options) => {
+    if (url.endsWith('/permissions')) {
+      permissionRequests.push({ url, options });
+      const response = permissionResponses.shift() ?? { ok: true, json: async () => ({ CanDelete: true }) };
+      if (response instanceof Error) throw response;
+      return response;
+    }
     requests.push({ url, options });
     if (url === '/admin/token') return { ok: true, json: async () => ({ Token: 'disposable-csrf' }) };
     let response = responses.shift();
@@ -37,7 +45,7 @@ function fixture(Channel) {
     setTimeout(callback) { timers.set(++nextTimer, callback); return nextTimer; }, clearTimeout(id) { timers.delete(id); },
     addEventListener(name, callback) { events[name] = callback; }, removeEventListener(name) { delete events[name]; },
     location: { origin: 'https://test.invalid', reload() {} }, navigator: { clipboard: { writeText: async () => {} } } };
-  return { nodes, responses, requests, document, fetch, window, events, documentEvents, timers,
+  return { nodes, responses, requests, permissionResponses, permissionRequests, document, fetch, window, events, documentEvents, timers,
     roomId: 'editor-room', node: text => nodes.find(n => n.textContent === text) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -54,6 +62,54 @@ function messaging() {
   return { Channel, channels };
 }
 const activeLink = url => ({ ok: true, json: async () => ({ Enabled: true, HasLink: !!url, Url: url, MaxPerRoom: 20 }) });
+
+for (const permission of [
+  { ok: true, json: async () => ({ CanDelete: false }) },
+  { ok: true, json: async () => ({}) },
+  { ok: false }
+]) {
+  test('participants without management permission never request the protected link or start synchronization', async () => {
+    const f = fixture();
+    f.permissionResponses.push(permission);
+    await mountObserverLink(f);
+    assert.equal(f.nodes.length, 0); assert.equal(f.requests.length, 0); assert.equal(f.timers.size, 0);
+    assert.equal(f.permissionRequests[0].options.cache, 'no-store');
+  });
+}
+
+test('an unavailable discovery request fails closed without contacting private endpoints', async () => {
+  const f = fixture();
+  f.permissionResponses.push(new TypeError('offline'));
+  await assert.rejects(mountObserverLink(f), /offline/);
+  assert.equal(f.requests.length, 0); assert.equal(f.nodes.length, 0);
+});
+
+test('a panel clears permissions before private reads and automatically recovers when management access returns', async () => {
+  const f = fixture();
+  f.responses.push(activeLink('/watch#current')); await mountObserverLink(f);
+  f.permissionResponses.push({ ok: true, json: async () => ({ CanDelete: false }) });
+  f.events.focus(); await tick();
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.nodes.find(n => n.tag === 'details').hidden, true);
+  assert.equal(f.nodes.find(n => n.tag === 'input').value, '');
+  assert.equal(f.node('Copy link').hidden, true);
+  f.responses.push(activeLink('/watch#current'));
+  [...f.timers.values()][0](); await tick();
+  assert.equal(f.nodes.find(n => n.tag === 'details').hidden, false);
+  assert.equal(f.node('Copy link').hidden, false);
+});
+
+test('closing a tab during permission discovery cannot update controls or request a private link later', async () => {
+  const f = fixture();
+  f.responses.push(activeLink('/watch#current')); await mountObserverLink(f);
+  let release;
+  f.permissionResponses.push({ ok: true, json: () => new Promise(resolve => { release = resolve; }) });
+  f.events.focus(); await tick(); f.events.pagehide();
+  release({ CanDelete: false }); await tick();
+  assert.equal(f.requests.length, 1); assert.equal(f.timers.size, 0);
+  assert.equal(f.nodes.find(n => n.tag === 'input').value, 'https://test.invalid/watch#current');
+  assert.equal(f.permissionRequests.at(-1).options.signal.aborted, true);
+});
 
 test('cross-tab hints only trigger authoritative reads for the same room and never carry a token', async () => {
   const { Channel, channels } = messaging();

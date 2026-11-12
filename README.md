@@ -1099,6 +1099,9 @@ profile exchange change notifications, while separate sessions poll the server
 every five seconds. Returning to a tab or opening its panel also refreshes the
 state. Notifications contain no guest token; each panel checks its own permissions
 with the server. Concurrent changes are reconciled after each command.
+Ordinary participants discover available controls through the public room-permissions
+response; they do not probe the private guest-link endpoint or produce expected
+authorization errors in the browser console.
 
 The feature defaults to disabled. Enable it with `Observers__Enabled=true` in
 the deployment environment after verifying hosting capacity. No credentials or
@@ -1151,7 +1154,7 @@ These constraints reserve headroom beyond the doubled fallback threshold for in-
 
 The client build clears `wwwroot/assets` before writing the new bundle and chunks.
 All HTML references to images, favicons, stylesheets and scripts carry the release
-query string `?v=2.2.0`, so releases bypass previously cached resource URLs.
+query string `?v=2.2.1`, so releases bypass previously cached resource URLs.
 When releasing changed assets, bump this version in all `wwwroot/*.html` pages and the private
 `Resources/Snippets/library.html` and `Resources/Snippets/manage.html` pages. Monaco workers inherit it from the room script URL. Admin modules are
 bundled too, so their shared imports use content-hashed chunk names.
