@@ -14,6 +14,29 @@ namespace SealCode.Tests;
 
 public sealed partial class SealCodeApiTests
 {
+    [Fact]
+    public async Task GuestLinkStatusReportsCreationAndRevocationWithoutReturningTheCapability()
+    {
+        using var factory = ObserverFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var cookie = await LoginAsAdminAsync(client);
+        var id = await CreateRoomAsync(client, cookie);
+        var endpoint = $"/room/{id}/observer-link";
+        var absent = await client.GetFromJsonAsync<JsonElement>(endpoint);
+        Assert.False(absent.GetProperty("HasLink").GetBoolean());
+        using var create = await SecureJsonAsync(client, endpoint, new { });
+        var capability = (await create.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("Url").GetString()!;
+        var active = await client.GetFromJsonAsync<JsonElement>(endpoint);
+        Assert.True(active.GetProperty("HasLink").GetBoolean());
+        Assert.Equal(0, active.GetProperty("ObserverCount").GetInt32());
+        Assert.False(active.TryGetProperty("Url", out _));
+        Assert.DoesNotContain(capability.Split('#')[1], active.GetRawText(), StringComparison.Ordinal);
+        using var revoke = await GuestLinkCommandAsync(client, "DELETE", endpoint);
+        Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
+        var revoked = await client.GetFromJsonAsync<JsonElement>(endpoint);
+        Assert.False(revoked.GetProperty("HasLink").GetBoolean());
+    }
+
     [Theory]
     [InlineData("code")]
     [InlineData("whiteboard")]

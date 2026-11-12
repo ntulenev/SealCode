@@ -54,7 +54,7 @@ internal static class ObserverEndpoints
                 return Results.StatusCode(403);
             }
 
-            return Results.Json(new { settings.Value.Observers.Enabled, settings.Value.Observers.MaxPerRoom, ObserverCount = observers.Count(roomId).Count });
+            return Results.Json(new { settings.Value.Observers.Enabled, settings.Value.Observers.MaxPerRoom, HasLink = observers.HasLink(roomId), ObserverCount = observers.Count(roomId).Count });
         });
         _ = routes.MapPost("", (RoomId roomId, IRoomManager rooms, IAdminUserManager admins,
             ObserverSessions observers, IOptions<ApplicationConfiguration> settings) =>

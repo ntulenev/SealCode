@@ -112,6 +112,19 @@ public sealed class ObserverSessions : BackgroundService
     }
 
     /// <summary>
+    /// Reports whether a room has an active guest capability without returning its token.
+    /// </summary>
+    /// <param name="roomId">The room whose guest access is inspected.</param>
+    /// <returns>True when a guest capability exists; otherwise, false.</returns>
+    public bool HasLink(RoomId roomId)
+    {
+        lock (_gate)
+        {
+            return _rooms.TryGetValue(roomId.Value, out var room) && room.TokenHash is not null;
+        }
+    }
+
+    /// <summary>
     /// Returns additive, revisioned viewer presence to an editor.
     /// </summary>
     /// <param name="roomId">The room whose observer presence is read.</param>
