@@ -45,7 +45,9 @@
   .room-container { padding: 0 16px; margin-top: 12px; }
   .room-header { display: block; }
   .room-heading h1 { font-size: 26px; }
-  .room-meta { margin-top: 18px; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .room-meta { position: relative; margin-top: 18px; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .observer-link { position: static; }
+  .observer-link-panel { top: calc(100% + 8px); }
   .room-meta label { display: flex; align-items: center; gap: 12px; }
   .room-meta select { max-width: 180px; }
   .version { padding: 0; margin-left: auto; }

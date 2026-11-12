@@ -23,6 +23,27 @@ namespace SealCode.Tests;
 public sealed class ObserverSessionsTests
 {
     [Fact]
+    public async Task UnjoinedDeadlineReleasesTheOnlyTransportSlot()
+    {
+        await using var fixture = new Fixture(new ObserverLimits
+        {
+            Enabled = true,
+            MaxPerRoom = 1,
+            MaxConnections = 1,
+            MaxConnectionsPerSource = 1,
+            UnjoinedTimeoutSeconds = 5
+        });
+        var aborted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandoned = fixture.Connect(1);
+        abandoned.Setup(context => context.Abort()).Callback(() => aborted.TrySetResult());
+        await aborted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var replacement = fixture.Connect(2);
+        var token = fixture.Service.CreateLink(Room()).Split('#')[1];
+        fixture.Service.Join(replacement.Object, token);
+        _ = fixture.Service.Revisions(replacement.Object.ConnectionId);
+    }
+
+    [Fact]
     public async Task CommittedUpdateSurvivesCheckpointBetweenDeliveryTicks()
     {
         await using var fixture = new Fixture();

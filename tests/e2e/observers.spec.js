@@ -84,11 +84,15 @@ test('whiteboard guest receives shapes and can pan without drawing or editing la
 test('owner can generate a distinct guest link from the room UI', async ({ browser, isolatedHost }) => {
   const { owner, guests, editor, guest, id } = await setup(browser, isolatedHost);
   try {
+    await editor.setViewportSize({ width: 390, height: 844 });
     await editor.getByText('Guest link', { exact: true }).click();
     editor.on('dialog', dialog => dialog.accept());
     await editor.getByRole('button', { name: 'Create / replace link' }).click();
     const input = editor.getByRole('textbox', { name: 'Read-only guest link' });
     await expect(input).toBeVisible();
+    const bounds = await input.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(16);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(374);
     const link = await input.inputValue();
     expect(link).toContain('/watch#'); expect(link).not.toContain(id);
     await guest.goto(link);

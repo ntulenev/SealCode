@@ -1076,7 +1076,8 @@ delivery permits. Slow consumers are disconnected rather than blocking editors.
 
 Guests do not keep otherwise empty rooms alive. Idle expiration, manual deletion,
 or process restart ends their sessions. Documents/links remain in memory only.
-See [the implementation specification](docs/guest-observer-spec.md) for all budgets
+See [the implementation specification](docs/guest-observer-spec.md) for all budgets,
+[verification results](docs/guest-observer-verification.md) for the 512 MB capacity assessment,
 and [the local load runner](tests/observer-load.mjs) for reproducible capacity checks:
 
 ```sh
