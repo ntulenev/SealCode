@@ -24,6 +24,39 @@ async function setup(browser, isolatedHost, kind = 'code', observerSettings = {}
   return { owner, guests, editor, guest, id, link, baseURL };
 }
 
+for (const kind of ['code', 'whiteboard']) {
+  test(`anonymous ${kind} participants do not request private guest-link controls or log browser errors`, async ({ browser, isolatedHost }) => {
+    const { owner, guests, editor, guest, id } = await setup(browser, isolatedHost, kind);
+    try {
+      const errors = [];
+      const managementRequests = [];
+      guest.on('pageerror', error => errors.push(error.message));
+      guest.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+      guest.on('request', request => { if (request.url().endsWith('/observer-link')) managementRequests.push(request.url()); });
+      const permissions = guest.waitForResponse(response => response.url().endsWith('/permissions'));
+      await guest.goto(`/room/${id}`);
+      await guest.locator('#displayNameInput').fill('Anonymous participant'); await guest.locator('#joinBtn').click();
+      await expect(guest.locator('#joinOverlay')).toBeHidden();
+      const discovery = await permissions;
+      expect(discovery.status()).toBe(200); expect((await discovery.json()).CanDelete).toBe(false);
+      await expect(guest.locator('.observer-link')).toHaveCount(0);
+      if (kind === 'code') {
+        await guest.evaluate(() => window.monaco.editor.getModels()[0].setValue('SELECT 401;'));
+        await expect(editor.locator('.view-lines')).toContainText('SELECT 401;');
+      } else {
+        await guest.locator('[data-tool="rectangle"]').click();
+        const box = await guest.locator('.board-canvas').boundingBox();
+        await guest.mouse.move(box.x + 140, box.y + 180); await guest.mouse.down();
+        await guest.mouse.move(box.x + 260, box.y + 250); await guest.mouse.up();
+        await expect(editor.locator('[data-shape-id]')).toHaveCount(1);
+      }
+      expect(managementRequests).toEqual([]); expect(errors).toEqual([]);
+      // The authenticated management endpoint remains private; discovery does not grant access.
+      expect((await guests.request.get(`/room/${id}/observer-link`)).status()).toBe(401);
+    } finally { await guests.close(); await owner.close(); }
+  });
+}
+
 test('guest code link is live, read-only, counted separately and revoked by its owner', async ({ browser, isolatedHost }) => {
   const { owner, guests, editor, guest, id, link } = await setup(browser, isolatedHost);
   try {

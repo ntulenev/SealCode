@@ -5,7 +5,16 @@ import { token } from './admin-token.js';
  */
 export async function mountObserverLink({ document, roomId, fetch, window }) {
   const url = `/room/${encodeURIComponent(roomId)}/observer-link`;
-  const response = await fetch(url, { cache: 'no-store' });
+  const permissionsUrl = `/room/${encodeURIComponent(roomId)}/permissions`;
+  const cancellation = new AbortController();
+  async function canManage() {
+    // Guest-link management uses the same owner/super-admin policy as room deletion.
+    // This discovery endpoint returns 200 for ordinary participants without exposing a capability.
+    const response = await fetch(permissionsUrl, { cache: 'no-store', signal: cancellation.signal });
+    return response.ok && (await response.json()).CanDelete === true;
+  }
+  if (!await canManage()) return;
+  const response = await fetch(url, { cache: 'no-store', signal: cancellation.signal });
   if (!response.ok) return;
   const settings = await response.json();
   if (!settings.Enabled) return;
@@ -17,7 +26,6 @@ export async function mountObserverLink({ document, roomId, fetch, window }) {
   let timer;
   /** @type {BroadcastChannel | undefined} */
   let channel;
-  const cancellation = new AbortController();
   const panel = document.createElement('details');
   panel.className = 'observer-link';
   const summary = document.createElement('summary');
@@ -70,6 +78,14 @@ export async function mountObserverLink({ document, roomId, fetch, window }) {
     status.textContent = 'Could not verify guest access. Retrying automatically…';
   }
   async function readCurrent() {
+    const allowed = await canManage();
+    if (stopped) return false;
+    if (!allowed) {
+      panel.hidden = true;
+      hasLink = false;
+      link.value = '';
+      return true;
+    }
     const current = await fetch(url, { cache: 'no-store', signal: cancellation.signal });
     if (!current.ok) {
       if ([401, 403, 404].includes(current.status)) panel.hidden = true;
