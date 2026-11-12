@@ -20,7 +20,7 @@ using SealCode.Observers;
 
 namespace SealCode.Tests;
 
-public sealed class ObserverSessionsTests
+public sealed partial class ObserverSessionsTests
 {
     [Fact]
     public async Task UnjoinedDeadlineReleasesTheOnlyTransportSlot()
@@ -59,9 +59,14 @@ public sealed class ObserverSessionsTests
                 {
                     var payload = args[0] is JsonElement element ? element : JsonSerializer.Deserialize<JsonElement>((string)args[0]!);
                     if (payload.GetProperty("Type").GetString() == "Snapshot")
+                    {
                         initial.TrySetResult();
+                    }
+
                     if (payload.GetProperty("Type").GetString() == "Update" && payload.GetProperty("DocumentRevision").GetInt64() == 1)
+                    {
                         delivered.TrySetResult(payload);
+                    }
                 }
                 return Task.CompletedTask;
             });
@@ -119,7 +124,9 @@ public sealed class ObserverSessionsTests
             fixture.Service.Disconnect(caller.Object.ConnectionId);
         }
         for (var i = 100; i < 140; i++)
+        {
             _ = fixture.Connect(i);
+        }
     }
 
     [Fact]
@@ -155,7 +162,10 @@ public sealed class ObserverSessionsTests
     {
         await using var fixture = new Fixture();
         for (var i = 0; i < 20; i++)
+        {
             _ = fixture.Connect(i, "192.0.2.1");
+        }
+
         Assert.Throws<HubException>(() => fixture.Connect(20, "192.0.2.1"));
         _ = fixture.Connect(21, "192.0.2.2");
         await using var disabled = new Fixture(new ObserverLimits());
@@ -195,7 +205,7 @@ public sealed class ObserverSessionsTests
         public Mock<ISingleClientProxy> Proxy { get; } = new();
         public ObserverSessions Service { get; }
         public Mock<IRoomRegistry> Registry { get; } = new();
-        public Fixture(ObserverLimits? limits = null)
+        public Fixture(ObserverLimits? limits = null, TimeProvider? timeProvider = null)
         {
             Proxy.Setup(proxy => proxy.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
             var clients = new Mock<IHubClients>();
@@ -206,16 +216,19 @@ public sealed class ObserverSessionsTests
             var editors = new Mock<IHubContext<RoomHub>>();
             editors.SetupGet(hub => hub.Clients).Returns(clients.Object);
             Service = new(Options.Create(new ApplicationConfiguration { AdminUsers = [], Languages = [], Observers = limits ?? new ObserverLimits { Enabled = true, NewConnectionsPerSourcePerMinute = 10000 } }),
-                Registry.Object, hub.Object, editors.Object, NullLogger<ObserverSessions>.Instance);
+                Registry.Object, hub.Object, editors.Object, NullLogger<ObserverSessions>.Instance, timeProvider);
         }
-        public Mock<HubCallerContext> Connect(int index, string? source = null)
+        public Mock<HubCallerContext> Connect(int index, string? source = null, bool includeHttpContext = true)
         {
             var caller = new Mock<HubCallerContext>();
             caller.SetupGet(c => c.ConnectionId).Returns("guest-" + index);
             var http = new DefaultHttpContext();
             http.Connection.RemoteIpAddress = IPAddress.Parse(source ?? $"198.51.100.{1 + (index % 200)}");
             var features = new FeatureCollection();
-            features.Set<IHttpContextFeature>(new HttpFeature { HttpContext = http });
+            if (includeHttpContext)
+            {
+                features.Set<IHttpContextFeature>(new HttpFeature { HttpContext = http });
+            }
             caller.SetupGet(c => c.Features).Returns(features);
             Service.Connect(caller.Object);
             _callers.Add(caller);
@@ -224,7 +237,10 @@ public sealed class ObserverSessionsTests
         public async ValueTask DisposeAsync()
         {
             foreach (var caller in _callers)
+            {
                 Service.Disconnect(caller.Object.ConnectionId);
+            }
+
             await Service.StopAsync(CancellationToken.None);
             Service.Dispose();
         }

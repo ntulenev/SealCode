@@ -7,14 +7,18 @@ namespace Models.Configuration;
 /// </summary>
 public sealed class ApplicationConfiguration
 {
-    /// <summary>Gets the independent presentation-viewer budgets.</summary>
+    /// <summary>
+    /// Gets the independent presentation-viewer budgets.
+    /// </summary>
     public ObserverLimits Observers { get; init; } = new();
     /// <summary>
     /// Gets startup availability and access settings for the private snippet library.
     /// </summary>
     public SnippetConfiguration Snippets { get; init; } = new();
 
-    /// <summary>Optional Google Workspace sign-in settings.</summary>
+    /// <summary>
+    /// Optional Google Workspace sign-in settings.
+    /// </summary>
     public GoogleSignInConfiguration GoogleSignIn { get; init; } = new();
 
     /// <summary>

@@ -90,6 +90,32 @@ cursors and typing, selection and copy indicators.
 | --- | --- |
 | ![Collaborative JavaScript room with four participants, syntax highlighting and presence indicators in dark theme](docs/images/room-dark.png) | ![The shared code editor and participant bar in light theme](docs/images/room-light.png) |
 
+### Read-only presentations
+
+The owner can create a separate guest link while the team continues editing.
+Observers watch the same live code or whiteboard without taking editor places.
+The compact eye counter counts guest tabs; admin Limits shows the independent
+20-per-room / 40-per-application budgets and whether guest access is enabled.
+
+| Owner controls and guest counter | Guest code view, light theme |
+| --- | --- |
+| ![Room with two editors and three observers shown separately beside the guest-link controls](docs/images/observer-owner-dark.png) | ![Read-only guest presentation with shared code, editor names and a compact observer count](docs/images/observer-code-light.png) |
+
+<details>
+<summary>Create, copy and revoke a guest link</summary>
+
+![Guest link controls in a live room: create or replace a link, copy it, or disable guest access](docs/images/observer-link-dark.png)
+
+</details>
+
+| Read-only whiteboard | Observer limits in the admin panel |
+| --- | --- |
+| ![Guest watching a system-design board with drawing controls disabled](docs/images/observer-whiteboard-dark.png) | ![Admin observer limits showing enabled guest access, 20 viewers per room, 40 guest connections and 200 combined connections](docs/images/observer-limits-light.png) |
+
+| Mobile guest view | Mobile observer limits |
+| --- | --- |
+| <img src="docs/images/observer-mobile-light.png" alt="Read-only code presentation and compact guest counter on a narrow screen" width="280" /> | <img src="docs/images/observer-limits-mobile-light.png" alt="Observer limits and independent guest connection budgets on a narrow screen" width="280" /> |
+
 ### Whiteboard workspace
 
 Whiteboard rooms replace the code editor with an infinite diagram canvas and a
@@ -1173,6 +1199,12 @@ With Node.js 20+, the .NET 10 SDK and the repository dependencies installed:
 ```bash
 npx playwright install chromium
 node scripts/capture-readme.mjs
+```
+
+To refresh the read-only presentation, guest counter and admin observer-limit images:
+
+```bash
+node scripts/capture-observers.mjs
 ```
 
 To refresh only the dark and light examples with two named remote cursors:

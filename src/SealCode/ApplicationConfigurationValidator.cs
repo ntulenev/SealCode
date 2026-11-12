@@ -30,7 +30,10 @@ internal sealed class ApplicationConfigurationValidator : IValidateOptions<Appli
     {
         var errors = new List<string>();
         if (options.Observers is null || !Validator.TryValidateObject(options.Observers, new(options.Observers), [], true))
+        {
             errors.Add("Invalid observer resource budgets.");
+        }
+
         if (options.Snippets is null)
         {
             errors.Add("Snippets configuration cannot be null.");

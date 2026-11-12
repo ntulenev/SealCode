@@ -24,8 +24,9 @@ namespace SealCode.Observers;
 /// </summary>
 #pragma warning disable CA1515 // Public dependency of the integration-tested public hub.
 public sealed class ObserverSessions : BackgroundService
+#pragma warning restore CA1515
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Dictionary<string, Guest> _connections = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Presentation> _rooms = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Presentation> _tokens = new(StringComparer.Ordinal);
@@ -38,10 +39,21 @@ public sealed class ObserverSessions : BackgroundService
     private readonly IHubContext<RoomHub> _editors;
     private readonly ILogger<ObserverSessions> _logger;
     private readonly SemaphoreSlim _snapshots;
+    private readonly TimeProvider _timeProvider;
 
-    /// <summary>Creates one process-wide viewer service.</summary>
+    /// <summary>
+    /// Creates one process-wide viewer service.
+    /// </summary>
+    /// <param name="settings">The validated application configuration.</param>
+    /// <param name="registry">The authoritative in-memory room registry.</param>
+    /// <param name="hub">The read-only transport used for observer delivery.</param>
+    /// <param name="editors">The existing transport used for participant counter notifications.</param>
+    /// <param name="logger">The logger, which must not record capabilities or document contents.</param>
+    /// <param name="timeProvider">The clock used by admission, rate windows and deadlines; null uses the system clock.</param>
+    /// <exception cref="ArgumentNullException">Thrown when a required dependency is null.</exception>
     public ObserverSessions(IOptions<ApplicationConfiguration> settings, IRoomRegistry registry,
-        IHubContext<ObserverHub> hub, IHubContext<RoomHub> editors, ILogger<ObserverSessions> logger)
+        IHubContext<ObserverHub> hub, IHubContext<RoomHub> editors, ILogger<ObserverSessions> logger,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(registry);
@@ -54,16 +66,26 @@ public sealed class ObserverSessions : BackgroundService
         _editors = editors;
         _logger = logger;
         _snapshots = new(_limits.ConcurrentSnapshots);
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>Creates or rotates an independent bearer capability; only its hash is retained.</summary>
+    /// <summary>
+    /// Creates or rotates an independent bearer capability; only its hash is retained.
+    /// </summary>
+    /// <param name="room">The existing room to present.</param>
+    /// <returns>The relative guest URL containing a newly generated capability.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when the room is null.</exception>
+    /// <exception cref="HubException">Thrown when guest access is disabled.</exception>
     public string CreateLink(RoomState room)
     {
         ArgumentNullException.ThrowIfNull(room);
         lock (_gate)
         {
             if (!_limits.Enabled)
+            {
                 throw Error("ObserverUnavailable");
+            }
+
             _ = room.GetRevisions(); // Reject a concurrently closed aggregate.
             var presentation = GetPresentation(room);
             Revoke(presentation);
@@ -74,31 +96,50 @@ public sealed class ObserverSessions : BackgroundService
         }
     }
 
-    /// <summary>Invalidates the token before terminating existing subscriptions.</summary>
+    /// <summary>
+    /// Invalidates the token before terminating existing subscriptions.
+    /// </summary>
+    /// <param name="roomId">The room whose guest capability and sessions are revoked.</param>
     public void Disable(RoomId roomId)
     {
         lock (_gate)
         {
             if (_rooms.TryGetValue(roomId.Value, out var room))
+            {
                 Revoke(room);
+            }
         }
     }
 
-    /// <summary>Returns additive, revisioned viewer presence to an editor.</summary>
+    /// <summary>
+    /// Returns additive, revisioned viewer presence to an editor.
+    /// </summary>
+    /// <param name="roomId">The room whose observer presence is read.</param>
+    /// <returns>The observer connection count and its independent monotonic revision.</returns>
     public (int Count, long Revision) Count(RoomId roomId)
     {
         lock (_gate)
+        {
             return _rooms.TryGetValue(roomId.Value, out var room) ? (room.Count, room.CountRevision) : (0, 0);
+        }
     }
 
-    /// <summary>Records a committed immutable update before editor broadcast; never waits for guest I/O.</summary>
+    /// <summary>
+    /// Records a committed immutable update before editor broadcast; never waits for guest I/O.
+    /// </summary>
+    /// <param name="roomId">The room containing the committed edit.</param>
+    /// <param name="update">The immutable, accepted Base64 Yjs update.</param>
+    /// <param name="revision">The server-assigned document revision of this update.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the update is null.</exception>
     public void RecordUpdate(RoomId roomId, string update, long revision)
     {
         ArgumentNullException.ThrowIfNull(update);
         lock (_gate)
         {
             if (!_rooms.TryGetValue(roomId.Value, out var room) || room.Count == 0 || revision <= room.LastDocument)
+            {
                 return;
+            }
             // Retain a bounded reference to the existing Base64 argument, so a checkpoint
             // cannot prune changes between delivery ticks. No document data is copied.
             if (update.Length > _limits.DeliveryQueueBytesPerConnection
@@ -111,11 +152,18 @@ public sealed class ObserverSessions : BackgroundService
                 return;
             }
             if (room.PendingUpdates.TryAdd(revision, update))
+            {
                 room.PendingBytes += update.Length;
+            }
         }
     }
 
-    /// <summary>Reserves a transport slot before any guest can join.</summary>
+    /// <summary>
+    /// Reserves a transport slot before any guest can join.
+    /// </summary>
+    /// <param name="context">The newly connected observer transport.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the context is null.</exception>
+    /// <exception cref="HubException">Thrown when guest access is disabled or admission capacity is exhausted.</exception>
     public void Connect(HubCallerContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -124,17 +172,26 @@ public sealed class ObserverSessions : BackgroundService
         lock (_gate)
         {
             if (!_limits.Enabled)
+            {
                 throw Error("ObserverUnavailable");
+            }
+
             var bucket = (uint)StringComparer.Ordinal.GetHashCode(source) % 256;
-            var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+            var minute = _timeProvider.GetUtcNow().ToUnixTimeSeconds() / 60;
             var window = _sourceWindows[bucket];
             if (window.Minute != minute)
+            {
                 window = (minute, 0);
+            }
+
             _sourceWindows[bucket] = (minute, window.Count + 1);
             if (window.Count >= _limits.NewConnectionsPerSourcePerMinute
                 || _connections.Count >= _limits.MaxConnections
                 || _sources.GetValueOrDefault(source) >= _limits.MaxConnectionsPerSource)
+            {
                 throw Error("ObserverLimitReached");
+            }
+
             guest = new(context, source, _limits.DeliveryQueueEventsPerConnection);
             _connections.Add(context.ConnectionId, guest);
             ObserverMetrics.Connections.Add(1);
@@ -146,7 +203,13 @@ public sealed class ObserverSessions : BackgroundService
         _ = ExpireUnjoinedAsync(guest);
     }
 
-    /// <summary>Joins using a capability, never a client-supplied room identifier.</summary>
+    /// <summary>
+    /// Joins using a capability, never a client-supplied room identifier.
+    /// </summary>
+    /// <param name="context">The admitted observer connection.</param>
+    /// <param name="token">The opaque read-only capability; it must not be logged.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the context is null.</exception>
+    /// <exception cref="HubException">Thrown when the capability, membership or room capacity check fails.</exception>
     public void Join(HubCallerContext context, string token)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -154,16 +217,25 @@ public sealed class ObserverSessions : BackgroundService
         {
             var guest = GetConnection(context.ConnectionId);
             if (token is null || token.Length != 43 || !_tokens.TryGetValue(Hash(token), out var room))
+            {
                 throw Error("ObserverUnavailable");
+            }
+
             EnsureOpen(room);
             if (guest.Room is not null)
             {
                 if (ReferenceEquals(guest.Room, room) && guest.Generation == room.Generation)
+                {
                     return;
+                }
+
                 throw Error("Forbidden");
             }
             if (room.Count >= _limits.MaxPerRoom)
+            {
                 throw Error("ObserverLimitReached");
+            }
+
             guest.Room = room;
             guest.Generation = room.Generation;
             room.Count++;
@@ -175,7 +247,11 @@ public sealed class ObserverSessions : BackgroundService
         }
     }
 
-    /// <summary>Rate-limited recovery of the current authorized room.</summary>
+    /// <summary>
+    /// Rate-limited recovery of the current authorized room.
+    /// </summary>
+    /// <param name="connectionId">The joined observer connection requesting recovery.</param>
+    /// <exception cref="HubException">Thrown when authorization or the synchronization rate limit fails.</exception>
     public void Sync(string connectionId)
     {
         lock (_gate)
@@ -185,7 +261,12 @@ public sealed class ObserverSessions : BackgroundService
         }
     }
 
-    /// <summary>Reads only revisions and the viewer count, without disclosing room capabilities.</summary>
+    /// <summary>
+    /// Reads only revisions and the viewer count, without disclosing room capabilities.
+    /// </summary>
+    /// <param name="connectionId">The joined observer connection whose room is read.</param>
+    /// <returns>The authorized room revisions and observer counter, without editor capabilities.</returns>
+    /// <exception cref="HubException">Thrown when the connection is not authorized to observe an open room.</exception>
     public object Revisions(string connectionId)
     {
         lock (_gate)
@@ -196,39 +277,61 @@ public sealed class ObserverSessions : BackgroundService
         }
     }
 
-    /// <summary>Enforces a bounded per-connection invocation window.</summary>
+    /// <summary>
+    /// Enforces a bounded per-connection invocation window.
+    /// </summary>
+    /// <param name="connectionId">The admitted connection invoking a guest method.</param>
+    /// <exception cref="HubException">Thrown when admission is absent or the invocation rate is exceeded.</exception>
     public void CheckInvocation(string connectionId)
     {
         lock (_gate)
         {
             var guest = GetConnection(connectionId);
-            var second = Stopwatch.GetTimestamp() / Stopwatch.Frequency;
+            var second = _timeProvider.GetTimestamp() / _timeProvider.TimestampFrequency;
             if (guest.InvocationSecond != second)
             { guest.InvocationSecond = second; guest.Invocations = 0; }
             if (++guest.Invocations > _limits.InvocationsPerSecond)
+            {
                 throw Error("RateLimited");
+            }
         }
     }
 
-    /// <summary>Leaves without freeing a still-connected transport slot.</summary>
+    /// <summary>
+    /// Leaves without freeing a still-connected transport slot.
+    /// </summary>
+    /// <param name="connectionId">The connection leaving its current observer membership.</param>
     public void Leave(string connectionId)
     {
         lock (_gate)
+        {
             if (_connections.TryGetValue(connectionId, out var guest))
+            {
                 LeaveCore(guest);
+            }
+        }
     }
 
-    /// <summary>Releases each source, room and process reservation exactly once.</summary>
+    /// <summary>
+    /// Releases each source, room and process reservation exactly once.
+    /// </summary>
+    /// <param name="connectionId">The connection whose transport reservations are released.</param>
     public void Disconnect(string connectionId)
     {
         lock (_gate)
         {
             if (!_connections.Remove(connectionId, out var guest))
+            {
                 return;
+            }
+
             ObserverMetrics.Connections.Add(-1);
             LeaveCore(guest);
             if (--_sources[guest.Source] == 0)
+            {
                 _ = _sources.Remove(guest.Source);
+            }
+
             guest.Stop.Cancel();
             _ = guest.Queue.Writer.TryComplete();
         }
@@ -245,7 +348,10 @@ public sealed class ObserverSessions : BackgroundService
     {
         var guest = GetConnection(id);
         if (!IsCurrent(guest, guest.Room, guest.Generation))
+        {
             throw Error("ObserverUnavailable");
+        }
+
         EnsureOpen(guest.Room!);
         return guest;
     }
@@ -270,7 +376,10 @@ public sealed class ObserverSessions : BackgroundService
     private void Revoke(Presentation room)
     {
         if (room.TokenHash is not null)
+        {
             _ = _tokens.Remove(room.TokenHash);
+        }
+
         room.TokenHash = null;
         room.SnapshotPayload = null;
         room.PendingUpdates.Clear();
@@ -302,12 +411,18 @@ public sealed class ObserverSessions : BackgroundService
     private void ScheduleSnapshot(Guest guest)
     {
         if (guest.SnapshotPending)
+        {
             return;
-        var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+        }
+
+        var minute = _timeProvider.GetUtcNow().ToUnixTimeSeconds() / 60;
         if (guest.SnapshotMinute != minute)
         { guest.SnapshotMinute = minute; guest.SnapshotRequests = 0; }
         if (++guest.SnapshotRequests > _limits.SnapshotRequestsPerConnectionPerMinute)
+        {
             throw Error("RateLimited");
+        }
+
         guest.SnapshotPending = true;
         guest.NeedsResync = false;
         // Snapshot jobs contain no document data until they acquire the global delivery permit.
@@ -323,7 +438,10 @@ public sealed class ObserverSessions : BackgroundService
     private void Enqueue(Guest guest, ObserverPayload payload, int bytes)
     {
         if (guest.NeedsResync)
+        {
             return;
+        }
+
         if (bytes > _limits.DeliveryQueueBytesPerConnection
             || guest.QueuedBytes + bytes > _limits.DeliveryQueueBytesPerConnection
             || !guest.Queue.Writer.TryWrite(new(guest.Room!, guest.Generation, payload, bytes)))
@@ -344,10 +462,12 @@ public sealed class ObserverSessions : BackgroundService
     {
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(_limits.UnjoinedTimeoutSeconds), guest.Stop.Token).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(_limits.UnjoinedTimeoutSeconds), _timeProvider, guest.Stop.Token).ConfigureAwait(false);
             lock (_gate)
+            {
                 if (guest.Room is null)
                 { guest.Context.Abort(); Disconnect(guest.Context.ConnectionId); }
+            }
         }
         catch (OperationCanceledException) { }
     }
@@ -362,7 +482,9 @@ public sealed class ObserverSessions : BackgroundService
                 {
                     guest.QueuedBytes = Math.Max(0, guest.QueuedBytes - delivery.Bytes);
                     if (!IsCurrent(guest, delivery.Room, delivery.Generation))
+                    {
                         continue;
+                    }
                 }
                 if (delivery.Payload is null)
                 {
@@ -375,13 +497,18 @@ public sealed class ObserverSessions : BackgroundService
                         lock (_gate)
                         {
                             if (!IsCurrent(guest, delivery.Room, delivery.Generation))
+                            {
                                 continue;
+                            }
                         }
                         payload = CreateSnapshot(delivery.Room);
                         await SendAsync(guest, delivery, payload).ConfigureAwait(false);
                         ObserverPayload counter;
                         lock (_gate)
+                        {
                             counter = Encode(new { Type = "Count", ObserverCount = delivery.Room.Count, ObserverRevision = delivery.Room.CountRevision });
+                        }
+
                         await SendAsync(guest, delivery, counter).ConfigureAwait(false);
                         ObserverMetrics.Snapshots.Add(1);
                     }
@@ -390,11 +517,15 @@ public sealed class ObserverSessions : BackgroundService
                         _ = _snapshots.Release();
                         ObserverMetrics.SnapshotDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                         lock (_gate)
+                        {
                             guest.SnapshotPending = false;
+                        }
                     }
                 }
                 else
+                {
                     await SendAsync(guest, delivery, delivery.Payload).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -413,10 +544,15 @@ public sealed class ObserverSessions : BackgroundService
     private async Task SendAsync(Guest guest, Delivery delivery, ObserverPayload payload)
     {
         lock (_gate)
+        {
             if (!IsCurrent(guest, delivery.Room, delivery.Generation))
+            {
                 return;
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(guest.Stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(_limits.SendTimeoutSeconds));
+            }
+        }
+
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(_limits.SendTimeoutSeconds), _timeProvider);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(guest.Stop.Token, deadline.Token);
         try
         {
             await _hub.Clients.Client(guest.Context.ConnectionId).SendAsync("ObserverMessage", payload.Value, timeout.Token).ConfigureAwait(false);
@@ -437,7 +573,9 @@ public sealed class ObserverSessions : BackgroundService
         {
             if (room.SnapshotPayload is not null && room.SnapshotDocument == revisions.DocumentRevision
                 && room.SnapshotMetadata == revisions.MetadataRevision && room.SnapshotPresence == revisions.PresenceRevision)
+            {
                 return room.SnapshotPayload;
+            }
         }
         // Explicit allow-list: never serialize the room or the editor's identity/capability.
         var sync = room.State.CreateYjsSyncState();
@@ -470,18 +608,24 @@ public sealed class ObserverSessions : BackgroundService
     }
 
     /// <inheritdoc />
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_limits.Enabled)
+        {
             return;
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        }
+
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500), _timeProvider);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
                 Presentation[] rooms;
                 lock (_gate)
+                {
                     rooms = [.. _rooms.Values];
+                }
+
                 foreach (var room in rooms)
                 {
                     try
@@ -494,7 +638,10 @@ public sealed class ObserverSessions : BackgroundService
                     catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
                     {
                         lock (_gate)
+                        {
                             room.CountDirty = true;
+                        }
+
                         _logger.LogDebug("Observer publication deferred ({FailureType})", ex.GetType().Name);
                     }
                 }
@@ -505,7 +652,10 @@ public sealed class ObserverSessions : BackgroundService
         {
             Guest[] guests;
             lock (_gate)
+            {
                 guests = [.. _connections.Values];
+            }
+
             foreach (var guest in guests)
             { guest.Context.Abort(); Disconnect(guest.Context.ConnectionId); }
             await Task.WhenAll(guests.Select(guest => guest.Pump)).ConfigureAwait(false);
@@ -515,7 +665,10 @@ public sealed class ObserverSessions : BackgroundService
     {
         // Registry lookups also cover idle deletion, which bypasses RoomKilled notifications.
         if (!_registry.TryGetRoom(room.State.RoomId, out var current) || !ReferenceEquals(current, room.State))
+        {
             throw new Models.Exceptions.RoomNotFoundException();
+        }
+
         var revisions = room.State.GetRevisions();
         bool hasGuests;
         bool countDirty;
@@ -525,7 +678,10 @@ public sealed class ObserverSessions : BackgroundService
         {
             if (room.SnapshotDocument != revisions.DocumentRevision || room.SnapshotMetadata != revisions.MetadataRevision
                 || room.SnapshotPresence != revisions.PresenceRevision || room.Count == 0)
+            {
                 room.SnapshotPayload = null;
+            }
+
             hasGuests = room.Count > 0;
             countDirty = room.CountDirty;
             room.CountDirty = false;
@@ -542,8 +698,13 @@ public sealed class ObserverSessions : BackgroundService
             {
                 var pending = new SortedDictionary<long, string>(room.PendingUpdates);
                 foreach (var update in sync.Updates)
+                {
                     if (update.Revision.Value > room.LastDocument && !pending.ContainsKey(update.Revision.Value))
+                    {
                         pending.Add(update.Revision.Value, Convert.ToBase64String(update.Payload));
+                    }
+                }
+
                 updates = [.. pending.Where(update => update.Key > room.LastDocument && update.Key <= sync.DocumentRevision.Value)
                     .Select(update => new YjsDocumentUpdate(update.Key, update.Value))];
                 foreach (var key in room.PendingUpdates.Keys.Where(key => key <= sync.DocumentRevision.Value).ToArray())
@@ -572,7 +733,9 @@ public sealed class ObserverSessions : BackgroundService
             lock (_gate)
             {
                 foreach (var guest in _connections.Values.Where(guest => ReferenceEquals(guest.Room, room)))
+                {
                     Enqueue(guest, payload, bytes);
+                }
             }
             lock (_gate)
             {
@@ -610,7 +773,7 @@ public sealed class ObserverSessions : BackgroundService
     }
 
     /// <inheritdoc />
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    public async override Task StopAsync(CancellationToken cancellationToken)
     {
         Task[] workers;
         lock (_gate)
@@ -633,9 +796,14 @@ public sealed class ObserverSessions : BackgroundService
         _snapshots.Dispose();
     }
 
-    private sealed class Presentation(RoomState state)
+    private sealed class Presentation
     {
-        public RoomState State { get; } = state;
+        public Presentation(RoomState state)
+        {
+            State = state;
+        }
+
+        public RoomState State { get; }
         public string? TokenHash { get; set; }
         public long Generation { get; set; }
         public int Count { get; set; }
@@ -652,13 +820,25 @@ public sealed class ObserverSessions : BackgroundService
         public int PendingBytes { get; set; }
         public bool PendingOverflow { get; set; }
     }
-    private sealed class Guest(HubCallerContext context, string source, int queueCapacity)
+    private sealed class Guest
     {
-        public HubCallerContext Context { get; } = context;
-        public string Source { get; } = source;
-        public CancellationTokenSource Stop { get; } = CancellationTokenSource.CreateLinkedTokenSource(context.ConnectionAborted);
-        public Channel<Delivery> Queue { get; } = Channel.CreateBounded<Delivery>(new BoundedChannelOptions(queueCapacity)
-        { FullMode = BoundedChannelFullMode.Wait, SingleReader = false, SingleWriter = false });
+        public Guest(HubCallerContext context, string source, int queueCapacity)
+        {
+            Context = context;
+            Source = source;
+            Stop = CancellationTokenSource.CreateLinkedTokenSource(context.ConnectionAborted);
+            Queue = Channel.CreateBounded<Delivery>(new BoundedChannelOptions(queueCapacity)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = false,
+                SingleWriter = false
+            });
+        }
+
+        public HubCallerContext Context { get; }
+        public string Source { get; }
+        public CancellationTokenSource Stop { get; }
+        public Channel<Delivery> Queue { get; }
         public Task Pump { get; set; } = Task.CompletedTask;
         public Presentation? Room { get; set; }
         public long Generation { get; set; } = -1;

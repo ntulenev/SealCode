@@ -27,6 +27,7 @@
     <button id="retryLimits" type="button" class="ghost" hidden>Retry</button>
     <div id="limitsContent" hidden>
       <section class="workspace-section" aria-labelledby="capacity-title"><h2 id="capacity-title">Rooms and participants</h2><dl id="capacityLimits" class="limits-list"></dl></section>
+      <section class="workspace-section" aria-labelledby="observers-title"><h2 id="observers-title">Read-only observers</h2><p class="muted">Guest connections use a separate pool and do not occupy editor places. Each browser tab counts separately.</p><dl id="observerLimits" class="limits-list"></dl><details class="limits-details"><summary>Guest transport limits</summary><dl id="observerTechnicalLimits" class="limits-list"></dl></details></section>
       <section class="workspace-section" aria-labelledby="lifecycle-title"><h2 id="lifecycle-title">Room lifecycle</h2><dl id="lifecycleLimits" class="limits-list"></dl></section>
       <details class="workspace-section limits-details"><summary>Technical limits</summary><p class="muted">Document synchronization and request limits. Encoded sizes include Base64 overhead; 1 KiB = 1,024 bytes.</p><dl id="technicalLimits" class="limits-list"></dl></details>
     </div>

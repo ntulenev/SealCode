@@ -6,6 +6,7 @@ using Models;
 using Models.Exceptions;
 
 using SealCode.Hub;
+using SealCode.Observers;
 using SealCode.Security;
 
 using Transport;
@@ -31,7 +32,7 @@ public sealed class RoomHub : SignalRHub
     /// <param name="observers">Optional independent delivery of committed edits to viewers.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
     public RoomHub(IRoomManager roomManager, IRoomSessionService sessions, ILogger<RoomHub> logger,
-        SealCode.Observers.ObserverSessions? observers = null)
+        ObserverSessions? observers = null)
     {
         ArgumentNullException.ThrowIfNull(roomManager);
         ArgumentNullException.ThrowIfNull(sessions);
@@ -420,5 +421,5 @@ public sealed class RoomHub : SignalRHub
     private readonly IRoomManager _roomManager;
     private readonly IRoomSessionService _sessions;
     private readonly ILogger<RoomHub> _logger;
-    private readonly SealCode.Observers.ObserverSessions? _observers;
+    private readonly ObserverSessions? _observers;
 }

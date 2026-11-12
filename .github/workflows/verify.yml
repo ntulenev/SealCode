@@ -48,6 +48,8 @@ jobs:
           .tools/reportgenerator '-reports:coverage/server/**/coverage.cobertura.xml' '-targetdir:coverage/merged' '-reporttypes:Html;Cobertura;TextSummary'
       - name: Client tests and separate JS coverage
         run: npm run test:client
+      - name: Keep observer coverage at least equal to the rest of the project
+        run: python scripts/check-observer-coverage.py coverage/merged/Cobertura.xml coverage/client/lcov.info --output coverage/observer-comparison.json
       - run: npx playwright install --with-deps chromium
       - name: Build client assets for browser tests
         run: npm run build:client

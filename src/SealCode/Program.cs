@@ -1,5 +1,6 @@
 using SealCode;
 using SealCode.Hosting;
+using SealCode.Observers;
 using SealCode.Routing;
 using SealCode.Security;
 
@@ -35,8 +36,8 @@ app.MapSnippetEndpoints();
 app.MapSnippetAdministrationEndpoints();
 app.MapAdminMcpEndpoints();
 app.MapHub<RoomHub>("/roomHub");
-SealCode.Observers.ObserverEndpoints.MapObserverEndpoints(app);
-app.MapHub<SealCode.Observers.ObserverHub>("/observerHub", options =>
+app.MapObserverEndpoints();
+app.MapHub<ObserverHub>("/observerHub", options =>
 {
     options.ApplicationMaxBufferSize = 8192;
     options.TransportMaxBufferSize = 64 * 1024;
