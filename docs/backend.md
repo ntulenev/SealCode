@@ -1014,6 +1014,45 @@ state, not a rollback of the operation.
 
 ## 12. Working on the backend
 
+### Presentation observers
+
+`Observers.ObserverSessions` owns a separate capability/connection registry and
+bounded delivery workers. `ObserverHub` exposes only `JoinObserver(token)`,
+`SyncObserver()`, `GetObserverRevisions()` and `LeaveObserver()` on `/observerHub`.
+Room owners/super admins manage capabilities through `/room/{id}/observer-link`
+(GET information, POST rotate/create, DELETE revoke), with explicit antiforgery
+validation for mutations. The capability hash is independent of RoomId; observer
+DTOs never serialize RoomId, creator identity, editor links or source addresses.
+
+The editor RoomResourceFilter is scoped to RoomHub. ObserverHub has independent
+admission/rate quotas and an 8192-byte input limit. Editor slots/CRDT invariants
+are unchanged. The process-wide maximum with defaults is 160 editors + 40 guests.
+ObserverCount/ObserverRevision are additive join/sync/probe fields;
+ObserverCountChanged events are coalesced to at most one per 500 ms per room.
+Participant probes repair missed counter events without a document resync.
+
+After a successful append RoomHub records a bounded reference to the accepted
+Base64 update before starting its editor broadcast. This preserves edits that a
+checkpoint might prune between observer delivery ticks. The independent worker
+samples room revisions every 500 ms and serializes a batch shared by observers.
+Per-room capture and per-connection queues are bounded by 1 MiB / 256 events.
+Overflow requires snapshot recovery; the authoritative journal is never evicted.
+Metadata/presence reads are atomic room snapshots. No network wait is added to
+editor mutations, and guests never supply checkpoints or editor awareness.
+
+Full snapshots are queued as jobs without payloads and share two permits covering
+construction and transport writes. Immutable snapshot JSON is cached per revision
+and cleared on changes/revocation/no viewers. Plain text is omitted when CRDT data
+already supplies it. Source counters include unjoined guest transports. Timeout,
+disconnect, failed join and revocation release reservations idempotently. A sweep
+detects registry deletion/closure, including idle expiration, without changing
+the existing editor-based definition of an empty room.
+
+`SealCode.Observers` exposes connection/rejection/snapshot/resync/slow-consumer and
+payload-byte counters plus snapshot duration. No capability/document labels are
+used. See [guest-observer-spec.md](guest-observer-spec.md) and the boundary/load
+runner `tests/observer-load.mjs` for acceptance and deployment checks.
+
 ### Adding a hub method
 
 1. Update HubContract.cs and hub-contract.js with the exact wire name.

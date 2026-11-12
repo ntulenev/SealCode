@@ -1051,6 +1051,47 @@ connections. Run a load test on the intended host before sizing the process for
 many simultaneously active rooms: a connection count and a 16 MiB message limit
 do not bound transient allocations from serialization or document recovery.
 
+### Read-only presentation guests
+
+Room owners and super admins can generate a separate **Guest link** from the
+room header. Guests need no account/name, can watch code or whiteboard changes,
+and cannot write, change language, send presence activity, or create checkpoints.
+A compact viewer count appears beside the participant list; it counts connected
+tabs, independently of the five editor places. Replacing/disabling a link revokes
+its existing sessions. The editor link keeps its existing behavior.
+
+Presentation links use `/watch#<random-capability>` and never contain the editor
+room ID. The server retains only the token hash. Share this link only with people
+who should be able to read/copy the room; recipients can forward it.
+
+The feature defaults to disabled. Enable it with `Observers__Enabled=true` in
+the deployment environment after verifying hosting capacity. No credentials or
+changes to the checked-in appsettings are required. The independent defaults are
+20 guests per room, 40 guest connections per process (including unjoined clients),
+and 20 guests per source. They do not consume the existing 160 editor connection
+permits, so a fully occupied process can have **200 total hub connections**.
+The host/proxy must support that total. Guest connections have separate rate
+limits and an 8 KiB incoming-message limit; large outgoing snapshots share two
+delivery permits. Slow consumers are disconnected rather than blocking editors.
+
+Guests do not keep otherwise empty rooms alive. Idle expiration, manual deletion,
+or process restart ends their sessions. Documents/links remain in memory only.
+See [the implementation specification](docs/guest-observer-spec.md) for all budgets
+and [the local load runner](tests/observer-load.mjs) for reproducible capacity checks:
+
+```sh
+npm run build:client
+dotnet build src/SealCode/SealCode.csproj -p:SkipClientBuild=true
+node tests/observer-load.mjs 30
+```
+
+The runner creates a disposable host with synthetic accounts and documents; it
+does not copy the repository's appsettings or use production connection strings.
+On Windows it samples the server's working set, private bytes and CPU. A local
+512 MiB target / 320 MiB managed-heap limit is a test profile, not a production
+memory guarantee. CPU quota, IIS/x86 behavior, network and hosting WebSocket limits
+must be checked on the deployment host before raising guest limits.
+
 ### Checkpoint thresholds
 
 | Setting | Default | Valid range |

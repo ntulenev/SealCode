@@ -27,6 +27,10 @@ public sealed record JoinRoomResult(
     string? YjsState,
     YjsDocumentUpdate[] YjsUpdates)
 {
+    /// <summary>Gets the independent number of read-only guest connections.</summary>
+    public int ObserverCount { get; init; }
+    /// <summary>Gets the guest counter revision.</summary>
+    public long ObserverRevision { get; init; }
     /// <summary>
     /// Gets the independent language revision.
     /// </summary>

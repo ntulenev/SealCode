@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Watch — SealCode</title>
+  <link rel="icon" href="/favicon.ico" />
+  <script src="/theme.js?v=1.22.0"></script>
+  <link rel="stylesheet" href="/site.css?v=1.22.0" />
+  <link rel="stylesheet" href="/room.css?v=1.22.0" />
+  <link rel="stylesheet" href="/whiteboard.css?v=1.22.0" />
+  <link rel="stylesheet" href="/assets/watch.css?v=1.22.0" />
+  <script type="module" src="/assets/watch.js?v=1.22.0"></script>
+</head>
+<body class="room-page">
+  <header class="site-header"><a class="brand" href="/"><img src="/Logo.png" width="56" height="48" alt="" /><span>Seal<span class="brand-code">Code</span></span></a><button type="button" class="theme-toggle" data-theme-toggle>Theme</button></header>
+  <main class="room-container">
+    <header class="room-header">
+      <div class="room-heading"><p class="eyebrow">Presentation · Read only</p><h1 id="roomName">Guest view</h1><p class="room-info" id="watchStatus" role="status">Connecting…</p></div>
+      <div class="room-meta"><span id="watchLanguage" class="badge"></span><span class="badge">Read only</span></div>
+    </header>
+    <section class="room-main" aria-label="Read-only presentation">
+      <section class="participants-bar" aria-label="Room participants"><h2>In this room</h2><ul id="participantsList"></ul></section>
+      <section id="watchEditor" class="editor" aria-label="Read-only code"><div id="monacoEditor" class="monaco-host"></div></section>
+      <section id="whiteboard" class="whiteboard hidden" aria-label="Read-only diagram"></section>
+    </section>
+  </main>
+</body>
+</html>

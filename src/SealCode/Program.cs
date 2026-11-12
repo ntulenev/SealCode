@@ -35,4 +35,10 @@ app.MapSnippetEndpoints();
 app.MapSnippetAdministrationEndpoints();
 app.MapAdminMcpEndpoints();
 app.MapHub<RoomHub>("/roomHub");
+SealCode.Observers.ObserverEndpoints.MapObserverEndpoints(app);
+app.MapHub<SealCode.Observers.ObserverHub>("/observerHub", options =>
+{
+    options.ApplicationMaxBufferSize = 8192;
+    options.TransportMaxBufferSize = 64 * 1024;
+});
 app.Run();

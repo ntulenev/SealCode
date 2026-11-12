@@ -7,6 +7,29 @@ namespace SealCode.Tests;
 public sealed class WebSocketOriginGuardTests
 {
     [Theory]
+    [InlineData("/observerHub")]
+    [InlineData("/OBSERVERHUB")]
+    public async Task ViewerTransportRejectsForeignOriginAndAllowsSameOriginAndNonBrowserClients(string path)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = path;
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("example.com");
+        context.Request.Headers.Upgrade = "websocket";
+        var middleware = new WebSocketOriginGuardMiddleware(_ => Task.CompletedTask);
+        context.Request.Headers.Origin = "https://other.com";
+        await middleware.InvokeAsync(context);
+        Assert.Equal(403, context.Response.StatusCode);
+        context.Response.StatusCode = 200;
+        context.Request.Headers.Origin = "https://example.com";
+        await middleware.InvokeAsync(context);
+        Assert.Equal(200, context.Response.StatusCode);
+        context.Request.Headers.Remove("Origin");
+        await middleware.InvokeAsync(context);
+        Assert.Equal(200, context.Response.StatusCode);
+    }
+
+    [Theory]
     [InlineData("https://example.com", "EXAMPLE.com", "https", 200)]
     [InlineData("https://example.com", "example.com:443", "https", 200)]
     [InlineData("https://other.com", "example.com", "https", 403)]

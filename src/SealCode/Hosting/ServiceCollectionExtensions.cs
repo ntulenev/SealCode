@@ -196,12 +196,19 @@ internal static class ServiceCollectionExtensions
     public static IServiceCollection AddSealCodeSignalR(this IServiceCollection services)
     {
         _ = services.AddSingleton<RoomResourceFilter>();
+        _ = services.AddSingleton<SealCode.Observers.ObserverSessions>();
+        _ = services.AddHostedService(provider => provider.GetRequiredService<SealCode.Observers.ObserverSessions>());
         _ = services.AddSignalR(options =>
             {
-                options.AddFilter<RoomResourceFilter>();
                 options.MaximumReceiveMessageSize = RoomLimits.MaxSignalRMessageBytes;
                 options.KeepAliveInterval = TimeSpan.FromSeconds(5);
                 options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
+            })
+            .AddHubOptions<RoomHub>(options => options.AddFilter<RoomResourceFilter>())
+            .AddHubOptions<SealCode.Observers.ObserverHub>(options =>
+            {
+                options.MaximumReceiveMessageSize = 8192;
+                options.AddFilter<SealCode.Observers.ObserverFilter>();
             })
             .AddJsonProtocol(options =>
             {

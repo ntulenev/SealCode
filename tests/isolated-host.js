@@ -73,7 +73,7 @@ export async function startIsolatedHost(settings, prepareContentRoot) {
   const child = spawn(
     'dotnet',
     [
-      resolve('src/SealCode/bin/Debug/net10.0/SealCode.dll'),
+      resolve(process.env.SEALCODE_TEST_HOST_DLL || 'src/SealCode/bin/Debug/net10.0/SealCode.dll'),
       '--contentRoot',
       root,
       '--webroot',
@@ -116,7 +116,7 @@ export async function startIsolatedHost(settings, prepareContentRoot) {
         throw new Error(`Isolated dotnet host exited: ${output}`);
       try {
         if ((await fetch(`${baseURL}/health`, { signal: AbortSignal.timeout(1000) })).ok)
-          return { baseURL, stop };
+          return { baseURL, stop, pid: child.pid, diagnostics: () => output };
       } catch {
         /* The listener is not ready yet. */
       }

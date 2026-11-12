@@ -37,6 +37,7 @@ internal static class EndpointRouteBuilderExtensions
             => Results.Json(new
             {
                 settings.Value.CollaborativeUndoEnabled,
+                ObserversEnabled = settings.Value.Observers.Enabled,
                 MaxYjsMessageBytes = RoomLimits.MaxSignalRMessageBytes,
                 settings.Value.Limits
             }));
@@ -65,6 +66,13 @@ internal static class EndpointRouteBuilderExtensions
         });
 
         _ = app.MapGet("/health", () => Results.Ok("ok"));
+
+        _ = app.MapGet("/watch", (IWebHostEnvironment env, HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
+            return Results.File(Path.Combine(env.WebRootPath, "watch.html"), "text/html");
+        });
 
         _ = app.MapGet("/version", (HttpContext context) =>
         {

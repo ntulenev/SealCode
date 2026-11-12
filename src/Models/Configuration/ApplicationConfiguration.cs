@@ -7,6 +7,8 @@ namespace Models.Configuration;
 /// </summary>
 public sealed class ApplicationConfiguration
 {
+    /// <summary>Gets the independent presentation-viewer budgets.</summary>
+    public ObserverLimits Observers { get; init; } = new();
     /// <summary>
     /// Gets startup availability and access settings for the private snippet library.
     /// </summary>
