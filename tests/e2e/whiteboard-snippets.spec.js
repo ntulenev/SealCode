@@ -47,7 +47,9 @@ test('whiteboard library previews and copies a diagram for native Ctrl+V, collab
     expect(payload.format).toBe('sealcode-whiteboard');
     expect(payload.shapes).toHaveLength(5);
     await page.getByRole('button', { name: 'Close ×' }).click();
+    await expect(page.locator('.snippet-dialog')).toHaveCount(0);
     await page.locator('.board-canvas').focus();
+    await expect(page.locator('.board-canvas')).toBeFocused();
     await page.keyboard.press('Control+v');
     await expect(page.locator('[data-shape-id]')).toHaveCount(5);
     await expect(bob.locator('[data-shape-id]')).toHaveCount(5);
@@ -113,4 +115,35 @@ test('whiteboard library previews and copies a diagram for native Ctrl+V, collab
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   } finally { await Promise.all([context.close(), guestContext.close()]); }
+});
+
+
+test('closing the library does not steal canvas focus when the close event arrives late', async ({ browser, isolatedHost }) => {
+  const host = await isolatedHost({ ConnectionStrings: { SealCode: '' }, Snippets: { Enabled: true, Provider: 'File' } });
+  const context = await browser.newContext({ baseURL: host.baseURL });
+  try {
+    await context.request.post('/admin/login', { headers: await csrf(context.request),
+      form: { name: 'BrowserAdmin', password: 'browser-pass' } });
+    const response = await context.request.post('/admin/rooms', { headers: await csrf(context.request),
+      data: { name: 'Dialog focus', kind: 'whiteboard' } });
+    expect(response.ok()).toBe(true);
+    const { RoomId: id } = await response.json();
+    const page = await context.newPage();
+    await page.goto(`/room/${id}`);
+    await page.locator('#displayNameInput').fill('Alice'); await page.locator('#joinBtn').click();
+    await expect(page.locator('#joinOverlay')).toBeHidden();
+    await page.getByRole('link', { name: 'Open question library' }).click();
+    // Defer only application cleanup to reproduce the queued close-event race.
+    await page.locator('.snippet-dialog').evaluate(dialog => dialog.addEventListener('close', event => {
+      event.stopImmediatePropagation(); dialog.dataset.closeDeferred = 'true';
+    }, { capture: true, once: true }));
+    await page.getByRole('button', { name: 'Close ×' }).click();
+    await expect(page.locator('.snippet-dialog')).toHaveAttribute('data-close-deferred', 'true');
+    const canvas = page.locator('.board-canvas');
+    await canvas.focus();
+    await expect(canvas).toBeFocused();
+    await page.locator('.snippet-dialog').evaluate(dialog => dialog.dispatchEvent(new Event('close')));
+    await expect(page.locator('.snippet-dialog')).toHaveCount(0);
+    await expect(canvas).toBeFocused();
+  } finally { await context.close(); }
 });

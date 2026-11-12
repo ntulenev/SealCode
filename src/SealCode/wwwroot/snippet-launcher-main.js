@@ -62,7 +62,12 @@ if (actions) {
       dialog.setAttribute('aria-label', 'Question library');
       document.body.append(dialog);
       close.onclick = () => dialog.close();
-      dialog.addEventListener('close', () => { dialog.remove(); link.focus(); });
+      dialog.addEventListener('close', () => {
+        // The close event is queued. Keep focus if the user already moved to the editor.
+        const restoreFocus = dialog.contains(document.activeElement) || document.activeElement === document.body;
+        dialog.remove();
+        if (restoreFocus) link.focus();
+      });
       dialog.showModal();
       close.focus();
     });
