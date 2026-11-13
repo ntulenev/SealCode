@@ -198,6 +198,7 @@ internal static class ServiceCollectionExtensions
     {
         _ = services.AddSingleton<RoomResourceFilter>();
         _ = services.AddSingleton<ObserverSessions>();
+        _ = services.AddSingleton<IObserverUpdates>(provider => provider.GetRequiredService<ObserverSessions>());
         _ = services.AddHostedService(provider => provider.GetRequiredService<ObserverSessions>());
         _ = services.AddSignalR(options =>
             {

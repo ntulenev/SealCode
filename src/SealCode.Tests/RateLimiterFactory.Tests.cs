@@ -69,7 +69,7 @@ public sealed class RateLimiterFactoryTests
         var caller = new Mock<HubCallerContext>();
         caller.SetupGet(context => context.Features).Returns(new FeatureCollection());
         caller.SetupGet(context => context.Items).Returns(new Dictionary<object, object?>());
-        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), NullLogger<RoomHub>.Instance);
+        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), NullLogger<RoomHub>.Instance, new NoOpObserverUpdates());
         var lifetime = new HubLifetimeContext(caller.Object, services, hub);
         await filter.OnConnectedAsync(lifetime, _ => Task.CompletedTask);
         var invocation = new HubInvocationContext(caller.Object, services, hub,

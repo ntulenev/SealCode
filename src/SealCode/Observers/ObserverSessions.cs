@@ -24,7 +24,7 @@ namespace SealCode.Observers;
 /// The editor's mutation and delivery paths never wait for these workers.
 /// </summary>
 #pragma warning disable CA1515 // Public dependency of the integration-tested public hub.
-public sealed class ObserverSessions : BackgroundService
+public sealed class ObserverSessions : BackgroundService, IObserverUpdates
 #pragma warning restore CA1515
 {
     private readonly Lock _gate = new();

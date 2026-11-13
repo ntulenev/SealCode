@@ -33,7 +33,7 @@ public sealed class RoomResourceFilterTests
         using var services = new ServiceCollection().BuildServiceProvider();
         using var hub = new RoomHub(new Mock<IRoomManager>().Object,
             new Mock<IRoomSessionService>().Object,
-            new Mock<ILogger<RoomHub>>().Object);
+            new Mock<ILogger<RoomHub>>().Object, new NoOpObserverUpdates());
         var callers = Enumerable.Range(0, 3).Select(_ => new Mock<HubCallerContext>()).ToArray();
         foreach (var caller in callers)
         {
@@ -72,7 +72,7 @@ public sealed class RoomResourceFilterTests
         using var services = new ServiceCollection().BuildServiceProvider();
         using var hub = new RoomHub(new Mock<IRoomManager>().Object,
             new Mock<IRoomSessionService>().Object,
-            new Mock<ILogger<RoomHub>>().Object);
+            new Mock<ILogger<RoomHub>>().Object, new NoOpObserverUpdates());
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var caller = new Mock<HubCallerContext>();
@@ -103,7 +103,7 @@ public sealed class RoomResourceFilterTests
             Limits = new RoomLimits { MaxConnections = 2, MaxConnectionsPerSource = 1 }
         }), clock);
         using var services = new ServiceCollection().BuildServiceProvider();
-        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>());
+        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>(), new NoOpObserverUpdates());
         var first = Caller("192.0.2.1");
         var same = Caller("192.0.2.1");
         var other = Caller("192.0.2.2");
@@ -135,7 +135,7 @@ public sealed class RoomResourceFilterTests
             Limits = new RoomLimits { UnjoinedConnectionTimeoutSeconds = 5 }
         }), clock);
         using var services = new ServiceCollection().BuildServiceProvider();
-        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>());
+        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>(), new NoOpObserverUpdates());
         var unjoined = Caller("192.0.2.1");
         var joined = Caller("192.0.2.2");
         var released = Caller("192.0.2.3");
@@ -182,7 +182,7 @@ public sealed class RoomResourceFilterTests
             });
         });
         using var services = new ServiceCollection().BuildServiceProvider();
-        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>());
+        using var hub = new RoomHub(Mock.Of<IRoomManager>(), Mock.Of<IRoomSessionService>(), Mock.Of<ILogger<RoomHub>>(), new NoOpObserverUpdates());
         var caller = Caller("192.0.2.1");
         var context = new HubLifetimeContext(caller.Object, services, hub);
         await Assert.ThrowsAsync<InvalidOperationException>(() => filter.OnConnectedAsync(context, _ => Task.CompletedTask));
