@@ -186,7 +186,7 @@ internal static class AdminEndpoints
                 return Results.BadRequest(new { error = "Invalid room kind" });
             }
             var kind = payload.Kind == "whiteboard" ? RoomKind.Whiteboard : RoomKind.Code;
-            var language = new RoomLanguage(kind == RoomKind.Whiteboard ? "plaintext" : payload.Language ?? "csharp");
+            var language = new RoomLanguage(kind == RoomKind.Whiteboard ? "plaintext" : payload.Language ?? languageValidator.DefaultLanguage);
             if (kind == RoomKind.Code && !languageValidator.IsValid(language))
             {
                 return Results.BadRequest(new
@@ -223,7 +223,7 @@ internal static class AdminEndpoints
                 RoomDeletionResult.Deleted => Results.Ok(),
                 RoomDeletionResult.Forbidden => Results.StatusCode(StatusCodes.Status403Forbidden),
                 RoomDeletionResult.NotFound => Results.NotFound(),
-                _ => throw new NotImplementedException()
+                _ => throw new InvalidOperationException("Unknown room deletion result.")
             };
         });
 

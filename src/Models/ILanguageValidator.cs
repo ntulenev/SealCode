@@ -16,4 +16,8 @@ public interface ILanguageValidator
     /// Normalized list of valid languages.
     /// </summary>
     IReadOnlyList<string> Languages { get; }
+
+    /// <summary>Gets the preferred configured language for new rooms.</summary>
+    string DefaultLanguage => Languages.Contains("csharp", StringComparer.OrdinalIgnoreCase)
+        ? "csharp" : Languages[0];
 }

@@ -52,6 +52,26 @@ public sealed partial class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory
     }
 
     [Fact]
+    public async Task OmittedLanguageUsesConfiguredSql()
+    {
+        using var source = CreateFactory();
+        using var factory = source.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Languages:0"] = "sql",
+                    ["Languages:1"] = "sql",
+                    ["Languages:2"] = "sql"
+                })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+        using var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Sql" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        created.GetProperty("Language").GetString().Should().Be("sql");
+    }
+
+    [Fact]
     [Trait("Category", "Integration")]
     public async Task ConnectionCapacityRejectionClosesClientAndReleasesPermit()
     {

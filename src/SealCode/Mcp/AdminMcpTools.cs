@@ -66,7 +66,7 @@ internal sealed class AdminMcpTools
     /// <param name="creator">Durable room creation accounting.</param>
     /// <param name="cancellationToken">Request cancellation.</param>
     /// <param name="name">The requested room name.</param>
-    /// <param name="language">The optional room language; null defaults to csharp.</param>
+    /// <param name="language">The optional room language; null defaults to csharp when configured, otherwise the first configured language.</param>
     /// <returns>The created room with its invitation path and absolute URL.</returns>
     /// <exception cref="McpException">Thrown when authentication, validation or capacity checks fail.</exception>
     [McpServerTool(Name = "create_room", Destructive = false, UseStructuredContent = true),
@@ -77,13 +77,13 @@ internal sealed class AdminMcpTools
         IHttpContextAccessor accessor,
         TrackedRoomCreator creator,
         [Description("Room name, required. Up to 160 characters after trimming; saved in full.")] string name,
-        [Description("Language from list_languages; defaults to csharp.")] string? language = "csharp",
+        [Description("Language from list_languages; defaults to csharp when configured, otherwise the first configured language.")] string? language = null,
         CancellationToken cancellationToken = default)
     {
         var admin = GetAdmin(admins);
         try
         {
-            var roomLanguage = new RoomLanguage(language ?? "csharp");
+            var roomLanguage = new RoomLanguage(language ?? languages.DefaultLanguage);
             if (!languages.IsValid(roomLanguage))
             {
                 throw new McpException("Invalid language. Use list_languages for allowed values.");
