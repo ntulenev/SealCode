@@ -5,11 +5,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'Logic.Tests' and '$(MSBuildProjectName)' != 'Models.Tests' and '$(MSBuildProjectName)' != 'Transport.Tests'">
+  <PropertyGroup Condition="!$(MSBuildProjectName.EndsWith('.Tests'))">
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);IDE0058;IDE1006;CA2234;CS1591;CA1861;IDE0042;IDE0370;CA2007</NoWarn>
   </PropertyGroup>
 </Project>
