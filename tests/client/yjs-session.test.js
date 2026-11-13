@@ -187,3 +187,23 @@ test('multiple cursor edits use offsets from the original document', () => {
   assert.deepEqual(session.cursorPositions, { Bob: 13, Carol: 4 });
   session.disposeYjs();
 });
+
+test('synchronization buffer enforces byte and count boundaries and resets totals', () => {
+  const { session } = create();
+  const recoveries = [];
+  session.onRecovery = delay => recoveries.push(delay);
+  session.isSynchronizingYjs = true;
+  const chunk = 'A'.repeat(4096);
+  for (let i = 0; i < 2048; i++) session.receiveUpdate(chunk, i + 1, i + 1, 'Bob');
+  assert.equal(session.bufferedYjsBytes, 8 * 1024 * 1024);
+  assert.equal(session.bufferedYjsMessages.length, 2048);
+  session.receiveUpdate('A', 2049, 2049, 'Bob');
+  assert.deepEqual(recoveries, [250]);
+  assert.equal(session.bufferedYjsMessages.length, 0);
+  assert.equal(session.bufferedYjsBytes, 0);
+  session.receiveUpdate('A'.repeat(8 * 1024 * 1024), 1, 1, 'Bob');
+  session.receiveUpdate('A', 2, 2, 'Bob');
+  assert.equal(session.bufferedYjsBytes, 0);
+  assert.deepEqual(recoveries, [250, 250]);
+  session.disposeYjs();
+});
