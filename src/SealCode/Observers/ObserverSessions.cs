@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 
 using Models;
 using Models.Configuration;
+using Models.Exceptions;
 
 using SealCode.Hosting;
 
@@ -28,23 +29,6 @@ namespace SealCode.Observers;
 public sealed class ObserverSessions : BackgroundService, IObserverUpdates
 #pragma warning restore CA1515
 {
-    private readonly Lock _gate = new();
-    private readonly IDataProtector _linkProtector = new EphemeralDataProtectionProvider()
-        .CreateProtector("SealCode.ObserverLinks");
-    private readonly Dictionary<string, Guest> _connections = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Presentation> _rooms = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Presentation> _tokens = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _sources = new(StringComparer.Ordinal);
-    private readonly HashSet<Task> _workers = [];
-    private readonly (long Minute, int Count)[] _sourceWindows = new (long, int)[256];
-    private readonly ObserverLimits _limits;
-    private readonly IRoomRegistry _registry;
-    private readonly IHubContext<ObserverHub> _hub;
-    private readonly IHubContext<RoomHub> _editors;
-    private readonly ILogger<ObserverSessions> _logger;
-    private readonly SemaphoreSlim _snapshots;
-    private readonly TimeProvider _timeProvider;
-
     /// <summary>
     /// Creates one process-wide viewer service.
     /// </summary>
@@ -261,8 +245,14 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
             room.CountRevision++;
             room.CountDirty = true;
             try
-            { ScheduleSnapshot(guest); }
-            catch { LeaveCore(guest); throw; }
+            {
+                ScheduleSnapshot(guest);
+            }
+            catch
+            {
+                LeaveCore(guest);
+                throw;
+            }
         }
     }
 
@@ -308,7 +298,10 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
             var guest = GetConnection(connectionId);
             var second = _timeProvider.GetTimestamp() / _timeProvider.TimestampFrequency;
             if (guest.InvocationSecond != second)
-            { guest.InvocationSecond = second; guest.Invocations = 0; }
+            {
+                guest.InvocationSecond = second;
+                guest.Invocations = 0;
+            }
             if (++guest.Invocations > _limits.InvocationsPerSecond)
             {
                 throw Error("RateLimited");
@@ -356,6 +349,93 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
         }
     }
 
+    /// <inheritdoc />
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!_limits.Enabled)
+        {
+            return;
+        }
+
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500), _timeProvider);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+            {
+                Presentation[] rooms;
+                lock (_gate)
+                {
+                    rooms = [.. _rooms.Values];
+                }
+
+                foreach (var room in rooms)
+                {
+                    try
+                    {
+                        await PublishAsync(room, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (RoomNotFoundException)
+                    {
+                        lock (_gate)
+                        {
+                            Revoke(room);
+                            _ = _rooms.Remove(room.State.RoomId.Value);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                    {
+                        lock (_gate)
+                        {
+                            room.CountDirty = true;
+                        }
+
+                        _logger.LogDebug("Observer publication deferred ({FailureType})", ex.GetType().Name);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        finally
+        {
+            Guest[] guests;
+            lock (_gate)
+            {
+                guests = [.. _connections.Values];
+            }
+
+            foreach (var guest in guests)
+            {
+                guest.Context.Abort();
+                Disconnect(guest.Context.ConnectionId);
+            }
+            await Task.WhenAll(guests.Select(guest => guest.Pump)).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async override Task StopAsync(CancellationToken cancellationToken)
+    {
+        Task[] workers;
+        lock (_gate)
+        {
+            foreach (var guest in _connections.Values.ToArray())
+            {
+                guest.Context.Abort();
+                Disconnect(guest.Context.ConnectionId);
+            }
+            workers = [.. _workers];
+        }
+        await Task.WhenAll(workers).WaitAsync(cancellationToken).ConfigureAwait(false);
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public override void Dispose()
+    {
+        base.Dispose();
+        _snapshots.Dispose();
+    }
+
     private static HubException Error(string code)
     {
         ObserverMetrics.Rejected.Add(1, new KeyValuePair<string, object?>("reason", code));
@@ -377,8 +457,13 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
     private static void EnsureOpen(Presentation room)
     {
         try
-        { _ = room.State.GetRevisions(); }
-        catch (Models.Exceptions.RoomNotFoundException) { throw Error("ObserverUnavailable"); }
+        {
+            _ = room.State.GetRevisions();
+        }
+        catch (RoomNotFoundException)
+        {
+            throw Error("ObserverUnavailable");
+        }
     }
     private bool IsCurrent(Guest guest, Presentation? room, long generation) => room is not null
         && ReferenceEquals(guest.Room, room) && room.TokenHash is not null && room.Generation == generation
@@ -437,7 +522,10 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
 
         var minute = _timeProvider.GetUtcNow().ToUnixTimeSeconds() / 60;
         if (guest.SnapshotMinute != minute)
-        { guest.SnapshotMinute = minute; guest.SnapshotRequests = 0; }
+        {
+            guest.SnapshotMinute = minute;
+            guest.SnapshotRequests = 0;
+        }
         if (++guest.SnapshotRequests > _limits.SnapshotRequestsPerConnectionPerMinute)
         {
             throw Error("RateLimited");
@@ -486,7 +574,10 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
             lock (_gate)
             {
                 if (guest.Room is null)
-                { guest.Context.Abort(); Disconnect(guest.Context.ConnectionId); }
+                {
+                    guest.Context.Abort();
+                    Disconnect(guest.Context.ConnectionId);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -620,66 +711,13 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
         return payload;
     }
 
-    /// <inheritdoc />
-    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        if (!_limits.Enabled)
-        {
-            return;
-        }
 
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500), _timeProvider);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
-            {
-                Presentation[] rooms;
-                lock (_gate)
-                {
-                    rooms = [.. _rooms.Values];
-                }
-
-                foreach (var room in rooms)
-                {
-                    try
-                    { await PublishAsync(room, stoppingToken).ConfigureAwait(false); }
-                    catch (Models.Exceptions.RoomNotFoundException)
-                    {
-                        lock (_gate)
-                        { Revoke(room); _ = _rooms.Remove(room.State.RoomId.Value); }
-                    }
-                    catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
-                    {
-                        lock (_gate)
-                        {
-                            room.CountDirty = true;
-                        }
-
-                        _logger.LogDebug("Observer publication deferred ({FailureType})", ex.GetType().Name);
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-        finally
-        {
-            Guest[] guests;
-            lock (_gate)
-            {
-                guests = [.. _connections.Values];
-            }
-
-            foreach (var guest in guests)
-            { guest.Context.Abort(); Disconnect(guest.Context.ConnectionId); }
-            await Task.WhenAll(guests.Select(guest => guest.Pump)).ConfigureAwait(false);
-        }
-    }
     private async Task PublishAsync(Presentation room, CancellationToken cancellationToken)
     {
         // Registry lookups also cover idle deletion, which bypasses RoomKilled notifications.
         if (!_registry.TryGetRoom(room.State.RoomId, out var current) || !ReferenceEquals(current, room.State))
         {
-            throw new Models.Exceptions.RoomNotFoundException();
+            throw new RoomNotFoundException();
         }
 
         var revisions = room.State.GetRevisions();
@@ -776,29 +814,9 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
         }
     }
 
-    /// <inheritdoc />
-    public async override Task StopAsync(CancellationToken cancellationToken)
-    {
-        Task[] workers;
-        lock (_gate)
-        {
-            foreach (var guest in _connections.Values.ToArray())
-            {
-                guest.Context.Abort();
-                Disconnect(guest.Context.ConnectionId);
-            }
-            workers = [.. _workers];
-        }
-        await Task.WhenAll(workers).WaitAsync(cancellationToken).ConfigureAwait(false);
-        await base.StopAsync(cancellationToken).ConfigureAwait(false);
-    }
 
-    /// <inheritdoc />
-    public override void Dispose()
-    {
-        base.Dispose();
-        _snapshots.Dispose();
-    }
+
+
 
     private sealed class Presentation
     {
@@ -863,4 +881,22 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
     }
     private sealed record ObserverPayload(JsonElement Value, int Bytes);
     private sealed record Delivery(Presentation Room, long Generation, ObserverPayload? Payload, int Bytes);
+
+    private readonly Lock _gate = new();
+    private readonly IDataProtector _linkProtector = new EphemeralDataProtectionProvider()
+        .CreateProtector("SealCode.ObserverLinks");
+    private readonly Dictionary<string, Guest> _connections = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Presentation> _rooms = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Presentation> _tokens = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _sources = new(StringComparer.Ordinal);
+    private readonly HashSet<Task> _workers = [];
+    private readonly (long Minute, int Count)[] _sourceWindows = new (long, int)[256];
+    private readonly ObserverLimits _limits;
+    private readonly IRoomRegistry _registry;
+    private readonly IHubContext<ObserverHub> _hub;
+    private readonly IHubContext<RoomHub> _editors;
+    private readonly ILogger<ObserverSessions> _logger;
+    private readonly SemaphoreSlim _snapshots;
+    private readonly TimeProvider _timeProvider;
+
 }
