@@ -30,13 +30,15 @@ import { Awareness } from 'y-protocols/awareness';
   }
 };
 
-// E2E tests use window.monaco to inspect the editor and exercise language workers.
-/** @type {Window & { monaco?: typeof import('monaco-editor') }} */ (window).monaco =
-  monaco;
-// E2E synchronization tests create independent probe connections through this export.
-/** @type {Window & { signalR?: typeof import('@microsoft/signalr') }} */ (
-  window
-).signalR = signalR;
+if (window.navigator.webdriver === true) {
+  // E2E tests use window.monaco to inspect the editor and exercise language workers.
+  /** @type {Window & { monaco?: typeof import('monaco-editor') }} */ (window).monaco =
+    monaco;
+  // E2E synchronization tests create independent probe connections through this export.
+  /** @type {Window & { signalR?: typeof import('@microsoft/signalr') }} */ (
+    window
+  ).signalR = signalR;
+}
 const connectionStatusEl = document.getElementById('connectionStatus');
 const roomNameEl = document.getElementById('roomName');
 const createdByEl = document.getElementById('createdBy');

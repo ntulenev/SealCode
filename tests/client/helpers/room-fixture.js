@@ -47,6 +47,7 @@ export class Element {
 
 export function editorFixture(theme = 'dark') {
   const view = new Element();
+  view.navigator = { webdriver: true };
   view.getComputedStyle = () => ({ getPropertyValue: () => '#123456' });
   const nodes = new Map();
   const document = new Element();

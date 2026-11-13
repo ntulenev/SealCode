@@ -1,6 +1,7 @@
 // @ts-nocheck
 // TODO: type the Monaco and browser composition adapters.
 import { RoomLifecycle, isRoomNotFound, registerHubHandlers } from './room-lifecycle.js';
+import { installDebugHooks } from './debug-hooks.js';
 import { YjsSession } from './yjs-session.js';
 import { PresenceView } from './presence-ui.js';
 import { base64FromUint8, uint8FromBase64 } from './encoding.js';
@@ -466,32 +467,9 @@ export function createRoomApplication({
     }
   });
 
-  window.__debugYjsSend = () => {
-    if (!yjs.ydoc) return false;
-    scheduleYjsUpdateSend(Y.encodeStateAsUpdate(yjs.ydoc));
-    return true;
-  };
-
-  window.__debugUndoState = () => ({
-    canUndo: yjs.undoHistory?.canUndo() ?? false,
-    canRedo: yjs.undoHistory?.canRedo() ?? false,
-    undoDepth: yjs.undoHistory?.undoDepth ?? 0,
-    redoDepth: yjs.undoHistory?.redoDepth ?? 0,
-    documentRevision: yjs.currentDocumentRevision,
-    highestDocumentRevisionSeen: yjs.highestDocumentRevisionSeen
-  });
-
-  window.__debugReconnect = async () => {
-    if (!lifecycle.joined || lifecycle.closed) return false;
-    await connection.stop();
-    const started = await connectionLifecycle.start();
-    if (!started) return false;
-    await lifecycle.rejoinRoomWithRetry();
-    return (
-      connection.state === signalR.HubConnectionState.Connected &&
-      connectionStatusEl.textContent === 'connected'
-    );
-  };
+  installDebugHooks({ window, yjs, Y, scheduleYjsUpdateSend, lifecycle,
+    connection, connectionLifecycle, connectedState: signalR.HubConnectionState.Connected,
+    connectionStatusEl });
 
   function setStatus(status) {
     connectionStatusEl.textContent = status;
