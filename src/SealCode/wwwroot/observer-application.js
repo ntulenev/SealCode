@@ -1,4 +1,5 @@
 import { HubObserverMethods, HubObserverEvents } from './hub-contract.js';
+import { applyObserverTextDelta } from './observer-text.js';
 import { uint8FromBase64 } from './encoding.js';
 import { createObserverPresence } from './observer-presence.js';
 
@@ -36,6 +37,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
   let model;
   /** @type {typeof import('monaco-editor') | undefined} */
   let monaco;
+  let unbindText = () => {};
   let revision = -1;
   let metadataRevision = -1;
   let presenceRevision = -1;
@@ -129,6 +131,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
         for (const update of message.YjsUpdates) Y.applyUpdate(next, uint8FromBase64(update.Update));
         if (!message.YjsState && !message.YjsUpdates.length && message.Text) next.getText('monaco').insert(0, message.Text);
       } catch (error) { next.destroy(); throw error; }
+      unbindText();
       boardBinding?.destroy();
       doc?.destroy();
       doc = next;
@@ -142,23 +145,31 @@ export function createObserverApplication({ window, document, connection, Y, cre
         board ??= createWhiteboardView(host);
         board.setReadOnly(true);
         boardBinding = board.bind(doc);
-      } else { await makeEditor(); if (terminal) return; renderText(); }
+      } else {
+        await makeEditor();
+        if (terminal) return;
+        renderText();
+        const text = doc.getText('monaco');
+        /** @param {import('yjs').YTextEvent} event */
+        const updateText = event => {
+          if (model) applyObserverTextDelta(model, text, event.delta);
+        };
+        text.observe(updateText);
+        unbindText = () => text.unobserve(updateText);
+      }
       metadata(message);
       awaitingSnapshot = false;
       status.textContent = 'Live · Read only';
       return;
     }
     if (awaitingSnapshot || !doc) return;
-    let changed = false;
     for (const update of message.YjsUpdates) {
       if (update.Revision <= revision) continue;
       if (update.Revision !== revision + 1) { recover(); return; }
       Y.applyUpdate(doc, uint8FromBase64(update.Update));
       revision = update.Revision;
-      changed = true;
     }
     if (message.DocumentRevision > revision) { recover(); return; }
-    if (changed) renderText();
     metadata(message);
   }
   connection.on(HubObserverEvents.ObserverMessage, payload => {
@@ -212,7 +223,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     disconnected();
     terminal = true;
     window.clearTimeout(probeTimer); window.clearTimeout(startTimer); window.clearTimeout(recoveryTimer);
-    void connection.stop(); boardBinding?.destroy(); doc?.destroy(); editor?.dispose(); model?.dispose();
+    void connection.stop(); unbindText(); boardBinding?.destroy(); doc?.destroy(); editor?.dispose(); model?.dispose();
   });
   window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
   const ready = token.length !== 43
