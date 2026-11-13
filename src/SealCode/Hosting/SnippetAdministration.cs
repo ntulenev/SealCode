@@ -32,7 +32,7 @@ internal sealed class SnippetAdministration
 
     /// <summary>Gets whether this deployment permits database snippet edits.</summary>
     public bool Enabled => _settings.Enabled
-        && _settings.Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase)
+        && _settings.UsesPostgreSql
         && _repository is IEditableSnippetRepository;
 
     /// <summary>Checks the current identity independently of read-only snippet access.</summary>

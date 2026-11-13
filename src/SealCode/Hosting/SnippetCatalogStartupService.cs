@@ -45,7 +45,7 @@ internal sealed class SnippetCatalogStartupService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (_settings.Enabled
-            && _settings.Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase)
+            && _settings.UsesPostgreSql
             && string.IsNullOrWhiteSpace(_configuration.GetConnectionString("SealCode")))
         {
             _logger.LogWarning("Snippet catalog requires ConnectionStrings:SealCode for the PostgreSql provider.");
@@ -59,7 +59,7 @@ internal sealed class SnippetCatalogStartupService : IHostedService
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
-                var retry = _settings.Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase)
+                var retry = _settings.UsesPostgreSql
                     && attempt < _settings.StartupRetryCount && IsConnectionFailure(exception);
                 _logger.LogWarning("Snippet catalog startup read failed ({FailureType}); retry scheduled: {Retry}.",
                     exception.GetType().Name, retry);
