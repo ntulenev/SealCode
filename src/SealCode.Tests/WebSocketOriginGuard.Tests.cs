@@ -7,6 +7,9 @@ namespace SealCode.Tests;
 public sealed class WebSocketOriginGuardTests
 {
     [Theory]
+    [InlineData("/roomHub")]
+    [InlineData("/ROOMHUB")]
+    [InlineData("/roomhub")]
     [InlineData("/observerHub")]
     [InlineData("/OBSERVERHUB")]
     public async Task ViewerTransportRejectsForeignOriginAndAllowsSameOriginAndNonBrowserClients(string path)

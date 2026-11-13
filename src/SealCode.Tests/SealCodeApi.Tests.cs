@@ -33,6 +33,24 @@ namespace SealCode.Tests;
 public sealed partial class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFactory)
     : IClassFixture<SealCodeApiTests.SealCodeAppFactory>
 {
+    [Theory]
+    [InlineData("/ROOMHUB")]
+    [InlineData("/OBSERVERHUB")]
+    public async Task HubRoutingCannotBypassOriginGuardWithUppercasePaths(string path)
+    {
+        using var client = readFactory.CreateClient();
+        using var foreign = new HttpRequestMessage(HttpMethod.Get, path);
+        foreign.Headers.Add("Upgrade", "websocket");
+        foreign.Headers.Add("Origin", "https://foreign.example");
+        using var rejected = await client.SendAsync(foreign);
+        Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        using var local = new HttpRequestMessage(HttpMethod.Get, path);
+        local.Headers.Add("Upgrade", "websocket");
+        local.Headers.Add("Origin", client.BaseAddress!.GetLeftPart(UriPartial.Authority));
+        using var allowed = await client.SendAsync(local);
+        Assert.NotEqual(HttpStatusCode.Forbidden, allowed.StatusCode);
+    }
+
     [Fact]
     [Trait("Category", "Integration")]
     public async Task ConnectionCapacityRejectionClosesClientAndReleasesPermit()
