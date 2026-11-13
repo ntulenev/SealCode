@@ -2,6 +2,7 @@ using System.Net.Sockets;
 
 using Abstractions;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -18,6 +19,28 @@ namespace SealCode.Tests;
 
 public sealed class SnippetCatalogStartupServiceTests
 {
+    [Fact]
+    public async Task MissingDatabaseKeyIsNamedWithoutPreventingStartup()
+    {
+        using var provider = new AuditLogProvider();
+        using var logs = LoggerFactory.Create(builder =>
+            builder.AddProvider(provider));
+        var catalog = new Mock<ISnippetCatalog>(MockBehavior.Strict);
+        catalog.Setup(value => value.InitializeAsync(CancellationToken.None))
+            .ThrowsAsync(new InvalidOperationException("private-message"));
+        var service = new SnippetCatalogStartupService(catalog.Object,
+            Settings("PostgreSql", 0, 0), TimeProvider.System,
+            logs.CreateLogger<SnippetCatalogStartupService>(),
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        await service.StartAsync(CancellationToken.None);
+        Assert.Contains(provider.Entries, entry =>
+            entry.Level == LogLevel.Warning
+            && entry.Text.Contains("ConnectionStrings:SealCode", StringComparison.Ordinal));
+        Assert.All(provider.Entries, entry =>
+            Assert.DoesNotContain("private-message", entry.Text, StringComparison.Ordinal));
+        catalog.Verify(value => value.InitializeAsync(CancellationToken.None), Times.Once);
+    }
+
     [Fact]
     public async Task StartupForwardsCancellationAndShutdownDoesNotInitializeAgain()
     {
@@ -113,17 +136,17 @@ public sealed class SnippetCatalogStartupServiceTests
         var catalog = new Mock<ISnippetCatalog>().Object;
         Assert.Throws<ArgumentNullException>(() => Service(null!));
         Assert.Throws<ArgumentNullException>(() => new SnippetCatalogStartupService(catalog,
-            null!, TimeProvider.System, NullLogger<SnippetCatalogStartupService>.Instance));
+            null!, TimeProvider.System, NullLogger<SnippetCatalogStartupService>.Instance, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
         Assert.Throws<ArgumentNullException>(() => new SnippetCatalogStartupService(catalog,
-            Settings("File", 0, 0), null!, NullLogger<SnippetCatalogStartupService>.Instance));
+            Settings("File", 0, 0), null!, NullLogger<SnippetCatalogStartupService>.Instance, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
         Assert.Throws<ArgumentNullException>(() => new SnippetCatalogStartupService(catalog,
-            Settings("File", 0, 0), TimeProvider.System, null!));
+            Settings("File", 0, 0), TimeProvider.System, null!, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
     }
 
     private static SnippetCatalogStartupService Service(ISnippetCatalog catalog, string provider = "File",
         TimeProvider? clock = null, int delay = 0, int retries = 2)
         => new(catalog, Settings(provider, delay, retries), clock ?? TimeProvider.System,
-            NullLogger<SnippetCatalogStartupService>.Instance);
+            NullLogger<SnippetCatalogStartupService>.Instance, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
 
     private static IOptions<ApplicationConfiguration> Settings(string provider, int delay, int retries)
         => Options.Create(new ApplicationConfiguration
