@@ -127,20 +127,23 @@
 export {};
 
 /**
- * @typedef {object} ObserverMessage
- * @property {string} Type
- * @property {string} Name
- * @property {string} Kind
- * @property {string} Language
- * @property {string} Text
- * @property {string | null} YjsState
- * @property {Array<{Revision: number, Update: string}>} YjsUpdates
- * @property {number} DocumentRevision
- * @property {number} MetadataRevision
- * @property {number} PresenceRevision
- * @property {string[]} Users
- * @property {number} ObserverCount
- * @property {number} ObserverRevision
+ * @typedef {{Revision: number, Update: string}} ObserverDocumentUpdate
+ * @typedef {{Language: string, MetadataRevision: number, PresenceRevision: number,
+ * Users: string[]}} ObserverMetadata
+ * @typedef {{ObserverCount: number, ObserverRevision: number}} ObserverCountFields
+ * @typedef {ObserverMetadata & {Type: 'Snapshot', Name: string,
+ * Kind: 'code' | 'whiteboard', Text: string, Version: number, YjsState: string | null,
+ * YjsUpdates: ObserverDocumentUpdate[], DocumentRevision: number,
+ * CheckpointRevision: number}} ObserverSnapshot
+ * @typedef {ObserverMetadata & ObserverCountFields & {Type: 'Update',
+ * RequiresResync: boolean, YjsUpdates: ObserverDocumentUpdate[],
+ * DocumentRevision: number, CheckpointRevision: number}} ObserverUpdate
+ * @typedef {ObserverCountFields & {Type: 'Count'}} ObserverCountMessage
+ * @typedef {{Type: 'RequiresResync'}} ObserverResyncMessage
+ * @typedef {ObserverSnapshot | ObserverUpdate | ObserverCountMessage |
+ * ObserverResyncMessage} ObserverMessage
+ * @typedef {ObserverCountFields & {Revisions: {DocumentRevision: number,
+ * MetadataRevision: number, PresenceRevision: number} & ObserverCountFields}} ObserverRevisions
  * @typedef {{window: Window & {MutationObserver: typeof MutationObserver}, document: Document,
  * connection: import('@microsoft/signalr').HubConnection, Y: typeof import('yjs'),
  * createWhiteboardView: typeof import('./whiteboard-view.js').createWhiteboardView,

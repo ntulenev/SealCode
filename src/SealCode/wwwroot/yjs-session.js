@@ -391,7 +391,7 @@ export class YjsSession {
       ) {
         // The authoritative journal is retained; discard only this delivery buffer and recover.
         this.bufferedYjsMessages.length = 0;
-      this.bufferedYjsBytes = 0;
+        this.bufferedYjsBytes = 0;
         this.onRecovery(250);
         return;
       }

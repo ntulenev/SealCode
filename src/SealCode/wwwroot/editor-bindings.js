@@ -92,25 +92,25 @@ export function installEditorBindings({ editor, model, monaco, yjs, presence,
     });
   });
 
-document.addEventListener(
-  'copy',
-  (event) => {
-    if (!editor) return;
-    const target = event.target;
-    const isEditorCopy =
-      editor.hasTextFocus() || (target instanceof NodeType && editorHost.contains(target));
-    if (!isEditorCopy) return;
-    if (!hasNonEmptyEditorSelection()) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
-    if (!getDisplayName()) return;
-    if (connection.state !== connectedState) return;
-    presence.markCopying(getDisplayName());
-    connection.invoke(HubMethods.UpdateCopy, roomId).catch(() => {});
-  },
-  true
-);
+  document.addEventListener(
+    'copy',
+    (event) => {
+      if (!editor) return;
+      const target = event.target;
+      const isEditorCopy =
+        editor.hasTextFocus() || (target instanceof NodeType && editorHost.contains(target));
+      if (!isEditorCopy) return;
+      if (!hasNonEmptyEditorSelection()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (!getDisplayName()) return;
+      if (connection.state !== connectedState) return;
+      presence.markCopying(getDisplayName());
+      connection.invoke(HubMethods.UpdateCopy, roomId).catch(() => {});
+    },
+    true
+  );
 
 }

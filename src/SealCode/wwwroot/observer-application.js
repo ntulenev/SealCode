@@ -104,7 +104,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
       editor.restoreViewState(view);
     }
   }
-  /** @param {import('./client-types.js').ObserverMessage} message */
+  /** @param {import('./client-types.js').ObserverSnapshot | import('./client-types.js').ObserverUpdate} message */
   function metadata(message) {
     if (message.MetadataRevision >= metadataRevision) {
       metadataRevision = message.MetadataRevision;
@@ -117,7 +117,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
         const item = document.createElement('li'); item.textContent = name; return item;
       }));
     }
-    setCount(message.ObserverCount, message.ObserverRevision);
+    if ('ObserverCount' in message) setCount(message.ObserverCount, message.ObserverRevision);
   }
   /** @param {import('./client-types.js').ObserverMessage} message */
   async function apply(message) {
@@ -200,6 +200,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     probeTimer = window.setTimeout(async () => {
       if (connection.state === connectedState) {
         try {
+          /** @type {import('./client-types.js').ObserverRevisions} */
           const remote = await connection.invoke(HubObserverMethods.GetObserverRevisions);
           setCount(remote.ObserverCount, remote.ObserverRevision);
           const r = remote.Revisions;
