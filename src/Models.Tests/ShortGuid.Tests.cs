@@ -4,6 +4,15 @@ namespace Models.Tests;
 
 public sealed class ShortGuidTests
 {
+    [Fact]
+    public void DefaultValueRoundTrips()
+    {
+        var value = default(ShortGuid).ToString();
+        value.Should().NotBeNull();
+        ShortGuid.TryParse(value, out var parsed).Should().BeTrue();
+        parsed.Value.Should().Be(Guid.Empty);
+    }
+
     [Fact(DisplayName = "Constructor creates short guid with url safe 22 character value")]
     [Trait("Category", "Unit")]
     public void ConstructorCreatesShortGuid()
