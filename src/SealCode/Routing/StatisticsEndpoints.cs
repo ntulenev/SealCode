@@ -1,7 +1,5 @@
 using Abstractions;
 
-using SealCode.Security;
-
 namespace SealCode.Routing;
 
 /// <summary>Super-administrator-only usage reports and retention controls.</summary>
@@ -14,14 +12,10 @@ internal static class StatisticsEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        var group = app.MapGroup("/admin/statistics").AddEndpointFilter(async (context, next) =>
+        var group = app.MapGroup("/admin/statistics").RequireAdmin(noStore: true).AddEndpointFilter(async (context, next) =>
         {
             context.HttpContext.Response.Headers.CacheControl = "no-store";
-            var admins = context.HttpContext.RequestServices.GetRequiredService<IAdminUserManager>();
-            if (!admins.TryGetAdminUser(out var user))
-            {
-                return Results.Unauthorized();
-            }
+            var user = context.HttpContext.GetRequiredAdmin();
             if (!user.IsSuperAdmin)
             {
                 return Results.StatusCode(StatusCodes.Status403Forbidden);

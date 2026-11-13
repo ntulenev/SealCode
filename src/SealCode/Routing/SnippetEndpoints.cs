@@ -30,13 +30,12 @@ internal static class SnippetEndpoints
             return Results.Json(new SnippetAccessResponse(allowed && available, allowed && !available));
         });
 
-        _ = app.MapGet("/admin/snippets/catalog", (HttpContext context, ISnippetCatalog catalog, IAdminUserManager admins) =>
+        var api = app.MapGroup("").RequireAdmin(noStore: true);
+        var pages = app.MapGroup("").RequireAdmin(redirect: true, noStore: true);
+        _ = api.MapGet("/admin/snippets/catalog", (HttpContext context, ISnippetCatalog catalog) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            if (!admins.TryGetAdminUser(out var admin))
-            {
-                return Results.Unauthorized();
-            }
+            var admin = context.GetRequiredAdmin();
             if (!catalog.Enabled)
             {
                 return Results.NotFound();
@@ -54,13 +53,10 @@ internal static class SnippetEndpoints
             return Results.Json(snapshot.Library.Categories.Select(SnippetCategoryResponse.From).ToArray());
         });
 
-        _ = app.MapGet("/admin/snippets", (HttpContext context, ISnippetCatalog catalog, IAdminUserManager admins, IWebHostEnvironment env) =>
+        _ = pages.MapGet("/admin/snippets", (HttpContext context, ISnippetCatalog catalog, IWebHostEnvironment env) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            if (!admins.TryGetAdminUser(out var admin))
-            {
-                return Results.Redirect("/admin/login");
-            }
+            var admin = context.GetRequiredAdmin();
             return !catalog.Enabled ? Results.NotFound()
                 : !catalog.CanAccess(admin) ? Results.StatusCode(StatusCodes.Status403Forbidden)
                 : !catalog.Available ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)

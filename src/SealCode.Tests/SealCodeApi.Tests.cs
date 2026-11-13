@@ -51,6 +51,20 @@ public sealed partial class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory
         Assert.NotEqual(HttpStatusCode.Forbidden, allowed.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/admin/me")]
+    [InlineData("/admin/rooms")]
+    [InlineData("/admin/limits/config")]
+    [InlineData("/admin/snippets/catalog")]
+    [InlineData("/admin/statistics/data")]
+    public async Task ProtectedApisRejectGuestsWithoutCaching(string path)
+    {
+        using var client = readFactory.CreateClient();
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
     [Fact]
     public async Task OmittedLanguageUsesConfiguredSql()
     {

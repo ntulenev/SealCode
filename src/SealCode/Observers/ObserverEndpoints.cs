@@ -1,12 +1,10 @@
-using Abstractions;
-
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.Extensions.Options;
 
 using Models;
 using Models.Configuration;
 
-using SealCode.Security;
+using SealCode.Routing;
 
 namespace SealCode.Observers;
 
@@ -36,69 +34,25 @@ internal static class ObserverEndpoints
             }
             return await next(invocation).ConfigureAwait(false);
         });
-        _ = routes.MapGet("", (RoomId roomId, IRoomManager rooms, IAdminUserManager admins,
+        _ = routes.RequireAdmin().RequireRoomOwner();
+        _ = routes.MapGet("", (RoomId roomId,
             ObserverSessions observers, IOptions<ApplicationConfiguration> settings) =>
         {
-            if (!admins.TryGetAdminUser(out var admin))
-            {
-                return Results.Unauthorized();
-            }
-
-            if (!rooms.TryGetRoom(roomId, out var room))
-            {
-                return Results.NotFound();
-            }
-
-            if (!room.CanDelete(admin))
-            {
-                return Results.StatusCode(403);
-            }
-
             var url = observers.GetLink(roomId);
             return Results.Json(new { settings.Value.Observers.Enabled, settings.Value.Observers.MaxPerRoom, HasLink = url is not null, Url = url, ObserverCount = observers.Count(roomId).Count });
         });
-        _ = routes.MapPost("", (RoomId roomId, IRoomManager rooms, IAdminUserManager admins,
+        _ = routes.MapPost("", (HttpContext context,
             ObserverSessions observers, IOptions<ApplicationConfiguration> settings) =>
         {
-            if (!admins.TryGetAdminUser(out var admin))
-            {
-                return Results.Unauthorized();
-            }
-
-            if (!rooms.TryGetRoom(roomId, out var room))
-            {
-                return Results.NotFound();
-            }
-
-            if (!room.CanDelete(admin))
-            {
-                return Results.StatusCode(403);
-            }
-
             if (!settings.Value.Observers.Enabled)
             {
                 return Results.StatusCode(503);
             }
 
-            return Results.Json(new { Url = observers.CreateLink(room) });
+            return Results.Json(new { Url = observers.CreateLink(context.GetOwnedRoom()) });
         });
-        _ = routes.MapDelete("", (RoomId roomId, IRoomManager rooms, IAdminUserManager admins, ObserverSessions observers) =>
+        _ = routes.MapDelete("", (RoomId roomId, ObserverSessions observers) =>
         {
-            if (!admins.TryGetAdminUser(out var admin))
-            {
-                return Results.Unauthorized();
-            }
-
-            if (!rooms.TryGetRoom(roomId, out var room))
-            {
-                return Results.NotFound();
-            }
-
-            if (!room.CanDelete(admin))
-            {
-                return Results.StatusCode(403);
-            }
-
             observers.Disable(roomId);
             return Results.Ok();
         });
