@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { HubObserverMethods, HubObserverEvents } from './hub-contract.js';
 import { uint8FromBase64 } from './encoding.js';
 import { createObserverPresence } from './observer-presence.js';
 
@@ -62,7 +63,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
       recoveryTimer = null;
       if (terminal || connection.state !== connectedState) return;
       recovering = true;
-      try { await connection.invoke('SyncObserver'); lastSnapshotAt = now(); }
+      try { await connection.invoke(HubObserverMethods.SyncObserver); lastSnapshotAt = now(); }
       catch (error) { if (!unavailable(error)) { recovering = false; recover(); } }
       finally { recovering = false; }
     }, delay);
@@ -144,7 +145,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     if (changed) renderText();
     metadata(message);
   }
-  connection.on('ObserverMessage', payload => {
+  connection.on(HubObserverEvents.ObserverMessage, payload => {
     // Typed JSON avoids re-escaping an entire large snapshot as a JSON string.
     const size = typeof payload === 'string' ? payload.length : JSON.stringify(payload).length;
     // Bound application buffers even while Monaco's module is loading.
@@ -159,7 +160,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     if (terminal) return;
     retryMessage = '';
     awaitingSnapshot = true;
-    try { await connection.invoke('JoinObserver', token); lastSnapshotAt = 0; }
+    try { await connection.invoke(HubObserverMethods.JoinObserver, token); lastSnapshotAt = 0; }
     catch (error) { if (!unavailable(error)) { await connection.stop(); } }
   }
   function scheduleProbe() {
@@ -168,7 +169,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     probeTimer = window.setTimeout(async () => {
       if (connection.state === connectedState) {
         try {
-          const remote = await connection.invoke('GetObserverRevisions');
+          const remote = await connection.invoke(HubObserverMethods.GetObserverRevisions);
           setCount(remote.ObserverCount, remote.ObserverRevision);
           const r = remote.Revisions;
           if (awaitingSnapshot || r.DocumentRevision > revision || r.MetadataRevision > metadataRevision || r.PresenceRevision > presenceRevision) recover();

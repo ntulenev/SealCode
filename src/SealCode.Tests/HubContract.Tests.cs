@@ -21,7 +21,8 @@ public sealed partial class HubContractTests
         }
         directory.Should().NotBeNull();
         var source = File.ReadAllText(Path.Combine(directory!.FullName, "SealCode", "wwwroot", "hub-contract.js"));
-        foreach (var type in new[] { typeof(HubContract.Methods), typeof(HubContract.Events) })
+        foreach (var type in new[] { typeof(HubContract.Methods), typeof(HubContract.Events),
+            typeof(HubContract.ObserverMethods), typeof(HubContract.ObserverEvents) })
         {
             var block = Regex.Match(source, $@"Hub{type.Name} = Object\.freeze\(\{{(?<body>[\s\S]*?)\}}\)", RegexOptions.CultureInvariant).Groups["body"].Value;
             var browser = ContractPairs().Matches(block)

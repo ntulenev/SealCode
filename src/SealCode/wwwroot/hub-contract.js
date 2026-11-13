@@ -16,6 +16,7 @@ export const HubMethods = Object.freeze({
 
 /** Stable hub events. */
 export const HubEvents = Object.freeze({
+  ObserverCountChanged: 'ObserverCountChanged',
   UserJoined: 'UserJoined',
   YjsUpdated: 'YjsUpdated',
   YjsCheckpointed: 'YjsCheckpointed',
@@ -26,4 +27,17 @@ export const HubEvents = Object.freeze({
   UserCopy: 'UserCopy',
   UserLeft: 'UserLeft',
   RoomKilled: 'RoomKilled'
+});
+
+/** Stable observer methods. */
+export const HubObserverMethods = Object.freeze({
+  JoinObserver: 'JoinObserver',
+  SyncObserver: 'SyncObserver',
+  GetObserverRevisions: 'GetObserverRevisions',
+  LeaveObserver: 'LeaveObserver'
+});
+
+/** Stable observer events. */
+export const HubObserverEvents = Object.freeze({
+  ObserverMessage: 'ObserverMessage'
 });

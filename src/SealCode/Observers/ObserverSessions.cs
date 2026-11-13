@@ -15,6 +15,7 @@ using Models.Configuration;
 
 using SealCode.Hosting;
 
+using Transport;
 using Transport.Models;
 
 namespace SealCode.Observers;
@@ -291,7 +292,7 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
         {
             var guest = RequireJoined(connectionId);
             var room = guest.Room!;
-            return new { Revisions = room.State.GetRevisions(), ObserverCount = room.Count, ObserverRevision = room.CountRevision };
+            return new ObserverRevisions(room.State.GetRevisions(), room.Count, room.CountRevision);
         }
     }
 
@@ -471,7 +472,7 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
             guest.SnapshotPending = false;
             guest.NeedsResync = true;
             ObserverMetrics.Resyncs.Add(1);
-            _ = guest.Queue.Writer.TryWrite(new(guest.Room!, guest.Generation, Encode(new { Type = "RequiresResync" }), 0));
+            _ = guest.Queue.Writer.TryWrite(new(guest.Room!, guest.Generation, Encode(new ObserverRequiresResync("RequiresResync")), 0));
             return;
         }
         guest.QueuedBytes += bytes;
@@ -525,7 +526,7 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
                         ObserverPayload counter;
                         lock (_gate)
                         {
-                            counter = Encode(new { Type = "Count", ObserverCount = delivery.Room.Count, ObserverRevision = delivery.Room.CountRevision });
+                            counter = Encode(new ObserverCountMessage("Count", delivery.Room.Count, delivery.Room.CountRevision));
                         }
 
                         await SendAsync(guest, delivery, counter).ConfigureAwait(false);
@@ -574,7 +575,7 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(guest.Stop.Token, deadline.Token);
         try
         {
-            await _hub.Clients.Client(guest.Context.ConnectionId).SendAsync("ObserverMessage", payload.Value, timeout.Token).ConfigureAwait(false);
+            await _hub.Clients.Client(guest.Context.ConnectionId).SendAsync(HubContract.ObserverEvents.ObserverMessage, payload.Value, timeout.Token).ConfigureAwait(false);
             ObserverMetrics.Bytes.Add(payload.Bytes);
         }
         catch (OperationCanceledException) when (!guest.Stop.IsCancellationRequested)
@@ -598,24 +599,17 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
         }
         // Explicit allow-list: never serialize the room or the editor's identity/capability.
         var sync = room.State.CreateYjsSyncState();
-        var payload = Encode(new
-        {
-            Type = "Snapshot",
-            Name = room.State.Name.Value,
-            Kind = room.State.Kind.ToWireName(),
-            Language = sync.Language.Value,
-            // Yjs already contains the text. Repeating a large plain-text snapshot
-            // doubles serialization/transport allocations on every presentation join.
-            Text = sync.Checkpoint.Length == 0 && sync.Updates.Length == 0 ? sync.Text.Value : "",
-            Version = sync.Version.Value,
-            sync.MetadataRevision,
-            sync.PresenceRevision,
-            Users = sync.Users.Select(user => user.Value).ToArray(),
-            DocumentRevision = sync.DocumentRevision.Value,
-            CheckpointRevision = sync.CheckpointRevision.Value,
-            YjsState = sync.Checkpoint.Length == 0 ? null : Convert.ToBase64String(sync.Checkpoint),
-            YjsUpdates = sync.Updates.Select(update => new YjsDocumentUpdate(update.Revision.Value, Convert.ToBase64String(update.Payload))).ToArray()
-        });
+        var payload = Encode(new ObserverSnapshot(
+            "Snapshot", room.State.Name.Value, room.State.Kind.ToWireName(),
+            sync.Language.Value,
+            // Yjs already contains the text; avoid duplicating large snapshots.
+            sync.Checkpoint.Length == 0 && sync.Updates.Length == 0 ? sync.Text.Value : "",
+            sync.Version.Value, sync.MetadataRevision, sync.PresenceRevision,
+            [.. sync.Users.Select(user => user.Value)],
+            sync.DocumentRevision.Value, sync.CheckpointRevision.Value,
+            sync.Checkpoint.Length == 0 ? null : Convert.ToBase64String(sync.Checkpoint),
+            [.. sync.Updates.Select(update => new YjsDocumentUpdate(update.Revision.Value,
+                Convert.ToBase64String(update.Payload)))]));
         lock (_gate)
         {
             room.SnapshotPayload = payload;
@@ -734,20 +728,11 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
                 overflow = room.PendingOverflow;
                 room.PendingOverflow = false;
             }
-            var payload = Encode(new
-            {
-                Type = "Update",
-                DocumentRevision = sync.DocumentRevision.Value,
-                CheckpointRevision = sync.CheckpointRevision.Value,
-                RequiresResync = overflow,
-                YjsUpdates = updates,
-                Language = sync.Language.Value,
-                sync.MetadataRevision,
-                sync.PresenceRevision,
-                Users = sync.Users.Select(user => user.Value).ToArray(),
-                ObserverCount = count,
-                ObserverRevision = countRevision
-            });
+            var payload = Encode(new ObserverUpdate(
+                "Update", sync.DocumentRevision.Value, sync.CheckpointRevision.Value,
+                overflow, updates, sync.Language.Value, sync.MetadataRevision,
+                sync.PresenceRevision, [.. sync.Users.Select(user => user.Value)],
+                count, countRevision));
             var bytes = payload.Bytes;
             lock (_gate)
             {
@@ -785,7 +770,7 @@ public sealed class ObserverSessions : BackgroundService, IObserverUpdates
             try
             {
                 await _editors.Clients.Group(room.State.RoomId.Value)
-                    .SendAsync("ObserverCountChanged", count, countRevision, timeout.Token).ConfigureAwait(false);
+                    .SendAsync(HubContract.Events.ObserverCountChanged, count, countRevision, timeout.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
         }

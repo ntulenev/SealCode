@@ -1,3 +1,7 @@
+using Microsoft.AspNetCore.SignalR;
+
+using Transport;
+
 namespace SealCode.Observers;
 
 /// <summary>
@@ -22,19 +26,23 @@ public sealed class ObserverHub : Microsoft.AspNetCore.SignalR.Hub
     /// Reserves a guest slot and schedules an initial snapshot.
     /// </summary>
     /// <param name="token">The opaque read-only capability from the guest link.</param>
+    [HubMethodName(HubContract.ObserverMethods.JoinObserver)]
     public void JoinObserver(string token) => _sessions.Join(Context, token);
     /// <summary>
     /// Schedules recovery without accepting any client document data.
     /// </summary>
+    [HubMethodName(HubContract.ObserverMethods.SyncObserver)]
     public void SyncObserver() => _sessions.Sync(Context.ConnectionId);
     /// <summary>
     /// Returns revisions only for the capability bound to this connection.
     /// </summary>
     /// <returns>The document revisions and independent observer count.</returns>
+    [HubMethodName(HubContract.ObserverMethods.GetObserverRevisions)]
     public object GetObserverRevisions() => _sessions.Revisions(Context.ConnectionId);
     /// <summary>
     /// Releases guest membership without disconnecting the transport.
     /// </summary>
+    [HubMethodName(HubContract.ObserverMethods.LeaveObserver)]
     public void LeaveObserver() => _sessions.Leave(Context.ConnectionId);
     /// <inheritdoc />
     public override Task OnConnectedAsync()

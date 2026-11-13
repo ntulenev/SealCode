@@ -10,7 +10,7 @@ import {
   isUndoRedoShortcut,
   isPasteShortcut
 } from './keyboard-shortcuts.js';
-import { HubMethods } from './hub-contract.js';
+import { HubMethods, HubEvents } from './hub-contract.js';
 import { HubErrorCode, createHubError } from './hub-errors.js';
 import { createMonacoAdapter } from './monaco-adapter.js';
 import { createRoomConnection } from './room-connection.js';
@@ -101,7 +101,7 @@ export function createRoomApplication({
 
   const connectionLifecycle = createRoomConnection(signalR, '/roomHub');
   const connection = connectionLifecycle.connection;
-  connection.on('ObserverCountChanged', observerPresence);
+  connection.on(HubEvents.ObserverCountChanged, observerPresence);
   const boardPresence = board ? new WhiteboardPresence({
     board,
     document,
