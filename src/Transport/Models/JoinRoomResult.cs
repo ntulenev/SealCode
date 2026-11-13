@@ -75,7 +75,7 @@ public sealed record JoinRoomResult(
                 update.Revision.Value,
                 Convert.ToBase64String(update.Payload)))])
         {
-            Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code",
+            Kind = room.Kind.ToWireName(),
             MetadataRevision = syncState.MetadataRevision,
             PresenceRevision = syncState.PresenceRevision
         };

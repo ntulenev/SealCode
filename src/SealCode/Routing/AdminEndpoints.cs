@@ -134,7 +134,7 @@ internal static class AdminEndpoints
                     room.LastUpdatedUtc,
                     room.CreatedBy.DisplayName,
                     room.CanDelete)
-                { Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code" })
+                { Kind = room.Kind.ToWireName() })
                 .ToArray();
 
             return Results.Json(rooms);
@@ -181,11 +181,10 @@ internal static class AdminEndpoints
                 });
             }
 
-            if (payload.Kind is not (null or "code" or "whiteboard"))
+            if (!RoomKindWireNames.TryParseWireName(payload.Kind, out var kind))
             {
                 return Results.BadRequest(new { error = "Invalid room kind" });
             }
-            var kind = payload.Kind == "whiteboard" ? RoomKind.Whiteboard : RoomKind.Code;
             var language = new RoomLanguage(kind == RoomKind.Whiteboard ? "plaintext" : payload.Language ?? languageValidator.DefaultLanguage);
             if (kind == RoomKind.Code && !languageValidator.IsValid(language))
             {
@@ -201,7 +200,7 @@ internal static class AdminEndpoints
                 RoomId = room.RoomId.Value,
                 Name = room.Name.Value,
                 Language = room.Language.Value,
-                Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code",
+                Kind = room.Kind.ToWireName(),
                 CreatedBy = room.CreatedBy.DisplayName
             });
         });

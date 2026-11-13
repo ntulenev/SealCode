@@ -602,7 +602,7 @@ public sealed class ObserverSessions : BackgroundService
         {
             Type = "Snapshot",
             Name = room.State.Name.Value,
-            Kind = room.State.Kind == RoomKind.Whiteboard ? "whiteboard" : "code",
+            Kind = room.State.Kind.ToWireName(),
             Language = sync.Language.Value,
             // Yjs already contains the text. Repeating a large plain-text snapshot
             // doubles serialization/transport allocations on every presentation join.
