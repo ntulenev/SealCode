@@ -2,12 +2,13 @@
  * @param {import('monaco-editor').editor.ITextModel} model
  * @param {import('yjs').Text} text
  * @param {Array<{retain?: number, insert?: string | object, delete?: number}>} delta
+ * @param {boolean} [reconcile] Whether to repair immediately or at the message boundary.
  */
-export function applyObserverTextDelta(model, text, delta) {
+export function applyObserverTextDelta(model, text, delta, reconcile = true) {
   // Minimal read-only model adapters can still accept authoritative text.
   if (typeof model.applyEdits !== 'function' || typeof model.getPositionAt !== 'function'
       || typeof model.getValue !== 'function') {
-    model.setValue(text.toString());
+    if (reconcile) reconcileObserverText(model, text);
     return;
   }
   let offset = 0;
@@ -40,8 +41,24 @@ export function applyObserverTextDelta(model, text, delta) {
     }
   }
   flush();
-  model.applyEdits(edits);
-  // A missed change or unsupported embedded value must never leave a stale view.
+  try {
+    model.applyEdits(edits);
+  } catch {
+    // A stale range can be rejected by Monaco. The authoritative text is intact.
+    if (reconcile) model.setValue(text.toString());
+    return;
+  }
+  if (reconcile) reconcileObserverText(model, text);
+}
+
+/** Repairs a divergent read-only view once after a complete transport message.
+ * @param {import('monaco-editor').editor.ITextModel} model
+ * @param {import('yjs').Text} text
+ * @returns {boolean} Whether a full-text repair was necessary.
+ */
+export function reconcileObserverText(model, text) {
   const expected = text.toString();
-  if (model.getValue() !== expected) model.setValue(expected);
+  if (typeof model.getValue === 'function' && model.getValue() === expected) return false;
+  model.setValue(expected);
+  return true;
 }

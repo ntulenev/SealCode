@@ -47,3 +47,10 @@ test('minimal read-only model adapters receive one authoritative fallback', () =
     assert.deepEqual(f.resets, ['new']);
   }
 });
+
+test('observer falls back once when Monaco rejects stale edit ranges', () => {
+  const f = fixture('stale');
+  f.model.applyEdits = () => { throw new Error('invalid range'); };
+  applyObserverTextDelta(f.model, {toString: () => 'authoritative'}, [{insert: 'new'}]);
+  assert.deepEqual(f.resets, ['authoritative']);
+});

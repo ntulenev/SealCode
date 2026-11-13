@@ -1,5 +1,5 @@
 import { HubObserverMethods, HubObserverEvents } from './hub-contract.js';
-import { applyObserverTextDelta } from './observer-text.js';
+import { applyObserverTextDelta, reconcileObserverText } from './observer-text.js';
 import { uint8FromBase64 } from './encoding.js';
 import { createObserverPresence } from './observer-presence.js';
 
@@ -152,7 +152,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
         const text = doc.getText('monaco');
         /** @param {import('yjs').YTextEvent} event */
         const updateText = event => {
-          if (model) applyObserverTextDelta(model, text, event.delta);
+          if (model) applyObserverTextDelta(model, text, event.delta, false);
         };
         text.observe(updateText);
         unbindText = () => text.unobserve(updateText);
@@ -170,6 +170,10 @@ export function createObserverApplication({ window, document, connection, Y, cre
       revision = update.Revision;
     }
     if (message.DocumentRevision > revision) { recover(); return; }
+    if (model) {
+      const view = editor.saveViewState();
+      if (reconcileObserverText(model, doc.getText('monaco'))) editor.restoreViewState(view);
+    }
     metadata(message);
   }
   connection.on(HubObserverEvents.ObserverMessage, payload => {
