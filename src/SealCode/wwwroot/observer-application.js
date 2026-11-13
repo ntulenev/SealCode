@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { HubObserverMethods, HubObserverEvents } from './hub-contract.js';
 import { uint8FromBase64 } from './encoding.js';
 import { createObserverPresence } from './observer-presence.js';
@@ -14,17 +13,28 @@ export function observerRetryDelay(context, random = Math.random) {
 /** Composes the one-way guest document view and its recovery lifecycle.
  * Dependencies are injected so network failures, timer windows and asynchronous
  * editor startup are covered without a browser or a real server.
+ * @param {import('./client-types.js').ObserverApplicationOptions} options
  */
 export function createObserverApplication({ window, document, connection, Y, createWhiteboardView,
   loadMonaco, connectedState, now = Date.now, random = Math.random }) {
+  /** @param {string} id */
+  function element(id) {
+    return /** @type {HTMLElement} */ (document.getElementById(id));
+  }
   const token = window.location.hash.slice(1);
-  const status = document.getElementById('watchStatus');
+  const status = element('watchStatus');
   const setCount = createObserverPresence(document);
+  /** @type {import('yjs').Doc | undefined} */
   let doc;
+  /** @type {ReturnType<typeof createWhiteboardView> | undefined} */
   let board;
+  /** @type {ReturnType<ReturnType<typeof createWhiteboardView>['bind']> | undefined} */
   let boardBinding;
+  /** @type {import('monaco-editor').editor.IStandaloneCodeEditor | undefined} */
   let editor;
+  /** @type {import('monaco-editor').editor.ITextModel | undefined} */
   let model;
+  /** @type {typeof import('monaco-editor') | undefined} */
   let monaco;
   let revision = -1;
   let metadataRevision = -1;
@@ -32,8 +42,11 @@ export function createObserverApplication({ window, document, connection, Y, cre
   let recovering = false;
   let awaitingSnapshot = true;
   let terminal = false;
+  /** @type {number | undefined} */
   let probeTimer;
+  /** @type {number | undefined} */
   let recoveryTimer;
+  /** @type {number | undefined} */
   let startTimer;
   let retryMessage = '';
   let lastSnapshotAt = 0;
@@ -42,8 +55,9 @@ export function createObserverApplication({ window, document, connection, Y, cre
   let bufferedBytes = 0;
 
   function disconnected() { status.textContent = retryMessage || 'No connection — displayed data may be out of date.'; }
+  /** @param {unknown} error */
   function unavailable(error) {
-    const message = String(error?.message || error);
+    const message = String(error && typeof error === 'object' && 'message' in error ? error.message : error);
     if (/ObserverUnavailable|Forbidden/.test(message)) {
       terminal = true;
       status.textContent = 'Guest access is unavailable. The link may have been revoked or the room closed.';
@@ -60,7 +74,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     status.textContent = 'Synchronizing…';
     const delay = Math.max(300, 16000 - (now() - lastSnapshotAt)) + random() * 1000;
     recoveryTimer = window.setTimeout(async () => {
-      recoveryTimer = null;
+      recoveryTimer = undefined;
       if (terminal || connection.state !== connectedState) return;
       recovering = true;
       try { await connection.invoke(HubObserverMethods.SyncObserver); lastSnapshotAt = now(); }
@@ -73,7 +87,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     monaco = await loadMonaco();
     if (terminal) return;
     model = monaco.editor.createModel('', 'plaintext');
-    editor = monaco.editor.create(document.getElementById('monacoEditor'), {
+    editor = monaco.editor.create(element('monacoEditor'), {
       model, readOnly: true, domReadOnly: true, automaticLayout: true,
       minimap: { enabled: false }, theme: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark'
     });
@@ -88,20 +102,22 @@ export function createObserverApplication({ window, document, connection, Y, cre
       editor.restoreViewState(view);
     }
   }
+  /** @param {import('./client-types.js').ObserverMessage} message */
   function metadata(message) {
     if (message.MetadataRevision >= metadataRevision) {
       metadataRevision = message.MetadataRevision;
-      document.getElementById('watchLanguage').textContent = message.Language;
+      element('watchLanguage').textContent = message.Language;
       if (model) monaco.editor.setModelLanguage(model, message.Language);
     }
     if (message.PresenceRevision >= presenceRevision) {
       presenceRevision = message.PresenceRevision;
-      document.getElementById('participantsList').replaceChildren(...message.Users.map(name => {
+      element('participantsList').replaceChildren(...message.Users.map(name => {
         const item = document.createElement('li'); item.textContent = name; return item;
       }));
     }
     setCount(message.ObserverCount, message.ObserverRevision);
   }
+  /** @param {import('./client-types.js').ObserverMessage} message */
   async function apply(message) {
     if (terminal) return;
     if (message.Type === 'Count') { setCount(message.ObserverCount, message.ObserverRevision); return; }
@@ -118,10 +134,10 @@ export function createObserverApplication({ window, document, connection, Y, cre
       doc = next;
       revision = message.DocumentRevision;
       metadataRevision = presenceRevision = -1;
-      document.getElementById('roomName').textContent = message.Name;
+      element('roomName').textContent = message.Name;
       if (message.Kind === 'whiteboard') {
-        document.getElementById('watchEditor').classList.add('hidden');
-        const host = document.getElementById('whiteboard');
+        element('watchEditor').classList.add('hidden');
+        const host = element('whiteboard');
         host.classList.remove('hidden');
         board ??= createWhiteboardView(host);
         board.setReadOnly(true);

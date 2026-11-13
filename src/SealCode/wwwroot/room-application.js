@@ -5,12 +5,6 @@ import { installDebugHooks } from './debug-hooks.js';
 import { YjsSession } from './yjs-session.js';
 import { PresenceView } from './presence-ui.js';
 import { base64FromUint8, uint8FromBase64 } from './encoding.js';
-import {
-  isCopyShortcut,
-  isUndoShortcut,
-  isUndoRedoShortcut,
-  isPasteShortcut
-} from './keyboard-shortcuts.js';
 import { HubMethods, HubEvents } from './hub-contract.js';
 import { HubErrorCode, createHubError } from './hub-errors.js';
 import { createMonacoAdapter } from './monaco-adapter.js';
@@ -30,7 +24,9 @@ import {
 import { BoundedUndoManager } from './bounded-undo-manager.js';
 import { DEFAULT_MAX_YJS_MESSAGE_BYTES, fitsYjsMessage } from './yjs-message-size.js';
 import { readClientLimits, checkCheckpointSize, timeoutSignal } from './client-limits.js';
-import { SyncErrors } from './sync-errors.js';
+import { installEditorBindings } from './editor-bindings.js';
+import { createJournalRecovery } from './journal-recovery.js';
+import { createSyncErrorView } from './sync-error-view.js';
 import { compactCheckpoint } from './compact-checkpoint.js';
 import { readSyncResult, applyJoinDocument } from './sync-result.js';
 import { setLanguageOptions } from './language-options.js';
@@ -68,15 +64,12 @@ export function createRoomApplication({
     deleteRoomBtn,
     deleteRoomError
   } = elements;
-  const syncErrors = new SyncErrors();
   const observerPresence = createObserverPresence(document);
-  const downloadLocalText = document.getElementById('downloadLocalText');
   const generateNameBtn = document.getElementById('generateDisplayName');
   let collaborativeUndoEnabled = true;
   let maxYjsMessageBytes = DEFAULT_MAX_YJS_MESSAGE_BYTES;
   let maxEncodedCheckpointBytes = 4 * 1024 * 1024;
   let maxSnapshotCharacters = 1024 * 1024;
-  let textSizeExceeded = false;
 
   let displayName = '';
   const presence = new PresenceView({
@@ -91,6 +84,11 @@ export function createRoomApplication({
 
   let editor = null;
   let model = null;
+  const { showSyncError, clearSyncError } = createSyncErrorView({
+    syncError, downloadLocalText: document.getElementById('downloadLocalText'),
+    document, roomId, getModel: () => model,
+    downloadBoard: board ? () => board.download() : null
+  });
   let editorReadyResolve;
   const editorReady = new Promise((resolve) => {
     editorReadyResolve = resolve;
@@ -137,7 +135,6 @@ export function createRoomApplication({
   let updateSender;
   let recoveryController;
   let checkpointWriter;
-  let recoveringJournal = false;
   let checkpointBlockedAtLength = null;
 
   const yjs = new YjsSession({
@@ -271,61 +268,11 @@ export function createRoomApplication({
     }
   });
 
-  async function recoverJournal() {
-    if (recoveringJournal || !updateSender.pausedForJournal) return;
-    recoveringJournal = true;
-    const session = yjs.yjsSession;
-    try {
-      while (updateSender.pausedForJournal && !lifecycle.closed && session === yjs.yjsSession) {
-        if (!lifecycle.participating || connection.state !== signalR.HubConnectionState.Connected)
-          return;
-        try {
-          const sync = readSyncResult(await connection.invoke(HubMethods.SyncYjs, roomId));
-          if (session !== yjs.yjsSession || !lifecycle.participating) return;
-          const compact = new Y.Doc();
-          let args;
-          try {
-            if (sync.yjsState) Y.applyUpdate(compact, uint8FromBase64(sync.yjsState));
-            for (const item of sync.yjsUpdates)
-              Y.applyUpdate(compact, uint8FromBase64(item.Update ?? item.update));
-            args = [roomId, base64FromUint8(Y.encodeStateAsUpdate(compact)),
-              compact.getText('monaco').toString(), sync.documentRevision];
-          } finally {
-            compact.destroy();
-          }
-          checkCheckpointSize(
-            { stateBase64Length: args[1].length, textLength: args[2].length },
-            { maxEncodedCheckpointBytes, maxSnapshotCharacters }
-          );
-          if (!fitsYjsMessage(HubMethods.CheckpointYjs, args, maxYjsMessageBytes))
-            throw createHubError(HubErrorCode.LimitExceeded, 'CheckpointTooLarge');
-          const accepted = await connection.invoke(HubMethods.CheckpointYjs, ...args);
-          if (session !== yjs.yjsSession || !lifecycle.participating) return;
-          if (accepted) {
-            yjs.checkpointJournal.noteCheckpoint(sync.documentRevision);
-            updateSender.resumeAfterCheckpoint();
-            clearSyncError('transport');
-            setEditorReadOnly(false);
-            return;
-          }
-        } catch (error) {
-          if (classifyJournalRecoveryError(error)) {
-            showSyncError('checkpoint-size',
-              board ? 'The board cannot be compacted. Download the local board before reloading.' : 'The room state cannot be compacted. Copy your text before reloading.');
-            return;
-          }
-          if (isRoomNotFound(error)) return lifecycle.closeRoom('Room not found.');
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1100));
-      }
-    } finally {
-      recoveringJournal = false;
-    }
-  }
-
-  function classifyJournalRecoveryError(error) {
-    return /LimitExceeded|too large/.test(String(error?.message));
-  }
+  const recoverJournal = createJournalRecovery({
+    Y, yjs, updateSender, lifecycle, connection, signalR, roomId, isBoard: !!board,
+    getLimits: () => ({ maxEncodedCheckpointBytes, maxSnapshotCharacters, maxYjsMessageBytes }),
+    clearSyncError, showSyncError, setEditorReadOnly
+  });
 
   function syncState() {
     return {
@@ -475,36 +422,6 @@ export function createRoomApplication({
     connectionStatusEl.textContent = status;
   }
 
-  function renderSyncError(error) {
-    syncError.dataset.kind = error?.kind ?? '';
-    syncError.textContent = error?.message ?? '';
-    syncError.classList.toggle('hidden', error === null);
-    downloadLocalText?.classList.toggle(
-      'hidden', !['update-size', 'text-size', 'checkpoint-size'].includes(error?.kind)
-    );
-  }
-  downloadLocalText?.addEventListener('click', () => {
-    if (board) return board.download();
-    if (!model) return;
-    const blob = new Blob([model.getValue()], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `sealcode-${roomId}.txt`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  });
-
-  function showSyncError(kind, message) {
-    renderSyncError(syncErrors.show(kind, message));
-  }
-
-  function clearSyncError(kind) {
-    renderSyncError(syncErrors.clear(kind));
-  }
-
   function ensureLanguageOption(language) {
     if (!language) return;
     if ([...languageSelect.options].some((option) => option.value === language)) return;
@@ -652,75 +569,15 @@ export function createRoomApplication({
 
     presence.editor = editor;
     yjs.editor = editor;
-    editor.onDidChangeModelContent((event) => {
-      const exceedsTextLimit = model.getValueLength() > maxSnapshotCharacters;
-      if (exceedsTextLimit !== textSizeExceeded) {
-        textSizeExceeded = exceedsTextLimit;
-        if (exceedsTextLimit)
-          showSyncError('text-size',
-            `The document exceeds the ${maxSnapshotCharacters}-character snapshot limit. Reduce its size or download local text before leaving.`);
-        else
-          clearSyncError('text-size');
-      }
-      if (yjs.isApplyingRemoteUpdate) return;
-      if (checkpointBlockedAtLength !== null &&
-          model.getValueLength() < checkpointBlockedAtLength &&
-          model.getValueLength() <= maxSnapshotCharacters) {
-        checkpointWriter.skippedRevision = -1;
-        checkpointBlockedAtLength = null;
-      }
-      presence.hideRemoteCaretsTemporarily();
-      yjs.applyRemoteCursorAdjustment(event.changes);
-      presence.markActiveEditor(displayName);
-      scheduleCursorSend();
-    });
-
-    editor.onKeyDown((keyboardEvent) => {
-      const browserEvent = keyboardEvent.browserEvent;
-      if (isPasteShortcut(browserEvent)) {
-        yjs.undoHistory?.stopCapturing();
-        setTimeout(() => yjs.undoHistory?.stopCapturing(), 0);
-      }
-      if (isUndoRedoShortcut(browserEvent)) {
-        browserEvent.preventDefault();
-        browserEvent.stopImmediatePropagation();
-        keyboardEvent.preventDefault();
-        keyboardEvent.stopPropagation();
-        if (isUndoShortcut(browserEvent)) {
-          performCollaborativeUndo();
-        } else {
-          performCollaborativeRedo();
-        }
-        return;
-      }
-      if (!isCopyShortcut(browserEvent)) return;
-      if (hasNonEmptyEditorSelection()) return;
-      browserEvent.preventDefault();
-      browserEvent.stopImmediatePropagation();
-      keyboardEvent.preventDefault();
-      keyboardEvent.stopPropagation();
-    });
-
-    editor.onDidPaste?.(() => yjs.undoHistory?.stopCapturing());
-
-    editor.onDidChangeCursorSelection((event) => {
-      if (event.reason === monaco.editor.CursorChangeReason.Explicit) {
-        yjs.undoHistory?.stopCapturing();
-      }
-      if (!displayName || connection.state !== signalR.HubConnectionState.Connected) {
-        return;
-      }
-      scheduleCursorSend();
-      const sel = editor.getSelection();
-      if (!sel) return;
-      const isMultiLine = sel.startLineNumber !== sel.endLineNumber;
-      presence.markSelecting(displayName, isMultiLine);
-      if (lastSentSelectionMultiLine === isMultiLine) return;
-      lastSentSelectionMultiLine = isMultiLine;
-      connection.invoke(HubMethods.UpdateSelection, roomId, isMultiLine).catch((err) => {
-        lastSentSelectionMultiLine = undefined;
-        console.warn('Failed to send selection update.', err);
-      });
+    installEditorBindings({ editor, model, monaco, yjs, presence, connection,
+      connectedState: signalR.HubConnectionState.Connected, document, editorHost, roomId,
+      getDisplayName: () => displayName, getMaxSnapshotCharacters: () => maxSnapshotCharacters,
+      getCheckpointBlockedAtLength: () => checkpointBlockedAtLength,
+      clearCheckpointBlock: () => { checkpointWriter.skippedRevision = -1; checkpointBlockedAtLength = null; },
+      getLastSelection: () => lastSentSelectionMultiLine,
+      setLastSelection: value => { lastSentSelectionMultiLine = value; },
+      showSyncError, clearSyncError, scheduleCursorSend, hasNonEmptyEditorSelection,
+      undo: performCollaborativeUndo, redo: performCollaborativeRedo
     });
 
     editorReadyResolve();
@@ -790,27 +647,6 @@ export function createRoomApplication({
       console.warn('Failed to update language.', err);
     }
   });
-
-  document.addEventListener(
-    'copy',
-    (event) => {
-      if (!editor) return;
-      const target = event.target;
-      const isEditorCopy =
-        editor.hasTextFocus() || (target instanceof Node && editorHost.contains(target));
-      if (!isEditorCopy) return;
-      if (!hasNonEmptyEditorSelection()) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-      if (!displayName) return;
-      if (connection.state !== signalR.HubConnectionState.Connected) return;
-      presence.markCopying(displayName);
-      connection.invoke(HubMethods.UpdateCopy, roomId).catch(() => {});
-    },
-    true
-  );
 
   setStatus('disconnected');
   const featuresReady = loadFeatures();

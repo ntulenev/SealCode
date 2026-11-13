@@ -125,3 +125,25 @@
  * @property {() => void} onDispose
  */
 export {};
+
+/**
+ * @typedef {object} ObserverMessage
+ * @property {string} Type
+ * @property {string} Name
+ * @property {string} Kind
+ * @property {string} Language
+ * @property {string} Text
+ * @property {string | null} YjsState
+ * @property {Array<{Revision: number, Update: string}>} YjsUpdates
+ * @property {number} DocumentRevision
+ * @property {number} MetadataRevision
+ * @property {number} PresenceRevision
+ * @property {string[]} Users
+ * @property {number} ObserverCount
+ * @property {number} ObserverRevision
+ * @typedef {{window: Window & {MutationObserver: typeof MutationObserver}, document: Document,
+ * connection: import('@microsoft/signalr').HubConnection, Y: typeof import('yjs'),
+ * createWhiteboardView: typeof import('./whiteboard-view.js').createWhiteboardView,
+ * loadMonaco: () => Promise<typeof import('monaco-editor')>, connectedState: string,
+ * now?: () => number, random?: () => number}} ObserverApplicationOptions
+ */
