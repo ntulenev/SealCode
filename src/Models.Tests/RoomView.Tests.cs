@@ -50,5 +50,29 @@ public sealed class RoomViewTests
         view.CreatedBy.Should().Be(room.CreatedBy);
         view.CanDelete.Should().BeFalse();
     }
+    [Fact]
+    public void FromCapturesMutatedRoom()
+    {
+        var room = new RoomState(RoomId.New(), new RoomName("Room"),
+            new RoomLanguage("csharp"), new RoomText("code"), new RoomVersion(1),
+            DateTimeOffset.UnixEpoch, new AdminUser("Owner"));
+        var connection = new ConnectionId("conn");
+        room.AddUser(connection, new RoomUser("Alice"), 5);
+        var now = DateTimeOffset.UnixEpoch.AddHours(1);
+        room.Append(connection, [1], now);
+        room.ChangeLanguage(connection, new RoomLanguage("sql"), now,
+            new TestLanguageValidator());
+        var view = RoomView.From(room, room.CreatedBy);
+        view.Language.Should().Be(room.Language);
+        view.LastUpdatedUtc.Should().Be(now);
+        view.UsersCount.Should().Be(1);
+        view.CanDelete.Should().BeTrue();
+    }
+
+    private sealed class TestLanguageValidator : ILanguageValidator
+    {
+        public IReadOnlyList<string> Languages => ["csharp", "sql"];
+        public bool IsValid(RoomLanguage language) => true;
+    }
 }
 

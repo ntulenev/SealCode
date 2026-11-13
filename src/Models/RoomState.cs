@@ -69,19 +69,49 @@ public sealed class RoomState
     /// <summary>
     /// Gets the room language.
     /// </summary>
-    public RoomLanguage Language { get; private set; }
+    public RoomLanguage Language
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _language;
+            }
+        }
+        private set => _language = value;
+    }
 
     /// <summary>
     /// Gets the room text.
     /// </summary>
     /// <exception cref="ArgumentNullException">Thrown when the value is null.</exception>
-    public RoomText Text { get; private set; }
+    public RoomText Text
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _text;
+            }
+        }
+        private set => _text = value;
+    }
 
     /// <summary>
     /// Gets the room version.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the version is less than 1.</exception>
-    public RoomVersion Version { get; private set; }
+    public RoomVersion Version
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _version;
+            }
+        }
+        private set => _version = value;
+    }
 
     /// <summary>
     /// Gets the serialized Yjs document state (full update).
@@ -156,7 +186,17 @@ public sealed class RoomState
     /// <summary>
     /// Gets the last updated timestamp in UTC.
     /// </summary>
-    public DateTimeOffset LastUpdatedUtc { get; private set; }
+    public DateTimeOffset LastUpdatedUtc
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _lastUpdatedUtc;
+            }
+        }
+        private set => _lastUpdatedUtc = value;
+    }
 
     /// <summary>
     /// Gets the most recent successful mutation, including participant joins and departures.
@@ -190,7 +230,17 @@ public sealed class RoomState
     /// <summary>
     /// Gets the language revision, independent of document changes.
     /// </summary>
-    public long MetadataRevision { get; private set; }
+    public long MetadataRevision
+    {
+        get
+        {
+            lock (_versionGuard)
+            {
+                return _metadataRevision;
+            }
+        }
+        private set => _metadataRevision = value;
+    }
 
     /// <summary>
     /// Gets the membership revision.
@@ -445,6 +495,18 @@ public sealed class RoomState
         }
     }
 
+    /// <summary>Creates a consistent room view for an administrator.</summary>
+    /// <param name="adminUser">The administrator requesting the view.</param>
+    /// <returns>The room view captured under the aggregate lock.</returns>
+    public RoomView CreateView(AdminUser adminUser)
+    {
+        lock (_versionGuard)
+        {
+            return new RoomView(RoomId, Name, Language, ConnectedUserCount,
+                LastUpdatedUtc, CreatedBy, CanDelete(adminUser), Kind);
+        }
+    }
+
     private bool HasUser(ConnectionId connection) => _membership.Contains(connection);
 
     private void RequireParticipant(ConnectionId connection)
@@ -464,6 +526,14 @@ public sealed class RoomState
         }
     }
 
+    // Explicit fields keep the aggregate state and its lock visible together.
+#pragma warning disable IDE0032
+    private RoomLanguage _language;
+    private RoomText _text;
+    private RoomVersion _version;
+    private DateTimeOffset _lastUpdatedUtc;
+    private long _metadataRevision;
+#pragma warning restore IDE0032
     private bool _closed;
     private DateTimeOffset _lastActivityUtc;
     private readonly TimeProvider _timeProvider;

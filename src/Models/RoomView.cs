@@ -24,14 +24,6 @@ public sealed record RoomView(
     {
         ArgumentNullException.ThrowIfNull(room);
 
-        return new RoomView(
-            room.RoomId,
-            room.Name,
-            room.Language,
-            room.ConnectedUserCount,
-            room.LastUpdatedUtc,
-            room.CreatedBy,
-            room.CanDelete(adminUser),
-            room.Kind);
+        return room.CreateView(adminUser);
     }
 }
