@@ -33,6 +33,58 @@ namespace SealCode.Tests;
 public sealed partial class SealCodeApiTests(SealCodeApiTests.SealCodeAppFactory readFactory)
     : IClassFixture<SealCodeApiTests.SealCodeAppFactory>
 {
+    [Theory]
+    [InlineData("/ROOMHUB")]
+    [InlineData("/OBSERVERHUB")]
+    public async Task HubRoutingCannotBypassOriginGuardWithUppercasePaths(string path)
+    {
+        using var client = readFactory.CreateClient();
+        using var foreign = new HttpRequestMessage(HttpMethod.Get, path);
+        foreign.Headers.Add("Upgrade", "websocket");
+        foreign.Headers.Add("Origin", "https://foreign.example");
+        using var rejected = await client.SendAsync(foreign);
+        Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        using var local = new HttpRequestMessage(HttpMethod.Get, path);
+        local.Headers.Add("Upgrade", "websocket");
+        local.Headers.Add("Origin", client.BaseAddress!.GetLeftPart(UriPartial.Authority));
+        using var allowed = await client.SendAsync(local);
+        Assert.NotEqual(HttpStatusCode.Forbidden, allowed.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/admin/me")]
+    [InlineData("/admin/rooms")]
+    [InlineData("/admin/limits/config")]
+    [InlineData("/admin/snippets/catalog")]
+    [InlineData("/admin/statistics/data")]
+    public async Task ProtectedApisRejectGuestsWithoutCaching(string path)
+    {
+        using var client = readFactory.CreateClient();
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    [Fact]
+    public async Task OmittedLanguageUsesConfiguredSql()
+    {
+        using var source = CreateFactory();
+        using var factory = source.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Languages:0"] = "sql",
+                    ["Languages:1"] = "sql",
+                    ["Languages:2"] = "sql"
+                })));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        _ = await LoginAsAdminAsync(client);
+        using var response = await SecureJsonAsync(client, "/admin/rooms", new { Name = "Sql" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        created.GetProperty("Language").GetString().Should().Be("sql");
+    }
+
     [Fact]
     [Trait("Category", "Integration")]
     public async Task ConnectionCapacityRejectionClosesClientAndReleasesPermit()

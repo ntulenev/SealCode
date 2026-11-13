@@ -1,9 +1,10 @@
-// @ts-nocheck
-// TODO: type the Monaco editor integration callbacks.
 import { bindEditorTheme } from './editor-theme.js';
-/** Owns Monaco setup; collaborative operations are supplied by the controller. */
+/** Owns Monaco setup; collaborative operations are supplied by the controller.
+ * @param {typeof import('monaco-editor')} monaco
+ * @param {HTMLElement} host
+ * @param {{language: string, undo: () => void, redo: () => void}} callbacks */
 export function createMonacoAdapter(monaco, host, { language, undo, redo }) {
-  const model = monaco.editor.createModel('', language || 'plaintext');
+  const model = /** @type {import('monaco-editor').editor.ITextModel & {undo: () => Promise<void>, redo: () => Promise<void>}} */ (monaco.editor.createModel('', language || 'plaintext'));
   model.undo = async () => {
     undo();
   };

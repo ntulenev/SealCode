@@ -22,16 +22,19 @@ internal sealed class SnippetCatalogStartupService : IHostedService
     /// <param name="settings">The validated application settings.</param>
     /// <param name="timeProvider">The retry scheduling clock.</param>
     /// <param name="logger">The startup diagnostics logger.</param>
+    /// <param name="configuration">The connection configuration.</param>
     /// <exception cref="ArgumentNullException">Thrown when a dependency is null.</exception>
     public SnippetCatalogStartupService(ISnippetCatalog catalog,
         IOptions<ApplicationConfiguration> settings, TimeProvider timeProvider,
-        ILogger<SnippetCatalogStartupService> logger)
+        ILogger<SnippetCatalogStartupService> logger, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
+        ArgumentNullException.ThrowIfNull(configuration);
+        _configuration = configuration;
         _catalog = catalog;
         _settings = settings.Value.Snippets;
         _timeProvider = timeProvider;
@@ -41,6 +44,12 @@ internal sealed class SnippetCatalogStartupService : IHostedService
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        if (_settings.Enabled
+            && _settings.UsesPostgreSql
+            && string.IsNullOrWhiteSpace(_configuration.GetConnectionString("SealCode")))
+        {
+            _logger.LogWarning("Snippet catalog requires ConnectionStrings:SealCode for the PostgreSql provider.");
+        }
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -50,7 +59,7 @@ internal sealed class SnippetCatalogStartupService : IHostedService
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
-                var retry = _settings.Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase)
+                var retry = _settings.UsesPostgreSql
                     && attempt < _settings.StartupRetryCount && IsConnectionFailure(exception);
                 _logger.LogWarning("Snippet catalog startup read failed ({FailureType}); retry scheduled: {Retry}.",
                     exception.GetType().Name, retry);
@@ -79,6 +88,7 @@ internal sealed class SnippetCatalogStartupService : IHostedService
         _ => false
     };
 
+    private readonly IConfiguration _configuration;
     private readonly ISnippetCatalog _catalog;
     private readonly SnippetConfiguration _settings;
     private readonly TimeProvider _timeProvider;

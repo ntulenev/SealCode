@@ -1,4 +1,5 @@
-// @ts-nocheck
+import { HubObserverMethods, HubObserverEvents } from './hub-contract.js';
+import { applyObserverTextDelta, reconcileObserverText } from './observer-text.js';
 import { uint8FromBase64 } from './encoding.js';
 import { createObserverPresence } from './observer-presence.js';
 
@@ -13,26 +14,41 @@ export function observerRetryDelay(context, random = Math.random) {
 /** Composes the one-way guest document view and its recovery lifecycle.
  * Dependencies are injected so network failures, timer windows and asynchronous
  * editor startup are covered without a browser or a real server.
+ * @param {import('./client-types.js').ObserverApplicationOptions} options
  */
 export function createObserverApplication({ window, document, connection, Y, createWhiteboardView,
   loadMonaco, connectedState, now = Date.now, random = Math.random }) {
+  /** @param {string} id */
+  function element(id) {
+    return /** @type {HTMLElement} */ (document.getElementById(id));
+  }
   const token = window.location.hash.slice(1);
-  const status = document.getElementById('watchStatus');
+  const status = element('watchStatus');
   const setCount = createObserverPresence(document);
+  /** @type {import('yjs').Doc | undefined} */
   let doc;
+  /** @type {ReturnType<typeof createWhiteboardView> | undefined} */
   let board;
+  /** @type {ReturnType<ReturnType<typeof createWhiteboardView>['bind']> | undefined} */
   let boardBinding;
+  /** @type {import('monaco-editor').editor.IStandaloneCodeEditor | undefined} */
   let editor;
+  /** @type {import('monaco-editor').editor.ITextModel | undefined} */
   let model;
+  /** @type {typeof import('monaco-editor') | undefined} */
   let monaco;
+  let unbindText = () => {};
   let revision = -1;
   let metadataRevision = -1;
   let presenceRevision = -1;
   let recovering = false;
   let awaitingSnapshot = true;
   let terminal = false;
+  /** @type {number | undefined} */
   let probeTimer;
+  /** @type {number | undefined} */
   let recoveryTimer;
+  /** @type {number | undefined} */
   let startTimer;
   let retryMessage = '';
   let lastSnapshotAt = 0;
@@ -41,8 +57,9 @@ export function createObserverApplication({ window, document, connection, Y, cre
   let bufferedBytes = 0;
 
   function disconnected() { status.textContent = retryMessage || 'No connection — displayed data may be out of date.'; }
+  /** @param {unknown} error */
   function unavailable(error) {
-    const message = String(error?.message || error);
+    const message = String(error && typeof error === 'object' && 'message' in error ? error.message : error);
     if (/ObserverUnavailable|Forbidden/.test(message)) {
       terminal = true;
       status.textContent = 'Guest access is unavailable. The link may have been revoked or the room closed.';
@@ -59,10 +76,10 @@ export function createObserverApplication({ window, document, connection, Y, cre
     status.textContent = 'Synchronizing…';
     const delay = Math.max(300, 16000 - (now() - lastSnapshotAt)) + random() * 1000;
     recoveryTimer = window.setTimeout(async () => {
-      recoveryTimer = null;
+      recoveryTimer = undefined;
       if (terminal || connection.state !== connectedState) return;
       recovering = true;
-      try { await connection.invoke('SyncObserver'); lastSnapshotAt = now(); }
+      try { await connection.invoke(HubObserverMethods.SyncObserver); lastSnapshotAt = now(); }
       catch (error) { if (!unavailable(error)) { recovering = false; recover(); } }
       finally { recovering = false; }
     }, delay);
@@ -72,7 +89,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     monaco = await loadMonaco();
     if (terminal) return;
     model = monaco.editor.createModel('', 'plaintext');
-    editor = monaco.editor.create(document.getElementById('monacoEditor'), {
+    editor = monaco.editor.create(element('monacoEditor'), {
       model, readOnly: true, domReadOnly: true, automaticLayout: true,
       minimap: { enabled: false }, theme: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark'
     });
@@ -87,20 +104,22 @@ export function createObserverApplication({ window, document, connection, Y, cre
       editor.restoreViewState(view);
     }
   }
+  /** @param {import('./client-types.js').ObserverSnapshot | import('./client-types.js').ObserverUpdate} message */
   function metadata(message) {
     if (message.MetadataRevision >= metadataRevision) {
       metadataRevision = message.MetadataRevision;
-      document.getElementById('watchLanguage').textContent = message.Language;
+      element('watchLanguage').textContent = message.Language;
       if (model) monaco.editor.setModelLanguage(model, message.Language);
     }
     if (message.PresenceRevision >= presenceRevision) {
       presenceRevision = message.PresenceRevision;
-      document.getElementById('participantsList').replaceChildren(...message.Users.map(name => {
+      element('participantsList').replaceChildren(...message.Users.map(name => {
         const item = document.createElement('li'); item.textContent = name; return item;
       }));
     }
-    setCount(message.ObserverCount, message.ObserverRevision);
+    if ('ObserverCount' in message) setCount(message.ObserverCount, message.ObserverRevision);
   }
+  /** @param {import('./client-types.js').ObserverMessage} message */
   async function apply(message) {
     if (terminal) return;
     if (message.Type === 'Count') { setCount(message.ObserverCount, message.ObserverRevision); return; }
@@ -112,39 +131,52 @@ export function createObserverApplication({ window, document, connection, Y, cre
         for (const update of message.YjsUpdates) Y.applyUpdate(next, uint8FromBase64(update.Update));
         if (!message.YjsState && !message.YjsUpdates.length && message.Text) next.getText('monaco').insert(0, message.Text);
       } catch (error) { next.destroy(); throw error; }
+      unbindText();
       boardBinding?.destroy();
       doc?.destroy();
       doc = next;
       revision = message.DocumentRevision;
       metadataRevision = presenceRevision = -1;
-      document.getElementById('roomName').textContent = message.Name;
+      element('roomName').textContent = message.Name;
       if (message.Kind === 'whiteboard') {
-        document.getElementById('watchEditor').classList.add('hidden');
-        const host = document.getElementById('whiteboard');
+        element('watchEditor').classList.add('hidden');
+        const host = element('whiteboard');
         host.classList.remove('hidden');
         board ??= createWhiteboardView(host);
         board.setReadOnly(true);
         boardBinding = board.bind(doc);
-      } else { await makeEditor(); if (terminal) return; renderText(); }
+      } else {
+        await makeEditor();
+        if (terminal) return;
+        renderText();
+        const text = doc.getText('monaco');
+        /** @param {import('yjs').YTextEvent} event */
+        const updateText = event => {
+          if (model) applyObserverTextDelta(model, text, event.delta, false);
+        };
+        text.observe(updateText);
+        unbindText = () => text.unobserve(updateText);
+      }
       metadata(message);
       awaitingSnapshot = false;
       status.textContent = 'Live · Read only';
       return;
     }
     if (awaitingSnapshot || !doc) return;
-    let changed = false;
     for (const update of message.YjsUpdates) {
       if (update.Revision <= revision) continue;
       if (update.Revision !== revision + 1) { recover(); return; }
       Y.applyUpdate(doc, uint8FromBase64(update.Update));
       revision = update.Revision;
-      changed = true;
     }
     if (message.DocumentRevision > revision) { recover(); return; }
-    if (changed) renderText();
+    if (model) {
+      const view = editor.saveViewState();
+      if (reconcileObserverText(model, doc.getText('monaco'))) editor.restoreViewState(view);
+    }
     metadata(message);
   }
-  connection.on('ObserverMessage', payload => {
+  connection.on(HubObserverEvents.ObserverMessage, payload => {
     // Typed JSON avoids re-escaping an entire large snapshot as a JSON string.
     const size = typeof payload === 'string' ? payload.length : JSON.stringify(payload).length;
     // Bound application buffers even while Monaco's module is loading.
@@ -159,7 +191,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     if (terminal) return;
     retryMessage = '';
     awaitingSnapshot = true;
-    try { await connection.invoke('JoinObserver', token); lastSnapshotAt = 0; }
+    try { await connection.invoke(HubObserverMethods.JoinObserver, token); lastSnapshotAt = 0; }
     catch (error) { if (!unavailable(error)) { await connection.stop(); } }
   }
   function scheduleProbe() {
@@ -168,7 +200,8 @@ export function createObserverApplication({ window, document, connection, Y, cre
     probeTimer = window.setTimeout(async () => {
       if (connection.state === connectedState) {
         try {
-          const remote = await connection.invoke('GetObserverRevisions');
+          /** @type {import('./client-types.js').ObserverRevisions} */
+          const remote = await connection.invoke(HubObserverMethods.GetObserverRevisions);
           setCount(remote.ObserverCount, remote.ObserverRevision);
           const r = remote.Revisions;
           if (awaitingSnapshot || r.DocumentRevision > revision || r.MetadataRevision > metadataRevision || r.PresenceRevision > presenceRevision) recover();
@@ -195,7 +228,7 @@ export function createObserverApplication({ window, document, connection, Y, cre
     disconnected();
     terminal = true;
     window.clearTimeout(probeTimer); window.clearTimeout(startTimer); window.clearTimeout(recoveryTimer);
-    void connection.stop(); boardBinding?.destroy(); doc?.destroy(); editor?.dispose(); model?.dispose();
+    void connection.stop(); unbindText(); boardBinding?.destroy(); doc?.destroy(); editor?.dispose(); model?.dispose();
   });
   window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
   const ready = token.length !== 43

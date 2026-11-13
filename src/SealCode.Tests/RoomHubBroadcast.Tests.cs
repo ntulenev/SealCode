@@ -129,7 +129,7 @@ public sealed class RoomHubBroadcastTests
         clients.Setup(c => c.GroupExcept(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(proxy.Object);
         var languages = new Mock<ILanguageValidator>();
         languages.Setup(l => l.IsValid(It.IsAny<RoomLanguage>())).Returns(true);
-        return new RoomHub(manager.Object, new RoomSessionService(manager.Object, languages.Object), NullLogger<RoomHub>.Instance)
+        return new RoomHub(manager.Object, new RoomSessionService(manager.Object, languages.Object), NullLogger<RoomHub>.Instance, new NoOpObserverUpdates())
         {
             Context = context.Object,
             Clients = clients.Object,

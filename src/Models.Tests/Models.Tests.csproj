@@ -22,10 +22,6 @@
 		<ProjectReference Include="..\Models\Models.csproj" />
 	</ItemGroup>
 
-	<PropertyGroup>
-		<NoWarn>IDE0058</NoWarn>
-	</PropertyGroup>
-
 	<ItemGroup>
 		<Using Include="Xunit" />
 	</ItemGroup>

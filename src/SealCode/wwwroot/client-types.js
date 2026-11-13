@@ -125,3 +125,28 @@
  * @property {() => void} onDispose
  */
 export {};
+
+/**
+ * @typedef {{Revision: number, Update: string}} ObserverDocumentUpdate
+ * @typedef {{Language: string, MetadataRevision: number, PresenceRevision: number,
+ * Users: string[]}} ObserverMetadata
+ * @typedef {{ObserverCount: number, ObserverRevision: number}} ObserverCountFields
+ * @typedef {ObserverMetadata & {Type: 'Snapshot', Name: string,
+ * Kind: 'code' | 'whiteboard', Text: string, Version: number, YjsState: string | null,
+ * YjsUpdates: ObserverDocumentUpdate[], DocumentRevision: number,
+ * CheckpointRevision: number}} ObserverSnapshot
+ * @typedef {ObserverMetadata & ObserverCountFields & {Type: 'Update',
+ * RequiresResync: boolean, YjsUpdates: ObserverDocumentUpdate[],
+ * DocumentRevision: number, CheckpointRevision: number}} ObserverUpdate
+ * @typedef {ObserverCountFields & {Type: 'Count'}} ObserverCountMessage
+ * @typedef {{Type: 'RequiresResync'}} ObserverResyncMessage
+ * @typedef {ObserverSnapshot | ObserverUpdate | ObserverCountMessage |
+ * ObserverResyncMessage} ObserverMessage
+ * @typedef {ObserverCountFields & {Revisions: {DocumentRevision: number,
+ * MetadataRevision: number, PresenceRevision: number} & ObserverCountFields}} ObserverRevisions
+ * @typedef {{window: Window & {MutationObserver: typeof MutationObserver}, document: Document,
+ * connection: import('@microsoft/signalr').HubConnection, Y: typeof import('yjs'),
+ * createWhiteboardView: typeof import('./whiteboard-view.js').createWhiteboardView,
+ * loadMonaco: () => Promise<typeof import('monaco-editor')>, connectedState: string,
+ * now?: () => number, random?: () => number}} ObserverApplicationOptions
+ */

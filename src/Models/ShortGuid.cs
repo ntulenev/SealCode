@@ -30,7 +30,7 @@ public readonly record struct ShortGuid
     /// Returns the URL-safe 22-character representation of this GUID.
     /// </summary>
     /// <returns>The URL-safe Base64 string representation (22 characters, no padding).</returns>
-    public override string ToString() => _string;
+    public override string ToString() => _string ?? Encode(Value);
 
     /// <summary>
     /// Attempts to parse a string into a <see cref="ShortGuid"/>.
@@ -58,23 +58,21 @@ public readonly record struct ShortGuid
 
         if (s.Length == 22)
         {
-            try
+            Span<char> base64 = stackalloc char[24];
+            for (var i = 0; i < s.Length; i++)
             {
-                var base64 = s.Replace('_', '/').Replace('-', '+') + "==";
-                var bytes = Convert.FromBase64String(base64);
-
-                if (bytes.Length != 16)
-                {
-                    return false;
-                }
-
-                result = new ShortGuid(new Guid(bytes));
-                return true;
+                base64[i] = s[i] switch { '_' => '/', '-' => '+', var c => c };
             }
-            catch (FormatException)
+            base64[22] = '=';
+            base64[23] = '=';
+            Span<byte> bytes = stackalloc byte[16];
+            if (!Convert.TryFromBase64Chars(base64, bytes, out var written)
+                || written != 16)
             {
                 return false;
             }
+            result = new ShortGuid(new Guid(bytes));
+            return true;
         }
 
         if (Guid.TryParse(s, out var g))
@@ -132,5 +130,5 @@ public readonly record struct ShortGuid
             .TrimEnd('=');
     }
 
-    private readonly string _string;
+    private readonly string? _string;
 }

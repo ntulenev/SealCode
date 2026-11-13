@@ -676,3 +676,45 @@ test('transport reset preserves the checkpoint refusal interval until document d
   writer.reset();
   assert.equal(writer.skippedRevision, -1);
 });
+
+test('queue retains its byte budget across flight, failure, success and reset', async () => {
+  let release;
+  const f = fixture(() => new Promise(resolve => { release = resolve; }), { maxBytes: 4 });
+  f.queue.enqueue(Uint8Array.of(1, 2));
+  const flight = f.tick();
+  f.queue.enqueue(Uint8Array.of(3, 4));
+  assert.equal(f.queue.retainedBytes, 4);
+  f.queue.enqueue(Uint8Array.of(5));
+  assert.equal(f.queue.blocked, true);
+  assert.deepEqual(f.errors, [true]);
+  release();
+  await flight;
+  assert.equal(f.queue.retainedBytes, 2);
+  f.queue.reset();
+  assert.equal(f.queue.retainedBytes, 0);
+  for (let i = 0; i < 2048; i++) f.queue.enqueue(Uint8Array.of(1));
+  // Use the default byte limit for the count boundary.
+  const count = fixture(() => {});
+  for (let i = 0; i < 2048; i++) count.queue.enqueue(Uint8Array.of(1));
+  assert.equal(count.queue.blocked, false);
+  count.queue.enqueue(Uint8Array.of(1));
+  assert.equal(count.queue.blocked, true);
+  assert.equal(count.queue.pending.length, 2048);
+});
+
+test('queue keeps its byte budget when success callbacks throw or reset the session', async () => {
+  let successes = 0;
+  const f = fixture(() => {}, { onSuccess() {
+    if (++successes === 1) throw new Error('callback failure');
+  } });
+  f.queue.enqueue(Uint8Array.of(1, 2));
+  await f.tick();
+  assert.equal(f.queue.retainedBytes, 2);
+  assert.equal(f.queue.pending.length, 1);
+  await f.tick();
+  assert.equal(f.queue.retainedBytes, 0);
+  const reset = fixture(() => {}, {onSuccess() { reset.queue.reset(); }});
+  reset.queue.enqueue(Uint8Array.of(1, 2));
+  await reset.tick();
+  assert.equal(reset.queue.retainedBytes, 0);
+});

@@ -73,12 +73,37 @@ public static class HubContract
         public const string LeaveRoom = "LeaveRoom";
     }
 
+    /// <summary>Stable observer observermethods.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1034", Justification = "Grouped wire contract names.")]
+    public static class ObserverMethods
+    {
+        /// <summary>The JoinObserver wire name.</summary>
+        public const string JoinObserver = "JoinObserver";
+        /// <summary>The SyncObserver wire name.</summary>
+        public const string SyncObserver = "SyncObserver";
+        /// <summary>The GetObserverRevisions wire name.</summary>
+        public const string GetObserverRevisions = "GetObserverRevisions";
+        /// <summary>The LeaveObserver wire name.</summary>
+        public const string LeaveObserver = "LeaveObserver";
+    }
+
+    /// <summary>Stable observer observerevents.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1034", Justification = "Grouped wire contract names.")]
+    public static class ObserverEvents
+    {
+        /// <summary>The ObserverMessage wire name.</summary>
+        public const string ObserverMessage = "ObserverMessage";
+    }
+
     /// <summary>
     /// Defines hub events.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1034", Justification = "The shared contract groups method and event wire names.")]
     public static class Events
     {
+        /// <summary>The observer counter event wire name.</summary>
+        public const string ObserverCountChanged = "ObserverCountChanged";
+
         /// <summary>
         /// The UserJoined wire name.
         /// </summary>

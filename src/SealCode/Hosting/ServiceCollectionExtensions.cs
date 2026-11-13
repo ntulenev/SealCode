@@ -176,7 +176,7 @@ internal static class ServiceCollectionExtensions
         _ = services.AddSingleton<ISnippetRepository>(provider =>
         {
             var settings = provider.GetRequiredService<IOptions<ApplicationConfiguration>>().Value.Snippets;
-            if (settings.Enabled && settings.Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase))
+            if (settings.Enabled && settings.UsesPostgreSql)
             {
                 return new PostgreSqlSnippetRepository(() => provider.GetRequiredService<NpgsqlDataSource>());
             }
@@ -198,6 +198,7 @@ internal static class ServiceCollectionExtensions
     {
         _ = services.AddSingleton<RoomResourceFilter>();
         _ = services.AddSingleton<ObserverSessions>();
+        _ = services.AddSingleton<IObserverUpdates>(provider => provider.GetRequiredService<ObserverSessions>());
         _ = services.AddHostedService(provider => provider.GetRequiredService<ObserverSessions>());
         _ = services.AddSignalR(options =>
             {

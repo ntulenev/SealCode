@@ -53,7 +53,7 @@ public sealed class PostgreSqlUsageStatisticsRepository : IUsageStatisticsReposi
         _ = command.Parameters.AddWithValue(Key(user.Name));
         _ = command.Parameters.AddWithValue(room is null ? "login" : "room");
         foreach (var value in new[] { provider, room?.RoomId.Value.ToString(), room?.Name.Value,
-            room is null ? null : room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code", room?.Language.Value })
+            room?.Kind.ToWireName(), room?.Language.Value })
         {
             _ = command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text, Value = (object?)value ?? DBNull.Value });
         }

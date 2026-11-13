@@ -10,6 +10,9 @@ public sealed class SnippetConfiguration
     /// <summary>Gets the persistence provider: File (default) or PostgreSql.</summary>
     public string Provider { get; init; } = "File";
 
+    /// <summary>Gets whether the configured provider uses PostgreSQL.</summary>
+    public bool UsesPostgreSql => Provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Gets the additional startup attempts for transient PostgreSQL failures.</summary>
     [Range(0, 10)]
     public int StartupRetryCount { get; init; } = 3;

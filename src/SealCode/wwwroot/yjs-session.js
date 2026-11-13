@@ -57,6 +57,7 @@ export class YjsSession {
     this.synchronizationEpoch = 0;
     /** @type {Array<{updateBase64: string, documentRevision: number, roomVersion: number, author: string}>} */
     this.bufferedYjsMessages = [];
+    this.bufferedYjsBytes = 0;
     this.yjsSession = 0;
     this.checkpointJournal = new CheckpointJournalTracker();
   }
@@ -212,6 +213,7 @@ export class YjsSession {
       this.isSynchronizingYjs = false;
       this.synchronizationEpoch += 1;
       this.bufferedYjsMessages.length = 0;
+      this.bufferedYjsBytes = 0;
     }
   }
 
@@ -362,6 +364,7 @@ export class YjsSession {
       .sort(
         (left, right) => Number(left.documentRevision) - Number(right.documentRevision)
       );
+    this.bufferedYjsBytes = 0;
     for (const message of messages) {
       this.handleYjsUpdated(
         message.updateBase64,
@@ -382,18 +385,17 @@ export class YjsSession {
     if (this.isSynchronizingYjs) {
       if (
         this.bufferedYjsMessages.length >= 2048 ||
-        this.bufferedYjsMessages.reduce(
-          (sum, item) => sum + item.updateBase64.length,
-          0
-        ) +
+        this.bufferedYjsBytes +
           updateBase64.length >
           maxPendingBytes
       ) {
         // The authoritative journal is retained; discard only this delivery buffer and recover.
         this.bufferedYjsMessages.length = 0;
+        this.bufferedYjsBytes = 0;
         this.onRecovery(250);
         return;
       }
+      this.bufferedYjsBytes += updateBase64.length;
       this.bufferedYjsMessages.push({
         updateBase64,
         documentRevision,

@@ -23,6 +23,10 @@ internal static class AdminEndpoints
     /// <param name="app">The application to configure.</param>
     public static void MapAdminEndpoints(this WebApplication app)
     {
+        var api = app.MapGroup("").RequireAdmin();
+        var uncachedApi = app.MapGroup("").RequireAdmin(noStore: true);
+        var pages = app.MapGroup("").RequireAdmin(redirect: true);
+
         _ = app.MapGet("/admin/login", (IWebHostEnvironment env, HttpContext context) =>
         {
             var path = Path.Combine(env.WebRootPath, "admin-login.html");
@@ -71,58 +75,42 @@ internal static class AdminEndpoints
             return Results.Redirect("/admin/login");
         });
 
-        _ = app.MapGet("/admin", (IWebHostEnvironment env, IAdminUserManager adminUserManager, HttpContext context) =>
+        _ = pages.MapGet("/admin", (IWebHostEnvironment env, HttpContext context) =>
         {
-            if (!adminUserManager.IsAdmin())
-            {
-                return Results.Redirect("/admin/login");
-            }
 
             var path = Path.Combine(env.WebRootPath, "admin.html");
             StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
         });
 
-        _ = app.MapGet("/admin/limits", (IWebHostEnvironment env, IAdminUserManager adminUserManager, HttpContext context) =>
+        _ = pages.MapGet("/admin/limits", (IWebHostEnvironment env, HttpContext context) =>
         {
-            if (!adminUserManager.IsAdmin())
-            {
-                return Results.Redirect("/admin/login");
-            }
 
             var path = Path.Combine(env.WebRootPath, "admin-limits.html");
             StaticAssetCaching.Apply(context.Response, path);
             return Results.File(path, "text/html");
         });
 
-        _ = app.MapGet("/admin/limits/config", (IOptions<ApplicationConfiguration> settings,
-            IAdminUserManager adminUserManager, HttpContext context) =>
+        _ = uncachedApi.MapGet("/admin/limits/config", (IOptions<ApplicationConfiguration> settings,
+            HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            if (!adminUserManager.IsAdmin())
-            {
-                return Results.Unauthorized();
-            }
 
             return Results.Json(new { settings.Value.MaxUsersPerRoom, settings.Value.Limits, settings.Value.Observers });
         });
 
-        _ = app.MapGet("/admin/me", (IAdminUserManager adminUserManager, IUsageStatisticsRepository statistics, HttpContext context) =>
+        _ = uncachedApi.MapGet("/admin/me", (IUsageStatisticsRepository statistics, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            return adminUserManager.TryGetAdminUser(out var adminUser)
-                ? Results.Json(new { adminUser.DisplayName, adminUser.IsSuperAdmin, StatisticsEnabled = statistics.Enabled })
-                : Results.Unauthorized();
+            var adminUser = context.GetRequiredAdmin();
+            return Results.Json(new { adminUser.DisplayName, adminUser.IsSuperAdmin, StatisticsEnabled = statistics.Enabled });
         });
 
-        _ = app.MapGet("/admin/rooms", (IRoomManager roomManager, IAdminUserManager adminUserManager,
+        _ = uncachedApi.MapGet("/admin/rooms", (IRoomManager roomManager,
             HttpContext context, bool mine = false) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            if (!adminUserManager.TryGetAdminUser(out var adminUser))
-            {
-                return Results.Unauthorized();
-            }
+            var adminUser = context.GetRequiredAdmin();
 
             var rooms = roomManager.GetRoomsSnapshot(adminUser)
                 .Where(room => !mine || room.CreatedBy.Matches(adminUser))
@@ -134,22 +122,18 @@ internal static class AdminEndpoints
                     room.LastUpdatedUtc,
                     room.CreatedBy.DisplayName,
                     room.CanDelete)
-                { Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code" })
+                { Kind = room.Kind.ToWireName() })
                 .ToArray();
 
             return Results.Json(rooms);
         });
 
-        _ = app.MapGet("/admin/rooms/{roomId:ShortGuid}",
+        _ = api.MapGet("/admin/rooms/{roomId:ShortGuid}",
                     (RoomId roomId,
                      IRoomManager roomManager,
-                     IAdminUserManager adminUserManager,
                      HttpContext context) =>
         {
-            if (!adminUserManager.TryGetAdminUser(out var adminUser))
-            {
-                return Results.Unauthorized();
-            }
+            var adminUser = context.GetRequiredAdmin();
 
             if (!roomManager.TryGetRoom(roomId, out var room))
             {
@@ -160,17 +144,13 @@ internal static class AdminEndpoints
             return Results.Json(new { CanDelete = room.CanDelete(adminUser) });
         });
 
-        _ = app.MapPost("/admin/rooms",
+        _ = api.MapPost("/admin/rooms",
                     async (HttpContext context,
                            TrackedRoomCreator creator,
                            ILanguageValidator languageValidator,
-                           IAdminUserManager adminUserManager,
                            CancellationToken cancellationToken) =>
         {
-            if (!adminUserManager.TryGetAdminUser(out var adminUser))
-            {
-                return Results.Unauthorized();
-            }
+            var adminUser = context.GetRequiredAdmin();
 
             var payload = await context.Request.ReadFromJsonAsync<CreateRoomRequest>(cancellationToken).ConfigureAwait(false);
             if (payload is null || string.IsNullOrWhiteSpace(payload.Name))
@@ -181,12 +161,11 @@ internal static class AdminEndpoints
                 });
             }
 
-            if (payload.Kind is not (null or "code" or "whiteboard"))
+            if (!RoomKindWireNames.TryParseWireName(payload.Kind, out var kind))
             {
                 return Results.BadRequest(new { error = "Invalid room kind" });
             }
-            var kind = payload.Kind == "whiteboard" ? RoomKind.Whiteboard : RoomKind.Code;
-            var language = new RoomLanguage(kind == RoomKind.Whiteboard ? "plaintext" : payload.Language ?? "csharp");
+            var language = new RoomLanguage(kind == RoomKind.Whiteboard ? "plaintext" : payload.Language ?? languageValidator.DefaultLanguage);
             if (kind == RoomKind.Code && !languageValidator.IsValid(language))
             {
                 return Results.BadRequest(new
@@ -201,21 +180,18 @@ internal static class AdminEndpoints
                 RoomId = room.RoomId.Value,
                 Name = room.Name.Value,
                 Language = room.Language.Value,
-                Kind = room.Kind == RoomKind.Whiteboard ? "whiteboard" : "code",
+                Kind = room.Kind.ToWireName(),
                 CreatedBy = room.CreatedBy.DisplayName
             });
         });
 
-        _ = app.MapDelete("/admin/rooms/{roomId:ShortGuid}",
+        _ = api.MapDelete("/admin/rooms/{roomId:ShortGuid}",
                     async (RoomId roomId,
                            IRoomManager roomManager,
-                           IAdminUserManager adminUserManager,
+                           HttpContext context,
                            CancellationToken cancellationToken) =>
         {
-            if (!adminUserManager.TryGetAdminUser(out var adminUser))
-            {
-                return Results.Unauthorized();
-            }
+            var adminUser = context.GetRequiredAdmin();
 
             var result = await roomManager.DeleteRoomAsync(roomId, adminUser, cancellationToken).ConfigureAwait(false);
             return result switch
@@ -223,7 +199,7 @@ internal static class AdminEndpoints
                 RoomDeletionResult.Deleted => Results.Ok(),
                 RoomDeletionResult.Forbidden => Results.StatusCode(StatusCodes.Status403Forbidden),
                 RoomDeletionResult.NotFound => Results.NotFound(),
-                _ => throw new NotImplementedException()
+                _ => throw new InvalidOperationException("Unknown room deletion result.")
             };
         });
 

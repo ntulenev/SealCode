@@ -51,6 +51,7 @@ export class UpdateQueue {
     this.maxCount = maxCount;
     /** @type {Uint8Array[]} */
     this.pending = [];
+    this.retainedBytes = 0;
     this.timer = null;
     this.inFlight = false;
     this.blocked = false;
@@ -65,10 +66,9 @@ export class UpdateQueue {
   enqueue(update) {
     if (this.blocked) return;
     if (update?.length) {
-      const retained = [...this.pending, ...this.flight];
       if (
-        retained.length >= this.maxCount ||
-        retained.reduce((sum, item) => sum + item.length, 0) + update.length >
+        this.pending.length + this.flight.length >= this.maxCount ||
+        this.retainedBytes + update.length >
           this.maxBytes
       ) {
         this.blocked = true;
@@ -79,6 +79,7 @@ export class UpdateQueue {
         return;
       }
       this.pending.push(update);
+      this.retainedBytes += update.length;
     }
     this.schedule(60);
   }
@@ -120,6 +121,8 @@ export class UpdateQueue {
       if (generation !== this.generation) return;
       if (this.singleRemaining > 0) this.singleRemaining--;
       this.onSuccess();
+      if (generation === this.generation)
+        this.retainedBytes -= updates.reduce((sum, item) => sum + item.length, 0);
     } catch (error) {
       if (generation !== this.generation) return;
       this.pending.unshift(...updates);
@@ -149,6 +152,7 @@ export class UpdateQueue {
     this.singleRemaining = 0;
     if (this.timer) this.clearTimer(this.timer);
     this.pending = [];
+    this.retainedBytes = 0;
     this.flight = [];
     this.timer = null;
     this.inFlight = false;

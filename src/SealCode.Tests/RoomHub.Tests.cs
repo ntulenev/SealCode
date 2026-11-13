@@ -148,7 +148,7 @@ public sealed class RoomHubTests
         var logger = Mock.Of<ILogger<RoomHub>>();
         var action = () => new RoomHub(dependency == "manager" ? null! : manager,
             dependency == "sessions" ? null! : sessions,
-            dependency == "logger" ? null! : logger);
+            dependency == "logger" ? null! : logger, new NoOpObserverUpdates());
         action.Should().Throw<ArgumentNullException>();
     }
 
@@ -998,7 +998,7 @@ public sealed class RoomHubTests
             context.SetupGet(c => c.ConnectionId).Returns("conn-1");
             context.SetupGet(c => c.ConnectionAborted).Returns(cancellationToken);
             context.SetupGet(c => c.Items).Returns(items ?? new Dictionary<object, object?>());
-            Hub = new RoomHub(roomManager, new RoomSessionService(roomManager, languageValidator), logger ?? Mock.Of<ILogger<RoomHub>>())
+            Hub = new RoomHub(roomManager, new RoomSessionService(roomManager, languageValidator), logger ?? Mock.Of<ILogger<RoomHub>>(), new NoOpObserverUpdates())
             {
                 Context = context.Object,
                 Clients = clients ?? defaultClients.Object,

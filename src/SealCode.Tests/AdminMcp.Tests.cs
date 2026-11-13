@@ -27,6 +27,26 @@ namespace SealCode.Tests;
 public sealed class AdminMcpTests
 {
     [Fact]
+    public async Task OmittedLanguageUsesConfiguredSqlForHttpAndMcp()
+    {
+        using var source = CreateFactory();
+        using var factory = source.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) => configuration
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Languages:0"] = "sql",
+                    ["Languages:1"] = "sql",
+                    ["Languages:2"] = "sql"
+                })));
+        using var http = CreateHttpClient(factory, ROOT_TOKEN);
+        await using var client = await ConnectAsync(http);
+        var created = await client.CallToolAsync("create_room",
+            new Dictionary<string, object?> { ["name"] = "Sql default" });
+        Assert.NotEqual(true, created.IsError);
+        Assert.Equal("sql", Payload(created).GetProperty("language").GetString());
+    }
+
+    [Fact]
     public async Task StatisticsToolRequiresSuperAdminAndPreservesBoundedFiltersAsync()
     {
         using var factory = CreateFactory();
